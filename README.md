@@ -10,6 +10,10 @@ the H Company computer-use agent (`brain/`) makes judgment calls and visibly
 drives Mixxx's GUI; a deterministic MIDI engine (`hands/`) executes anything
 beat-critical, because a screenshot-loop agent is too slow for that.
 
+- **Need a live two-track transition immediately?**
+  [docs/MIX_TWO_TRACKS.md](docs/MIX_TWO_TRACKS.md) is the shortest attended
+  runbook.
+
 - **Picking up this project on a new machine?** Start with
   [docs/HANDOFF.md](docs/HANDOFF.md) — full environment setup, what's built,
   what's in progress, known gaps.

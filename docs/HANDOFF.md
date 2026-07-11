@@ -243,6 +243,29 @@ worth knowing:
 - The demo-* subcommands originally created a *new* virtual MIDI port and
   demanded a Mixxx restart; fixed to attach to the live port instead
   (commit `a282541`). Don't reintroduce `create_virtual` on macOS.
+- One real-world false alarm: "deck 2 is silent" turned out to be **Mixxx
+  audio routing**, not the bridge or mapping. `Preferences -> Sound
+  Hardware` fixed it. On a new machine, verify master/headphone outputs and
+  deck routing early before debugging MIDI, crossfader logic, or deck-2
+  commands.
+- See `docs/MIX_TWO_TRACKS.md` for the shortest attended runbook (commands
+  only, no explanation) when you just need a live transition working fast.
+
+**holo can load a track through Mixxx's real GUI — confirmed working,
+unattended.** Backgrounded task: told holo to open the `demo_set` playlist,
+pick a track, and load it into deck 2. It took ~15 steps and repeatedly
+misclicked the dock (opened Terminal/other apps instead of Mixxx — the dock
+icon is unreliable, always click the Mixxx window itself instead) and had
+to cancel a stray Controller Setup dialog that grabbed focus, but it
+self-corrected every time and finished correctly: right-click a track ->
+"Load to" -> "Deck" -> "Deck 2" (three nested submenus), loaded "Press
+Play" by Snoop Dogg (85 BPM, key C) into deck 2, and accurately reported
+what it did. `brain/set_player.py`'s `LOAD_TASK` prompt now states this
+exact menu path explicitly rather than leaving holo to discover it, which
+should cut the step count. Net takeaway: holo's GUI actions work, just
+budget real wall-clock time and expect some flailing before it lands —
+don't read early misclicks as failure, let it keep going unless it's
+genuinely stuck (bouncing between the same 2-3 wrong targets 5+ times).
 
 ## NemoClaw (Nvidia challenge) status
 

@@ -19,6 +19,18 @@ are untested on Linux — confirm each and update this doc as you go.
 5. `uv run python -m brain.set_player --tracks 3` plays a short set — holo
    loads each next track via the GUI, Rust transitions between them.
 
+Steps 2–4 are exactly `docs/MIX_TWO_TRACKS.md`'s runbook (commands only, no
+narration) — use it directly once the port + mapping (§1–2 below) are up,
+instead of re-deriving the command sequence.
+
+**Also confirmed on macOS:** holo really can load a track through Mixxx's
+GUI unattended (right-click a track -> "Load to" -> "Deck" -> "Deck N"),
+though it takes real wall-clock time and some flailing (dock-icon
+misclicks, stray dialogs stealing focus) before it lands — see
+`docs/HANDOFF.md`'s "Live-validated" section for the full account. Don't
+read early misclicks in a holo run as failure; only intervene if it's
+genuinely stuck bouncing between the same wrong targets repeatedly.
+
 ## 1. Virtual MIDI port
 
 macOS used the IAC Driver bus named `clawdj` (created in Audio MIDI Setup).

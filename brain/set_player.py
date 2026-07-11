@@ -68,12 +68,15 @@ LOAD_TASK = """\
 Click directly on the Mixxx application window (its main waveform/deck area)
 to make sure Mixxx is the focused, frontmost application — its own menu bar
 must be showing before you do anything else. Do not use the dock; if focus
-is lost, click the Mixxx window itself again. In the left sidebar, click the
+is lost, click the Mixxx window itself again (never click the dock icon
+repeatedly — it opens other apps, not Mixxx). In the left sidebar, click the
 playlist named 'demo_set'. In its track list, find the track titled
-'{title}' by '{artist}' (scroll if needed). Right-click that exact track and
-choose 'Load to Deck {deck}' from the context menu (it may be under a
-'Load to' submenu). Do NOT start playback and do NOT touch any other
-control. Answer with the exact track you loaded and to which deck."""
+'{title}' by '{artist}' (scroll if needed). Right-click that exact track to
+open its context menu, hover 'Load to' to open its submenu, hover 'Deck' in
+that submenu to open a further submenu listing Deck 1/2/3/4, then click
+'Deck {deck}'. (Confirmed working path — three nested menu levels: right-click
+-> Load to -> Deck -> Deck {deck}.) Do NOT start playback and do NOT touch any
+other control. Answer with the exact track you loaded and to which deck."""
 
 
 async def load_track(brain: Brain | None, track: dict, deck: int) -> None:
