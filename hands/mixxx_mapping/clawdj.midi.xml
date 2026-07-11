@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  clawdj — virtual-MIDI control surface for AI-driven mixing.
+
+  Channel allocation (1-indexed in this XML; 0-indexed on the wire):
+    Channel 16 (0xF) is reserved for clawdj-core ⇄ Mixxx.
+
+  Note map (Note On with velocity > 0 fires; Note Off ignored unless noted):
+    0x00  load deck 1 from __clawdj_queue row 0
+    0x01  load deck 2 from __clawdj_queue row 0
+    0x02  play deck 1
+    0x03  play deck 2
+    0x04  pause deck 1
+    0x05  pause deck 2
+    0x06  cue (jump to cue) deck 1
+    0x07  cue (jump to cue) deck 2
+    0x08  sync deck 1 (master)
+    0x09  sync deck 2 (master)
+    0x10..0x1F   atomic recipes (see clawdj.scripts.js comments)
+
+  Continuous controllers (CC, 7-bit unless noted):
+    CC 0x00  master crossfader        -1..1   (0..127 mapped)
+    CC 0x01  deck 1 volume             0..1
+    CC 0x02  deck 2 volume             0..1
+    CC 0x03  deck 1 rate              -1..1
+    CC 0x04  deck 2 rate              -1..1
+    CC 0x05  deck 1 EQ low             0..1
+    CC 0x06  deck 1 EQ mid             0..1
+    CC 0x07  deck 1 EQ high            0..1
+    CC 0x08  deck 2 EQ low             0..1
+    CC 0x09  deck 2 EQ mid             0..1
+    CC 0x0A  deck 2 EQ high            0..1
+
+  Feedback (output from Mixxx → clawdj-core, channel 16):
+    Note 0x40 + deck (deck=0,1)  beat_active edge (velocity 127 = beat)
+    CC   0x40 + deck             playposition * 127
+    CC   0x48 + deck             effective bpm  → encoded LSB; for full
+                                  precision use the queryable [Channel].bpm
+                                  via core polling instead.
+-->
+<MixxxControllerPreset mixxxVersion="2.4+" schemaVersion="1">
+  <info>
+    <name>clawdj</name>
+    <author>Ernest Yeung &amp; Grimlock (OpenClaw)</author>
+    <description>
+      Virtual MIDI bridge that lets clawdj-core (Rust) drive Mixxx for AI-DJ
+      sets. Designed to pair with the IAC Driver "clawdj" port on macOS or a
+      midir-created virtual port on Linux. Not intended as a hardware mapping.
+    </description>
+    <forums>https://mixxx.discourse.group/</forums>
+    <wiki>https://github.com/InServiceOfX/Monoclaw/tree/feat/clawdj-mixxx-harness</wiki>
+  </info>
+  <controller id="clawdj">
+    <scriptfiles>
+      <file filename="clawdj.scripts.js" functionprefix="clawdj"/>
+    </scriptfiles>
+    <controls>
+      <!-- Transport / load notes -->
+      <control>
+        <description>load deck 1 from clawdj queue</description>
+        <status>0x9F</status>             <!-- Note On, channel 16 -->
+        <midino>0x00</midino>
+        <key>clawdj.loadDeck1</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>load deck 2 from clawdj queue</description>
+        <status>0x9F</status>
+        <midino>0x01</midino>
+        <key>clawdj.loadDeck2</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>play deck 1</description>
+        <status>0x9F</status>
+        <midino>0x02</midino>
+        <key>clawdj.playDeck1</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>play deck 2</description>
+        <status>0x9F</status>
+        <midino>0x03</midino>
+        <key>clawdj.playDeck2</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>pause deck 1</description>
+        <status>0x9F</status>
+        <midino>0x04</midino>
+        <key>clawdj.pauseDeck1</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>pause deck 2</description>
+        <status>0x9F</status>
+        <midino>0x05</midino>
+        <key>clawdj.pauseDeck2</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>cue jump deck 1</description>
+        <status>0x9F</status>
+        <midino>0x06</midino>
+        <key>clawdj.cueDeck1</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>cue jump deck 2</description>
+        <status>0x9F</status>
+        <midino>0x07</midino>
+        <key>clawdj.cueDeck2</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>sync deck 1 to active deck</description>
+        <status>0x9F</status>
+        <midino>0x08</midino>
+        <key>clawdj.syncDeck1</key>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <description>sync deck 2 to active deck</description>
+        <status>0x9F</status>
+        <midino>0x09</midino>
+        <key>clawdj.syncDeck2</key>
+        <options><script-binding/></options>
+      </control>
+
+      <!-- Continuous controls (CC) -->
+      <control>
+        <description>master crossfader</description>
+        <status>0xBF</status>             <!-- CC, channel 16 -->
+        <midino>0x00</midino>
+        <group>[Master]</group>
+        <key>crossfader</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 1 volume</description>
+        <status>0xBF</status>
+        <midino>0x01</midino>
+        <group>[Channel1]</group>
+        <key>volume</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 2 volume</description>
+        <status>0xBF</status>
+        <midino>0x02</midino>
+        <group>[Channel2]</group>
+        <key>volume</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 1 rate</description>
+        <status>0xBF</status>
+        <midino>0x03</midino>
+        <group>[Channel1]</group>
+        <key>rate</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 2 rate</description>
+        <status>0xBF</status>
+        <midino>0x04</midino>
+        <group>[Channel2]</group>
+        <key>rate</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 1 EQ low</description>
+        <status>0xBF</status>
+        <midino>0x05</midino>
+        <group>[EqualizerRack1_[Channel1]_Effect1]</group>
+        <key>parameter1</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 1 EQ mid</description>
+        <status>0xBF</status>
+        <midino>0x06</midino>
+        <group>[EqualizerRack1_[Channel1]_Effect1]</group>
+        <key>parameter2</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 1 EQ high</description>
+        <status>0xBF</status>
+        <midino>0x07</midino>
+        <group>[EqualizerRack1_[Channel1]_Effect1]</group>
+        <key>parameter3</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 2 EQ low</description>
+        <status>0xBF</status>
+        <midino>0x08</midino>
+        <group>[EqualizerRack1_[Channel2]_Effect1]</group>
+        <key>parameter1</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 2 EQ mid</description>
+        <status>0xBF</status>
+        <midino>0x09</midino>
+        <group>[EqualizerRack1_[Channel2]_Effect1]</group>
+        <key>parameter2</key>
+        <options><normal/></options>
+      </control>
+      <control>
+        <description>deck 2 EQ high</description>
+        <status>0xBF</status>
+        <midino>0x0A</midino>
+        <group>[EqualizerRack1_[Channel2]_Effect1]</group>
+        <key>parameter3</key>
+        <options><normal/></options>
+      </control>
+    </controls>
+
+    <outputs>
+      <!-- Beat-active LEDs become our feedback. -->
+      <output>
+        <description>deck 1 beat tick</description>
+        <status>0x9F</status>
+        <midino>0x40</midino>
+        <on>0x7F</on>
+        <off>0x00</off>
+        <group>[Channel1]</group>
+        <key>beat_active</key>
+        <minimum>0.5</minimum>
+      </output>
+      <output>
+        <description>deck 2 beat tick</description>
+        <status>0x9F</status>
+        <midino>0x41</midino>
+        <on>0x7F</on>
+        <off>0x00</off>
+        <group>[Channel2]</group>
+        <key>beat_active</key>
+        <minimum>0.5</minimum>
+      </output>
+    </outputs>
+  </controller>
+</MixxxControllerPreset>

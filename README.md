@@ -16,6 +16,11 @@ beat-critical, because a screenshot-loop agent is too slow for that.
 - **Hackathon context** (event rules, links, submission requirements):
   [docs/HACKATHON.md](docs/HACKATHON.md).
 
+`core-rust/` and `agent/` are a more mature Mixxx-driving implementation
+(Rust core + Python MIDI bridge) ported in from earlier work on this same
+idea — see [docs/prior-research/](docs/prior-research/) for provenance and
+`docs/HANDOFF.md` for how it relates to `hands/`.
+
 ## Setup
 
 See [docs/HANDOFF.md](docs/HANDOFF.md#environment-setup-on-a-new-machine)

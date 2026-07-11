@@ -16,14 +16,23 @@ Both goals point at the same architecture, so there's one codebase.
 
 ## Repos
 
-- **`claw-dj`** (this repo) — `git@github.com:InServiceOfX/claw-dj.git`,
-  branch `brain-hands-architecture` (not `master` — all work happens here).
+- **`claw-dj`** (this repo) — `git@github.com:InServiceOfX/claw-dj.git`.
+  Work happens on feature branches (`master` gets fast-forward-merged by
+  Ernest after review — check `git log --oneline` for the current tip, not
+  a specific branch name; branch names here will go stale as work continues).
 - **`holo-desktop-cli`** — `https://github.com/hcompai/holo-desktop-cli`,
   cloned locally at `repos/holo-desktop-cli` on the Mac this was built on.
   This is H Company's open-source client that drives their closed-source
   `hai-agent-runtime` binary (downloads itself on first run, sha256-verified)
   over loopback. `claw-dj`'s `brain/agent.py` imports it as a library
   (`holo_desktop.agent_client`), it isn't shelled out to as a CLI.
+- **`Monoclaw`** — private repo, `InServiceOfX/Monoclaw`. Contains an
+  **earlier, more advanced attempt at this exact project** under
+  `Projects/clawdj/` (2026-04-25 through 2026-07-08, branches
+  `feat/clawdj-mixxx-harness` / `feat/clawdj-core-rust-skeleton`, later
+  merged to `master`). Ported wholesale into this repo on 2026-07-11 — see
+  the next section. Monoclaw's copy is intentionally left to go stale;
+  don't look there for the current state, look here.
 
 ## Why holo-desktop-cli, not the `hai_agents.Client()` SDK snippet
 
@@ -54,6 +63,51 @@ vision-model → click/type/scroll loop with multi-second latency per action
 `computer-use-agents-demos` repo before building anything). That's fine for
 judgment calls and visible GUI actions, hopeless for beat-accurate DJ
 timing — hence the brain/hands split in ARCHITECTURE.md.
+
+## Ported prior work from Monoclaw (2026-07-11)
+
+While starting on `hands/mixxx_mapping/` (see "known gaps" below, as it
+stood before this port), a stray `clawdj.midi.xml`/`.js` was found already
+installed in Mixxx's controllers directory, dated April — from an earlier,
+separate effort in a different repo (`Monoclaw`, private,
+`Projects/clawdj/`) that got substantially further than today's session had
+independently: a working Rust core (`cargo fmt`/`test`/`clippy` clean), a
+proven Mixxx-integration design, a Python MIDI bridge, and real research
+confirming stock Mixxx has no TCP/HTTP/WebSocket API (only the MIDI/JS
+controller-mapping surface). Decision: **port it all into `claw-dj` rather
+than rebuild it, let Monoclaw's copy go stale.**
+
+What moved, and where:
+
+| From Monoclaw (`Projects/clawdj/`) | To `claw-dj` |
+| --- | --- |
+| `core-rust/` (Rust workspace: `clawdj` lib + `clawdj-cli` binary) | `core-rust/` — builds, tests (5/5) and runs clean on this machine, verified 2026-07-11 |
+| `agent/midi_bridge.py`, `agent/hermes-skill/SKILL.md` | `agent/` — Python MIDI bridge using `mido`, and a Hermes agent-skill definition |
+| `mixxx-mapping/clawdj.midi.xml`, `.js` | `hands/mixxx_mapping/` — the actual mapping (replaces the empty placeholder), reinstalled over the stale April copy |
+| `scripts/install-mapping-macos.sh` | `hands/mixxx_mapping/install-mapping-macos.sh` — path fixed for its new location |
+| `docs/*.md`, `planning/*.md`, `research/*.md` | `docs/prior-research/` — see its own README for what's there and what was deliberately left out (personal-narrative files, one example path scrubbed) |
+
+**This surfaced a real compliance question for the hackathon rule "build
+entirely during the event, no prior commits to the repo"** — this code
+predates the event (some of it by months). Ernest made the call explicitly:
+port it in anyway, Monoclaw can go stale. Worth being able to explain this
+choice if asked during judging.
+
+**Two "hands" implementations now coexist and are not yet reconciled:**
+this repo's own `hands/midi_engine.py` (written today, uses a made-up
+note/CC map) and the ported, more complete `agent/midi_bridge.py` +
+`core-rust/` (real note/CC map matching the actual installed mapping,
+already has volume/rate/EQ control `hands/midi_engine.py` doesn't). Next
+session should pick one — most likely retire `hands/midi_engine.py` in
+favor of the ported code — rather than maintaining both. Not done yet
+because it wasn't clear which direction was wanted until this port
+happened.
+
+**Still not done, inherited from the prior effort:** actually enabling the
+mapping in Mixxx (Preferences → Controllers → "IAC Driver clawdj" → Enabled
+→ Load Mapping → Apply) and a live end-to-end validation — send one real
+MIDI message, confirm Mixxx reacts. The prior effort got all the way to
+"ready to test" twice (April and July) and never closed this loop.
 
 ## Environment setup on a new machine
 
@@ -127,9 +181,12 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `brain/sync_mixxx_analysis.py` | Merges Mixxx's analyzed bpm/key (read from its own DB) into the crate cache |
 | `brain/build_demo_subset.py` | Picks a curated subset from the crate, writes `.m3u` for one-shot Mixxx import |
 | `hands/beatgrid.py` | Reads bpm from Mixxx's DB for a given track path (schema confirmed against a real install) |
-| `hands/midi_engine.py` | MIDI execution stub via `python-rtmidi` — **not tested against real Mixxx MIDI mapping yet** |
-| `hands/mixxx_mapping/` | **Empty.** Needs a live Mixxx session to iterate the actual MIDI CC/note mapping — biggest remaining gap |
-| `shared/commands.py` | Brain→Hands command schema (intent only, no MIDI/timing) |
+| `hands/midi_engine.py` | MIDI execution stub via `python-rtmidi`, made-up note/CC map — **superseded by the ported code below, not yet retired** |
+| `hands/mixxx_mapping/` | Real mapping (`clawdj.midi.xml`/`.js`), ported from prior work — installed on this machine, not yet live-validated |
+| `core-rust/` | Ported Rust workspace (`clawdj` lib + `clawdj-cli`) — builds, 5/5 tests pass, `cargo run -p clawdj-cli -- setup` confirms it sees the real MIDI ports |
+| `agent/midi_bridge.py` | Ported Python MIDI bridge (`mido`-based), matches the real mapping's note/CC map |
+| `agent/hermes-skill/SKILL.md` | Ported Hermes agent-skill definition for a dedicated clawdj dev session |
+| `shared/commands.py` | Brain→Hands command schema (intent only, no MIDI/timing) — not yet wired to either MIDI implementation |
 | `shared/mixxx_db.py` | Locates + read-only-opens `mixxxdb.sqlite` across platforms |
 
 `brain/data/` (scanned crate, demo subset, `.m3u`) is **gitignored on
@@ -172,15 +229,19 @@ against them.
 
 ## Known gaps / next steps, roughly in priority order
 
-1. **`hands/mixxx_mapping/`** — no real MIDI mapping exists yet. Needs a
-   live Mixxx session: create a virtual MIDI port, point Mixxx's Controller
-   preferences at it, confirm `hands/midi_engine.py`'s note/CC numbers
-   actually move a deck. This is the biggest gap between "agent can open
-   Mixxx" and "agent can actually DJ."
-2. `Track.energy` is still a placeholder (`MEDIUM` for everything scanned)
+1. **Live-validate the mapping.** In Mixxx: Preferences → Controllers →
+   "IAC Driver clawdj" → Enabled → Load Mapping → "clawdj" → Apply. Then
+   send one real command (`cargo run -p clawdj-cli -- cmd '{"op":"play","deck":1}'`
+   with a track already loaded, or use `agent/midi_bridge.py`) and confirm
+   Mixxx reacts. This is the single biggest gap between "agent can open
+   Mixxx" and "agent can actually DJ," and it's been "one step away" twice
+   before (April and July) without anyone closing it.
+2. **Reconcile the two hands implementations** — retire `hands/midi_engine.py`
+   in favor of `agent/midi_bridge.py`/`core-rust/` (or explicitly decide to
+   keep both for a reason), and wire `shared/commands.py`'s dispatch to
+   whichever wins.
+3. `Track.energy` is still a placeholder (`MEDIUM` for everything scanned)
    — no LOW/HIGH/PEAK tagging exists. Either hand-curate energy for the
    ~30-track demo set, or decide it's out of scope for the hackathon demo.
-3. `brain/agent.py`'s `_next_free_deck()` is hardcoded to `2` — no real
+4. `brain/agent.py`'s `_next_free_deck()` is hardcoded to `2` — no real
    deck-state tracking.
-4. Nothing in `hands/` has been exercised against a live Mixxx MIDI session
-   yet — `midi_engine.py` is unverified beyond importing cleanly.

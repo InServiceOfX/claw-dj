@@ -12,9 +12,19 @@ machine/session, not just this one.
 
 ## Git
 
-Work happens on feature branches (currently `brain-hands-architecture`),
-never directly on `main`/`master`. Ernest reviews and merges to
-`main`/`master` himself.
+Work happens on feature branches, never directly on `main`/`master` — check
+`git branch --show-current` before every commit (the checked-out branch can
+change mid-session if Ernest merges to `master` himself, which he does
+frequently after reviewing). If it's `master`, create or switch to a branch
+first. Ernest reviews and merges to `main`/`master` himself.
+
+## Multiple implementations of the same thing
+
+This project absorbed a more mature prior attempt at itself (`core-rust/`,
+`agent/` — see `docs/prior-research/` and `docs/HANDOFF.md`). Don't assume
+the newest-written code in `hands/` is the current direction by default;
+check `docs/HANDOFF.md`'s "known gaps" for which implementation is actually
+live.
 
 ## Data
 

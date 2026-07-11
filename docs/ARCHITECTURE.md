@@ -40,13 +40,22 @@ Responsibilities:
 - Read BPM / beatgrid for the loaded track (`hands/beatgrid.py`, from Mixxx's
   `mixxxdb.sqlite` — Mixxx already analyzes this on import, no need to redo it)
 - Compute beat-accurate timestamps for the next N bars
-- Execute commands from Brain by sending MIDI (`hands/midi_engine.py` via
-  `python-rtmidi`) to a custom Mixxx controller mapping
-  (`hands/mixxx_mapping/claw-dj.midi.xml` + `.js`) that maps MIDI CC/notes to
-  Mixxx's hotcue/loop/beatjump/crossfader controls
+- Execute commands from Brain by sending MIDI to a custom Mixxx controller
+  mapping (`hands/mixxx_mapping/clawdj.midi.xml` + `.js`) that maps MIDI
+  CC/notes to Mixxx's transport/crossfader/EQ/rate controls, on a reserved
+  MIDI channel (16) so it can't collide with a hardware controller later
 
 No vision model in this path. Timing comes from Mixxx's own beatgrid data plus a
 local scheduler, not from screenshots.
+
+**Two implementations of the MIDI-sending half currently coexist,
+unreconciled:** `hands/midi_engine.py` (written for this hackathon, made-up
+note/CC map) and `agent/midi_bridge.py` + `core-rust/` (ported from earlier,
+more mature work on this same idea — real note/CC map matching the actual
+mapping file, plus volume/rate/EQ control `hands/midi_engine.py` doesn't
+have). See `docs/HANDOFF.md` for status and `docs/prior-research/` for
+where the ported code came from. Likely direction: retire
+`hands/midi_engine.py` in favor of the ported code, but not yet decided.
 
 ## Command schema (Brain → Hands)
 
