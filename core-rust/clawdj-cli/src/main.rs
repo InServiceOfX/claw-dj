@@ -6,7 +6,6 @@ use clawdj::{
     JsonCommand, command::Deck, open_mixxx_database, open_output_port, port_presence_summary,
     queue_clear, queue_init, queue_set, send_message,
 };
-use midir::{MidiOutput, os::unix::VirtualOutput};
 use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -100,15 +99,8 @@ fn run_operation(operation: clawdj::Operation) -> Result<()> {
 }
 
 fn run_demo_mix() -> Result<()> {
-    let midi_out =
-        MidiOutput::new("clawdj-demo-out").context("failed to initialize MIDI output")?;
-    let mut connection = midi_out
-        .create_virtual("clawdj")
-        .context("failed to create virtual MIDI output named clawdj")?;
-
-    println!("virtual MIDI output 'clawdj' is live");
-    println!("launch or restart Mixxx now so it can enumerate the port");
-    thread::sleep(Duration::from_secs(240));
+    let mut connection = open_output_port()?;
+    println!("connected to the live clawdj MIDI port");
 
     for message in [
         [0xBF, 0x00, 0x00], // crossfader left
@@ -135,15 +127,8 @@ fn run_demo_mix() -> Result<()> {
 }
 
 fn run_demo_transition() -> Result<()> {
-    let midi_out =
-        MidiOutput::new("clawdj-transition-out").context("failed to initialize MIDI output")?;
-    let mut connection = midi_out
-        .create_virtual("clawdj")
-        .context("failed to create virtual MIDI output named clawdj")?;
-
-    println!("virtual MIDI output 'clawdj' is live");
-    println!("launch or restart Mixxx now so it can enumerate the port");
-    thread::sleep(Duration::from_secs(75));
+    let mut connection = open_output_port()?;
+    println!("connected to the live clawdj MIDI port");
 
     for message in [
         [0xBF, 0x00, 0x00], // crossfader left
@@ -174,15 +159,8 @@ fn run_demo_transition() -> Result<()> {
 }
 
 fn run_demo_juggle() -> Result<()> {
-    let midi_out =
-        MidiOutput::new("clawdj-juggle-out").context("failed to initialize MIDI output")?;
-    let mut connection = midi_out
-        .create_virtual("clawdj")
-        .context("failed to create virtual MIDI output named clawdj")?;
-
-    println!("virtual MIDI output 'clawdj' is live");
-    println!("launch or restart Mixxx now so it can enumerate the port");
-    thread::sleep(Duration::from_secs(60));
+    let mut connection = open_output_port()?;
+    println!("connected to the live clawdj MIDI port");
 
     // Reset both decks near their cue/start points and start with deck 1.
     send_midi(&mut connection, [0x9F, 0x04, 0x7F])?;
@@ -244,15 +222,8 @@ fn send_midi(connection: &mut midir::MidiOutputConnection, message: [u8; 3]) -> 
 }
 
 fn run_demo_loop() -> Result<()> {
-    let midi_out =
-        MidiOutput::new("clawdj-loop-out").context("failed to initialize MIDI output")?;
-    let mut connection = midi_out
-        .create_virtual("clawdj")
-        .context("failed to create virtual MIDI output named clawdj")?;
-
-    println!("virtual MIDI output 'clawdj' is live");
-    println!("launch or restart Mixxx now so it can enumerate the port");
-    thread::sleep(Duration::from_secs(120));
+    let mut connection = open_output_port()?;
+    println!("connected to the live clawdj MIDI port");
 
     send_midi(&mut connection, [0xBF, 0x00, 0x7F])?;
     send_midi(&mut connection, [0x9F, 0x03, 0x7F])?;
