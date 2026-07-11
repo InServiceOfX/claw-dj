@@ -245,6 +245,8 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `brain/build_demo_subset.py` | Picks a curated subset from the crate, writes `.m3u` for one-shot Mixxx import |
 | `brain/build_lineage_set.py` | Builds the sample-lineage playlist from canonical hip-hop/RnB tracks in the crate |
 | `brain/analyze_bpm.py` / `brain/analyze_via_mixxx.py` | Provisional librosa BPM analysis and deterministic Mixxx analysis for the lineage set |
+| `brain/playlist_editor.py` | Local browser UI for searching the crate, enabling/disabling tracks, applying the researched R&B/West Coast hit seed, and exporting a Mixxx playlist without dropping BPM/key metadata |
+| `brain/playlist.py` | Playlist selection persistence, normalized seed matching, and JSON/`.m3u8` export logic |
 | `hands/beatgrid.py` | Reads bpm from Mixxx's DB for a given track path (schema confirmed against a real install) |
 | `hands/midi_engine.py` | MIDI execution stub via `python-rtmidi`, made-up note/CC map — **superseded by the ported code below, not yet retired** |
 | `hands/midi_port_server.py` | Owns Linux's virtual `clawdj` ALSA MIDI port and relays FIFO commands |
@@ -361,3 +363,19 @@ interactive wizard — run with Ernest present. `holo install nemoclaw`
    deck alternation itself instead.
 5. Double-time BPM suspects ("Don Doggy" 149, "Trust Me" ~160) — set_player
    sidesteps them by BPM-chaining, but verify before juggling on them.
+
+## Playlist curator branch (2026-07-11)
+
+Work on `feat/playlist-curator-ui` adds a localhost playlist picker and a
+researched 50-track starting seed covering Ernest's requested West Coast cuts,
+each top-level R&B-folder artist, and eight Sade tracks. On the Mac USB library,
+all 50 seed entries matched real audio files. The generated selection and
+exports remain gitignored in `brain/data/`.
+
+`brain.scan_library` now accepts multiple roots and carries forward existing
+`bpm`, `key`, and `energy` values by absolute path. A real rescan of HipHop +
+R&B produced 14,518 tracks and retained all 30 previously analyzed Snoop
+tracks. After importing and analyzing the curated playlist, Mixxx had 77 crate
+matches; all 49 tracks in the current enabled set have both BPM and key. The
+current set intentionally differs from the 50-track seed: two seed tracks were
+disabled and The-Dream's "Falsetto" was added.

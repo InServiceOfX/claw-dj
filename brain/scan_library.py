@@ -52,11 +52,26 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_CRATE_CACHE)
     args = parser.parse_args()
 
-    records = []
+    previous = {}
+    if args.out.exists():
+        previous = {
+            record["track_id"]: record for record in json.loads(args.out.read_text())
+        }
+
+    records_by_path = {}
     for root in args.roots:
         found = scan(root)
         print(f"  {root}: {len(found)} tracks")
-        records.extend(found)
+        records_by_path.update({record["track_id"]: record for record in found})
+
+    records = []
+    for track_id in sorted(records_by_path):
+        record = records_by_path[track_id]
+        old = previous.get(track_id, {})
+        for field in ("bpm", "key", "energy"):
+            if old.get(field) is not None:
+                record[field] = old[field]
+        records.append(record)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(records, indent=2))
     print(f"scanned {len(records)} tracks -> {args.out}")

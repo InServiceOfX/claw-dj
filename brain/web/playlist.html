@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>claw-dj playlist</title>
+  <style>
+    :root { color-scheme: light; --ink:#171717; --muted:#696969; --line:#d8d8d3; --paper:#f7f7f3; --panel:#fff; --green:#176b4d; --red:#a53a2a; --focus:#2367b1; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.4 ui-sans-serif,system-ui,sans-serif; letter-spacing:0; }
+    header { min-height:64px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:12px 24px; background:#171717; color:white; }
+    h1 { margin:0; font-size:20px; font-weight:700; letter-spacing:0; }
+    .brand span { color:#78d7ac; }
+    .summary { color:#d0d0ca; font-variant-numeric:tabular-nums; }
+    main { padding:18px 24px 28px; max-width:1500px; margin:auto; }
+    .toolbar { display:grid; grid-template-columns:minmax(220px,1fr) minmax(180px,260px) auto auto auto; gap:8px; margin-bottom:12px; }
+    input,select,button { min-height:38px; border:1px solid var(--line); border-radius:4px; background:white; color:var(--ink); font:inherit; padding:7px 10px; }
+    button { cursor:pointer; font-weight:650; }
+    button:hover { border-color:#85857f; }
+    button:focus,input:focus,select:focus { outline:2px solid var(--focus); outline-offset:1px; }
+    button.primary { background:var(--green); border-color:var(--green); color:white; }
+    .modes { display:flex; }
+    .modes button { border-radius:0; margin-left:-1px; }
+    .modes button:first-child { border-radius:4px 0 0 4px; margin-left:0; }
+    .modes button:last-child { border-radius:0 4px 4px 0; }
+    .modes button.active { background:#deded8; }
+    .workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,36%); border:1px solid var(--line); background:var(--panel); min-height:650px; }
+    section { min-width:0; }
+    section + section { border-left:1px solid var(--line); }
+    .section-head { height:48px; padding:0 14px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); }
+    h2 { margin:0; font-size:15px; letter-spacing:0; }
+    .count,.meta { color:var(--muted); font-variant-numeric:tabular-nums; }
+    .rows { height:600px; overflow:auto; }
+    .track { min-height:58px; display:grid; grid-template-columns:30px minmax(0,1fr) 64px 46px; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid #ecece8; }
+    .track:hover { background:#f4f6f2; }
+    .track input { width:17px; min-height:17px; accent-color:var(--green); }
+    .title,.artist { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .title { font-weight:650; }
+    .artist { color:var(--muted); font-size:13px; }
+    .bpm,.key { text-align:right; font-variant-numeric:tabular-nums; }
+    .missing { color:var(--red); }
+    .empty { padding:30px 18px; color:var(--muted); text-align:center; }
+    .notice { min-height:24px; margin-top:10px; color:var(--muted); }
+    @media (max-width:850px) {
+      header { align-items:flex-start; padding:12px 14px; }
+      main { padding:12px; }
+      .toolbar { grid-template-columns:1fr 1fr; }
+      .toolbar input { grid-column:1 / -1; }
+      .workspace { grid-template-columns:1fr; }
+      section + section { border-left:0; border-top:1px solid var(--line); }
+      .rows { height:48vh; }
+    }
+  </style>
+</head>
+<body>
+  <header><div class="brand"><h1><span>claw</span>-dj playlist</h1></div><div class="summary" id="summary">Loading crate...</div></header>
+  <main>
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search title, artist, or path" aria-label="Search tracks">
+      <select id="artist" aria-label="Filter by artist"><option value="">All artists</option></select>
+      <div class="modes" aria-label="Analysis status">
+        <button class="active" data-analysis="all">All</button><button data-analysis="analyzed">Analyzed</button><button data-analysis="missing">Missing BPM</button>
+      </div>
+      <button id="seed">Add researched hits</button>
+      <button id="export" class="primary">Export for Mixxx</button>
+    </div>
+    <div class="workspace">
+      <section>
+        <div class="section-head"><h2>Library</h2><span class="count" id="library-count"></span></div>
+        <div class="rows" id="library"></div>
+      </section>
+      <section>
+        <div class="section-head"><h2>Enabled set</h2><span class="count" id="set-count"></span></div>
+        <div class="rows" id="selected"></div>
+      </section>
+    </div>
+    <div class="notice" id="notice"></div>
+  </main>
+  <script>
+    const state = { analysis:'all', meta:null };
+    const el = id => document.getElementById(id);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    async function api(path, options) { const response = await fetch(path, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || response.statusText); return data; }
+    function row(track) {
+      const bpm = track.bpm ? Number(track.bpm).toFixed(1) : '—';
+      return `<label class="track" title="${esc(track.track_id)}"><input type="checkbox" data-id="${esc(track.track_id)}" ${track.enabled?'checked':''}><span><div class="title">${esc(track.title)}</div><div class="artist">${esc(track.artist)}</div></span><span class="bpm ${track.bpm?'':'missing'}">${bpm}</span><span class="key">${esc(track.key || '—')}</span></label>`;
+    }
+    async function loadMeta() {
+      const currentArtist = el('artist').value;
+      state.meta = await api('/api/meta');
+      el('summary').textContent = `${state.meta.track_count.toLocaleString()} tracks · ${state.meta.analyzed_count.toLocaleString()} library analyzed · ${state.meta.selected_analyzed_count}/${state.meta.selected_count} set analyzed`;
+      el('set-count').textContent = state.meta.selected_count;
+      el('artist').innerHTML = '<option value="">All artists</option>' + state.meta.artists.map(a => `<option>${esc(a)}</option>`).join('');
+      el('artist').value = currentArtist;
+    }
+    async function loadLibrary() {
+      const params = new URLSearchParams({q:el('search').value,artist:el('artist').value,analysis:state.analysis});
+      const data = await api('/api/tracks?' + params);
+      el('library-count').textContent = data.truncated ? `${data.total.toLocaleString()} matches · first ${data.tracks.length}` : `${data.total.toLocaleString()} matches`;
+      el('library').innerHTML = data.tracks.length ? data.tracks.map(row).join('') : '<div class="empty">No matching tracks</div>';
+    }
+    async function loadSelected() {
+      const data = await api('/api/tracks?selected=1&limit=1000');
+      el('selected').innerHTML = data.tracks.length ? data.tracks.map(row).join('') : '<div class="empty">Enable tracks from the library or add the researched hits.</div>';
+    }
+    async function toggle(event) {
+      const box = event.target.closest('input[data-id]'); if (!box) return;
+      await api('/api/selection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_id:box.dataset.id,enabled:box.checked})});
+      await Promise.all([loadMeta(),loadLibrary(),loadSelected()]);
+    }
+    let timer;
+    el('search').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(loadLibrary,180)});
+    el('artist').addEventListener('change',loadLibrary);
+    document.querySelector('.modes').addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;document.querySelectorAll('.modes button').forEach(b=>b.classList.toggle('active',b===button));state.analysis=button.dataset.analysis;loadLibrary()});
+    el('library').addEventListener('change',toggle); el('selected').addEventListener('change',toggle);
+    el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
+    el('export').addEventListener('click',async()=>{const result=await api('/api/export',{method:'POST'});el('notice').textContent=`Exported ${result.count} tracks to ${result.m3u} and ${result.json}.`;});
+    (async()=>{await loadMeta();await Promise.all([loadLibrary(),loadSelected()])})().catch(error=>{el('notice').textContent=error.message});
+  </script>
+</body>
+</html>

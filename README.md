@@ -25,6 +25,25 @@ beat-critical, because a screenshot-loop agent is too slow for that.
 idea — see [docs/prior-research/](docs/prior-research/) for provenance and
 `docs/HANDOFF.md` for how it relates to `hands/`.
 
+## Curate a playlist
+
+Scan one or more library roots, merge Mixxx's existing BPM/key analysis, and
+open the local playlist picker:
+
+```bash
+uv run python -m brain.scan_library /path/to/HipHop /path/to/RnB
+uv run python -m brain.sync_mixxx_analysis
+uv run python -m brain.playlist_editor --open
+```
+
+The picker can add the researched R&B/West Coast seed, search and filter all
+scanned tracks, enable or disable individual songs, and export
+`brain/data/playlist.m3u8` plus a metadata-preserving JSON snapshot. Import the
+`.m3u8` into Mixxx, analyze newly added tracks there, then rerun the sync. All
+generated library and playlist data stays under gitignored `brain/data/`. See
+[`docs/RNB_HITS_RESEARCH.md`](docs/RNB_HITS_RESEARCH.md) for the source-linked
+artist-by-artist choices and local match results.
+
 ## Setup
 
 See [docs/HANDOFF.md](docs/HANDOFF.md#environment-setup-on-a-new-machine)
