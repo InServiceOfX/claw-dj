@@ -27,12 +27,19 @@ Responsibilities:
   decision to Hands as a command
 - Toggle non-time-critical GUI state: FX panel, filters, browser view
 
-Built on [`holo-desktop-cli`](https://github.com/hcompai/holo-desktop-cli)'s
-local desktop runtime (`holo_desktop.agent_client`), talking to the same
-`hai-agent-runtime` daemon `holo run` uses, over loopback — no vision-loop
-round-trip through a cloud browser. This is the part that's actually on
-screen during the demo — judges need to see it act, not just emit JSON.
-Requires `holo login` once on the demo machine first.
+Built on the [`hai-agents[desktop]`](https://pypi.org/project/hai-agents/) SDK's
+local-desktop mode (`hai_agents_local`) — a pure-Python bridge (pyautogui /
+python-xlib) that drives mouse, keyboard, and screenshots directly in-process.
+No vision-loop round-trip through a cloud browser. This is the part that's
+actually on screen during the demo — judges need to see it act, not just emit
+JSON. Requires `hai login` once on the demo machine first.
+
+The first implementation used
+[`holo-desktop-cli`](https://github.com/hcompai/holo-desktop-cli)
+(`holo_desktop.agent_client`, talking to the closed-source `hai-agent-runtime`
+daemon over loopback). It remains a possible macOS/Windows path, but the
+runtime has no published Linux build as of v0.0.2. See `docs/HANDOFF.md` for
+the platform details.
 
 ## Hands — deterministic execution engine
 

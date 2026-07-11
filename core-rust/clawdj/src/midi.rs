@@ -151,7 +151,7 @@ fn connect_output_port(
         .context("failed to resolve MIDI output port name")?;
     midi_out
         .connect(port, "clawdj-cli")
-        .with_context(|| format!("failed to open MIDI output port '{port_name}'"))
+        .map_err(|error| anyhow!("failed to open MIDI output port '{port_name}': {error}"))
 }
 
 fn port_matches(name: &str) -> bool {

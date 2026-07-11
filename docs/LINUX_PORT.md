@@ -1,10 +1,10 @@
 # Linux port guide
 
-Written 2026-07-11 on the macOS machine where everything below was built and
-live-validated, for a Claude Code session on the Linux desktop to take over.
-Read `CLAUDE.md` and `docs/HANDOFF.md` first for project context; this file
-is only the macOS→Linux delta. Items marked **[verify]** worked on macOS but
-are untested on Linux — confirm each and update this doc as you go.
+Written 2026-07-11 on the macOS machine where the original path was built and
+live-validated, then updated on the Linux desktop. Read `CLAUDE.md` and
+`docs/HANDOFF.md` first for project context; this file is only the
+macOS→Linux delta. Items still marked **[verify]** worked on macOS but remain
+untested on Linux.
 
 ## What "working" looks like (the macOS baseline to reproduce)
 
@@ -16,8 +16,9 @@ are untested on Linux — confirm each and update this doc as you go.
    "Drop It Like It's Hot") while a deck plays.
 4. `clawdj transition --from 1 --to 2 --beats 16` does a beat-anchored
    crossfade (measured BPM ≈ analyzed BPM, fade length = beats × 60/BPM).
-5. `uv run python -m brain.set_player --tracks 3` plays a short set — holo
-   loads each next track via the GUI, Rust transitions between them.
+5. `uv run python -m brain.set_player --tracks 3` plays a short set — the
+   hai-agents desktop bridge loads each next track via the GUI, and Rust
+   transitions between them.
 
 Steps 2–4 are exactly `docs/MIX_TWO_TRACKS.md`'s runbook (commands only, no
 narration) — use it directly once the port + mapping (§1–2 below) are up,
@@ -52,6 +53,12 @@ matches any port containing `clawdj` case-insensitively — name the Linux
 port accordingly and nothing needs changing. **[verify]** ALSA may render
 names like `clawdj:clawdj 128:0`; substring match should still hit.
 
+The Rust workspace now builds on Linux and passes `cargo fmt --check`, all
+five tests, and `cargo clippy -D warnings`. Linux required converting
+`midir::ConnectError` to `anyhow::Error` with `map_err` because that error is
+not `Sync` on this backend; MIDI behavior is unchanged. A real virtual-port
+session still needs the live validation above.
+
 ## 2. Mixxx paths
 
 | Thing | macOS (verified) | Linux **[verify]** |
@@ -83,21 +90,23 @@ uv run python -m brain.sync_mixxx_analysis
 uv run python -m brain.build_demo_subset   # again, to bake bpm into demo_set.json
 ```
 
-## 4. holo / H Company agent
+## 4. H Company agent on Linux
 
-- Install per `docs/HANDOFF.md` (uv-based source install of
-  `repos/holo-desktop-cli`, `holo login` with the hackathon account).
-- **Wayland caveat (from holo's own README):** no global key listener, so
-  the double-Esc kill switch doesn't work — bind `holo stop` to a compositor
-  hotkey, or run an X11 session. **[verify]**
-- Screen capture/input permissions work completely differently (no TCC);
-  under Wayland holo needs a portal-based screencast grant. **[verify]** —
-  if holo can't drive the Linux desktop reliably, the set player still runs
-  with `--no-holo` (manual loads) while you debug.
-- Lesson that cost three failed runs on macOS: give holo *specific UI
-  targets* ("right-click 'Playlists' in the sidebar") not goals ("import the
-  playlist"), keep hands off mouse/keyboard while it runs, and note it kept
-  misclicking dock icons — a clean dock/workspace helps.
+- `holo-desktop-cli` does not currently run here: its managed
+  `hai-agent-runtime` artifacts cover macOS Apple Silicon and Windows x86_64,
+  not Linux x86_64 (v0.0.2).
+- Use `hai-agents[desktop]`, which provides the pure-Python
+  `hai_agents_local` bridge used by `brain/agent.py`: `pip install
+  "hai-agents[cli,desktop]"`, then `hai login` and `hai whoami`.
+- On GNOME/X11, install `gnome-screenshot`; pyautogui's screenshot backend
+  needs it. The working bridge uses pyautogui/python-xlib, so X11 is the
+  confirmed path. Wayland remains unverified.
+- `hai login` and `holo login` use separate products, keys, and files
+  (`~/.config/hai/.env` versus `~/.holo/.env`). A key valid for one may 403
+  on the other.
+- Give the agent specific UI targets ("right-click 'Playlists' in the
+  sidebar") rather than broad goals, and keep hands off the mouse/keyboard
+  while it runs. Use `--no-agent` for manual loads while debugging.
 
 ## 5. NemoClaw (Nvidia challenge) — main reason the Linux box matters
 
@@ -116,10 +125,10 @@ The integration that satisfies "run the H Company models through NemoClaw":
    `http://localhost:8000/v1` + the model ID. The sandboxed agent
    (OpenClaw by default) then runs on H Company's model, routed through
    NemoClaw's gateway — that's the challenge sentence, literally.
-3. Optionally point holo at the same server (`holo run --base-url
+3. On a platform with a supported holo runtime, optionally point holo at the same server (`holo run --base-url
    http://localhost:8000/v1 ...`) so the *desktop* agent is also running on
    locally-served Holo3 — nothing leaves the machine.
-4. Optionally `holo install nemoclaw` — holo's README lists NemoClaw as an
+4. On a platform with a supported holo runtime, optionally `holo install nemoclaw` — holo's README lists NemoClaw as an
    MCP host ("sandbox bridge"), letting the sandboxed agent delegate
    desktop tasks to holo on the host. **[verify — untested]**
 
@@ -137,6 +146,6 @@ with Ernest present, not headless.
 3. Library scan → demo_set import/analyze/sync (§3).
 4. Load a track, `clawdj cmd play`, `clawdj monitor` — beat ticks flowing.
 5. `clawdj transition` between two loaded decks — audible beat-matched fade.
-6. `uv run python -m brain.set_player --tracks 3 --no-holo`, then with holo
-   once §4 checks out.
+6. `uv run python -m brain.set_player --tracks 3 --no-agent`, then with the
+   hai-agents desktop bridge once §4 checks out.
 7. NemoClaw + vLLM (§5) for the Nvidia-challenge leg.

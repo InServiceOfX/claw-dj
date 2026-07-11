@@ -1,6 +1,6 @@
 """Plays a short autonomous set. Division of labor (the whole pitch):
 
-- Brain — the H Company computer-use agent (holo, via brain/agent.py) picks
+- Brain — the H Company computer-use agent (hai-agents, via brain/agent.py) picks
   the set order and *visibly* loads each next track through Mixxx's real GUI
   (sidebar click, right-click → Load to Deck N). Slow is fine: it happens
   while the current track plays.
@@ -10,7 +10,7 @@
 
 Usage:
     uv run python -m brain.set_player --tracks 3 --seconds 60 --beats 16
-    uv run python -m brain.set_player --no-holo   # Rust-only dry run: you
+    uv run python -m brain.set_player --no-agent  # Rust-only dry run: you
         load tracks by hand when prompted, transitions still run live
 
 Assumes: Mixxx open, clawdj mapping enabled, demo_set playlist imported and
@@ -84,21 +84,21 @@ async def load_track(brain: Brain | None, track: dict, deck: int) -> None:
     if brain is None:
         input(f">>> manually load '{title}' by {artist} into deck {deck}, then press Enter... ")
         return
-    print(f"[brain] holo loading '{title}' into deck {deck}...")
+    print(f"[brain] hai-agents loading '{title}' into deck {deck}...")
     answer = await brain._run_task(
         LOAD_TASK.format(title=title, artist=artist, deck=deck), max_time_s=180
     )
     print(f"[brain] {str(answer)[:200]}")
 
 
-async def play_set(count: int, seconds: float, beats: int, use_holo: bool) -> None:
+async def play_set(count: int, seconds: float, beats: int, use_agent: bool) -> None:
     tracks = json.loads(DEMO_SET_JSON.read_text())
     ordered = plan_set(tracks, count)
     print("set plan (BPM-chained):")
     for i, t in enumerate(ordered):
         print(f"  {i + 1}. {t['artist']} - {t['title']}  ({t['bpm']:.1f} BPM, {t.get('key') or '?'})")
 
-    brain_ctx = Brain() if use_holo else None
+    brain_ctx = Brain() if use_agent else None
     if brain_ctx is not None:
         await brain_ctx.__aenter__()
     try:
@@ -136,9 +136,15 @@ def main() -> None:
     parser.add_argument("--tracks", type=int, default=3)
     parser.add_argument("--seconds", type=float, default=60.0, help="play time per track before transitioning")
     parser.add_argument("--beats", type=int, default=16, help="crossfade length in beats")
-    parser.add_argument("--no-holo", action="store_true", help="skip the H Company agent; load tracks manually")
+    parser.add_argument(
+        "--no-agent",
+        "--no-holo",
+        dest="no_agent",
+        action="store_true",
+        help="skip the H Company agent and load tracks manually (--no-holo is kept as an alias)",
+    )
     args = parser.parse_args()
-    asyncio.run(play_set(args.tracks, args.seconds, args.beats, use_holo=not args.no_holo))
+    asyncio.run(play_set(args.tracks, args.seconds, args.beats, use_agent=not args.no_agent))
 
 
 if __name__ == "__main__":

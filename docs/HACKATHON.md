@@ -54,10 +54,10 @@ for how claw-dj's design targets each of these.
   Create API Key; key shown once, starts `hk-...`)
 - Demo repo (cloud browser-use examples, not what we ended up using):
   https://github.com/hcompai/computer-use-agents-demos
-- **What we actually use for local desktop control:**
-  https://github.com/hcompai/holo-desktop-cli — see HANDOFF.md for why we
-  picked this over the raw `hai_agents.Client()` SDK snippet from the
-  hackathon's local-control docs.
+- **What we actually use for local desktop control:** `hai-agents[desktop]`,
+  following the SDK pattern in the hackathon's local-control docs. The first
+  implementation used https://github.com/hcompai/holo-desktop-cli, but its
+  managed runtime has no published Linux build; see HANDOFF.md.
 
 ## Credentials / logistics (kept out of this repo on purpose)
 
@@ -66,7 +66,6 @@ welcome packet are **not** written into any committed file — this repo may
 end up public (submission requires a GitHub link), and those aren't
 project code. Keep them in your own notes/password manager instead.
 
-H Company login: `holo login` opens a browser to `portal.hcompany.ai`. Sign
-in with the same account you used to generate the `hk-...` key on
-`platform.hcompany.ai`, so the hackathon's API credits are actually on the
-account `holo` authenticates as. Verify with `holo whoami`.
+H Company Agent Platform login: `hai login` writes `HAI_API_KEY` to
+`~/.config/hai/.env`; verify with `hai whoami`. This is separate from
+`holo login`, which writes a Models API key to `~/.holo/.env`.

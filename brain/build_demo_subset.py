@@ -1,7 +1,7 @@
 """Builds a curated demo subset from the scanned crate (brain/data/crate.json)
 and writes both a JSON snapshot and an .m3u playlist. Mixxx can import the
-.m3u directly as one action regardless of subset size, so `holo` doesn't need
-to click through the library track by track.
+.m3u directly as one action regardless of subset size, so the GUI agent doesn't
+need to click through the library track by track.
 
 Usage: uv run python -m brain.build_demo_subset
 """

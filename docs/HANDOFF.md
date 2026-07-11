@@ -21,11 +21,11 @@ Both goals point at the same architecture, so there's one codebase.
   Ernest after review — check `git log --oneline` for the current tip, not
   a specific branch name; branch names here will go stale as work continues).
 - **`holo-desktop-cli`** — `https://github.com/hcompai/holo-desktop-cli`,
-  cloned locally at `repos/holo-desktop-cli` on the Mac this was built on.
-  This is H Company's open-source client that drives their closed-source
-  `hai-agent-runtime` binary (downloads itself on first run, sha256-verified)
-  over loopback. `claw-dj`'s `brain/agent.py` imports it as a library
-  (`holo_desktop.agent_client`), it isn't shelled out to as a CLI.
+  cloned locally at `repos/holo-desktop-cli` on the Mac this was built on
+  (and later on Linux, where its managed runtime turned out not to work).
+  H Company's open-source client drives the closed-source
+  `hai-agent-runtime` binary over loopback. `claw-dj` no longer uses it on
+  Linux; `brain/agent.py` imports `hai_agents`/`hai_agents_local` directly.
 - **`Monoclaw`** — private repo, `InServiceOfX/Monoclaw`. Contains an
   **earlier, more advanced attempt at this exact project** under
   `Projects/clawdj/` (2026-04-25 through 2026-07-08, branches
@@ -34,7 +34,7 @@ Both goals point at the same architecture, so there's one codebase.
   the next section. Monoclaw's copy is intentionally left to go stale;
   don't look there for the current state, look here.
 
-## Why holo-desktop-cli, not the `hai_agents.Client()` SDK snippet
+## holo-desktop-cli vs the `hai_agents.Client()` SDK — ended up needing both
 
 An H Company engineer's first answer to "how do I do local desktop control"
 was this SDK snippet:
@@ -49,13 +49,15 @@ agent = client.agents.create_agent(
 ```
 
 A second H Company engineer pointed at `holo-desktop-cli` instead. Both are
-legitimate paths to the same local-desktop capability (`holo` is almost
-certainly what that `user_device` environment talks to under the hood) —
-we went with `holo-desktop-cli` because it's the faster path to a working
-demo: `holo run "task"` one-liners, `holo doctor` for diagnosing setup, and
-a documented Python API (`holo_desktop.agent_client`) instead of hand-rolled
-SDK orchestration. If `create_agent` turns out to be a hard requirement
-somewhere, that's the fallback.
+legitimate paths to local-desktop control, so the first macOS build used
+`holo-desktop-cli`: `holo run "task"` one-liners, `holo doctor` for setup,
+and a documented Python API (`holo_desktop.agent_client`).
+
+On Linux, the SDK path became mandatory. `holo-desktop-cli`'s managed
+runtime binary is not published for Linux, while `hai-agents[desktop]`
+provides a pure-Python local bridge. `brain/agent.py` now follows the SDK
+pattern directly; this is the only path confirmed working on this machine.
+Keep holo in mind as a possible macOS/Windows path.
 
 Also learned: H Company's computer-use agent is a screenshot →
 vision-model → click/type/scroll loop with multi-second latency per action
@@ -111,7 +113,7 @@ MIDI message, confirm Mixxx reacts. The prior effort got all the way to
 
 ## Environment setup on a new machine
 
-### 1. `holo-desktop-cli` (H Company's local desktop agent)
+### 1a. macOS / Windows: `holo-desktop-cli`
 
 ```bash
 git clone https://github.com/hcompai/holo-desktop-cli
@@ -142,14 +144,44 @@ holo doctor         # checks binary/login/permissions
   repeatedly caused the agent to click the wrong app's menu bar. Worth
   keeping hands off the mouse/keyboard while a `holo run` is active.
 
+### 1b. Linux: `hai-agents[desktop]`
+
+`holo-desktop-cli` itself installs on Linux, but its closed-source
+`hai-agent-runtime` binary has no published Linux x86_64 build as of v0.0.2.
+The supported alternative from H Company's local-control docs is the
+pure-Python desktop bridge used by `brain/agent.py`:
+
+```bash
+pip install "hai-agents[cli,desktop]"  # [cli] supplies the hai command
+hai login                              # writes ~/.config/hai/.env
+hai whoami
+sudo apt install gnome-screenshot      # required by pyautogui on GNOME/X11
+```
+
+`holo login` and `hai login` are easy to conflate: they authenticate
+different H Company products and write different keys (`~/.holo/.env` and
+`~/.config/hai/.env`). A key valid for one may return 403 for the other. If
+Agent Platform calls return an explicit-deny 403, try a freshly generated
+key from `platform.hcompany.ai`; when escalating, include the request ID,
+timestamp, and endpoint.
+
+Creating an agent is not idempotent: a duplicate name returns 409.
+`brain/agent.py` handles this by fetching the existing agent. A session can
+also stall before dispatching any local command, so the Brain defaults to a
+180-second timeout rather than hanging forever.
+
+Confirmed environment: Ubuntu/GNOME on X11. Without `gnome-screenshot`,
+observations silently fail and the agent runs blind. The model may also try
+`hotkey("super")`, which pyautogui does not recognize; prompts that use
+direct clicks instead are more reliable. Wayland remains unverified.
+
 ### 2. `claw-dj`
 
 ```bash
 git clone git@github.com:InServiceOfX/claw-dj.git
 cd claw-dj
-git checkout brain-hands-architecture
 uv venv --python 3.13
-uv sync   # installs holo-desktop-cli (PyPI) + python-rtmidi + mutagen
+uv sync   # installs hai-agents[desktop], mido, python-rtmidi, and mutagen
 ```
 
 ### 3. Mixxx
@@ -175,7 +207,7 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | File | Purpose |
 | --- | --- |
 | `docs/ARCHITECTURE.md` | Brain/Hands design, MVP cut-list, judging-criteria mapping |
-| `brain/agent.py` | `Brain` class — spawns/attaches the holo runtime daemon, drives Mixxx's GUI via `holo_desktop.agent_client` |
+| `brain/agent.py` | `Brain` class — registers/reuses a `hai-agents` desktop agent and drives Mixxx through `hai_agents_local` (confirmed on Linux/X11) |
 | `brain/library.py` | `Track`/`Energy` types, `CRATE` loaded from `brain/data/crate.json` |
 | `brain/scan_library.py` | Scans a music directory's ID3 tags (mutagen) into the crate cache |
 | `brain/sync_mixxx_analysis.py` | Merges Mixxx's analyzed bpm/key (read from its own DB) into the crate cache |
@@ -184,7 +216,7 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `hands/midi_engine.py` | MIDI execution stub via `python-rtmidi`, made-up note/CC map — **superseded by the ported code below, not yet retired** |
 | `hands/mixxx_mapping/` | Real mapping (`clawdj.midi.xml`/`.js`) — **live-validated 2026-07-11**: enabled in Mixxx, commands audibly move decks, beat-tick feedback flows back |
 | `core-rust/` | Rust workspace (`clawdj` lib + `clawdj-cli`) — commands, queue, **plus the real-time layer** (`live.rs`): `BeatClock` reads Mixxx's live beat ticks, `clawdj monitor` shows live BPM, `clawdj transition --from 1 --to 2 --beats 16` does a measured-BPM, beat-anchored smoothstep crossfade (validated live: measured 91.47 BPM, 10.5s fade = exactly 16 beats) |
-| `brain/set_player.py` | Short-set orchestrator: holo (H Company agent) visibly loads each next track via the GUI while `clawdj transition` mixes beat-accurately; BPM-chained set planning; `--no-holo` for manual-load dry runs |
+| `brain/set_player.py` | Short-set orchestrator: the H Company agent visibly loads each next track via the GUI while `clawdj transition` mixes beat-accurately; BPM-chained set planning; `--no-agent` for manual-load dry runs (`--no-holo` remains an alias) |
 | `agent/midi_bridge.py` | Ported Python MIDI bridge (`mido`-based), matches the real mapping's note/CC map |
 | `agent/hermes-skill/SKILL.md` | Ported Hermes agent-skill definition for a dedicated clawdj dev session |
 | `shared/commands.py` | Brain→Hands command schema (intent only, no MIDI/timing) — not yet wired to either MIDI implementation |
@@ -281,10 +313,10 @@ interactive wizard — run with Ernest present. `holo install nemoclaw`
 ## Known gaps / next steps, roughly in priority order
 
 1. **Run the full set-player demo end to end**
-   (`uv run python -m brain.set_player --tracks 3 --seconds 45`) with holo
-   doing the loads — each piece is validated but the whole loop hasn't run
-   attended yet. holo's GUI reliability is the weak link (dock misclicks,
-   focus loss); `--no-holo` is the fallback.
+   (`uv run python -m brain.set_player --tracks 3 --seconds 45`) with the
+   hai-agents desktop bridge doing the loads — each piece is validated but
+   the whole loop has not run attended yet. GUI reliability is the weak
+   link (dock misclicks, focus loss); `--no-agent` is the fallback.
 2. **Linux port + NemoClaw/vLLM** — follow `docs/LINUX_PORT.md`.
 3. **Retire the superseded Python MIDI stubs** — `hands/midi_engine.py`
    (made-up note/CC map) and possibly `agent/midi_bridge.py` are both

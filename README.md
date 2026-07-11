@@ -28,13 +28,13 @@ idea — see [docs/prior-research/](docs/prior-research/) for provenance and
 ## Setup
 
 See [docs/HANDOFF.md](docs/HANDOFF.md#environment-setup-on-a-new-machine)
-for the full walkthrough (holo-desktop-cli install + login, Mixxx, music
+for the full walkthrough (H Company SDK login, Mixxx, music
 library). Short version:
 
 ```
 uv venv --python 3.13
 uv sync
-holo login   # from the holo-desktop-cli checkout — see HANDOFF.md
+hai login    # from hai-agents[cli] — see HANDOFF.md
 ```
 
 ## Status

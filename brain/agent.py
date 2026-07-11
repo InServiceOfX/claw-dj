@@ -1,40 +1,83 @@
-"""The H Company computer-use agent, driven locally through holo-desktop-cli
-(https://github.com/hcompai/holo-desktop-cli). Drives Mixxx's actual GUI for
-anything that isn't beat-critical (browse library, load a track to a deck,
-react to a request) and emits shared.commands.Command objects for Hands to
-execute for anything that is.
+"""The H Company computer-use agent, driven through the hai-agents SDK
+(https://pypi.org/project/hai-agents/) in local-desktop mode. Drives Mixxx's
+actual GUI for anything that isn't beat-critical (browse library, load a
+track to a deck, react to a request) and emits shared.commands.Command
+objects for Hands to execute for anything that is.
 
-Needs `holo login` run once on this machine first (see holo-desktop-cli's
-README) — this talks to the same hai-agent-runtime daemon `holo run` uses,
-over loopback, via holo_desktop.agent_client. No shelling out to the CLI.
+Needs `hai login` run once on this machine first — separate from
+holo-desktop-cli's `holo login`; the two commands write different API keys
+to different files (~/.config/hai/.env vs ~/.holo/.env), one per H Company
+product (Agent Platform vs Models API).
+
+Originally built on holo-desktop-cli, but its closed-source
+hai-agent-runtime binary has no published Linux build yet. This uses the
+hai-agents[desktop] SDK instead: a pure-Python local bridge
+(hai_agents_local, via pyautogui/python-xlib) that drives the screen
+in-process, no daemon binary required. Confirmed working on Linux X11
+(GNOME) after installing gnome-screenshot, which pyautogui's Linux
+screenshot backend needs.
 """
 from __future__ import annotations
 
-from holo_desktop.agent_client import AgentApiClient, AgentDaemon, SpawnConfig, ensure_running
-from holo_desktop.agent_client.requests import build_session_request
-from holo_desktop.settings import load_holo_settings
+import os
+from pathlib import Path
+
+from dotenv import dotenv_values
+from hai_agents import AsyncClient
+from hai_agents.core.api_error import ApiError
+from hai_agents_local import stop_bridges
 
 from brain.library import Energy, Track, find_next
 from shared.commands import Command, LoadTrack
 
-DEFAULT_AGENT_API_PORT = 18795
+AGENT_NAME = "claw-dj-brain"
+DEFAULT_MAX_STEPS = 20
+DEFAULT_MAX_TIME_S = 180.0
+
+# Same key/file `hai login` writes to (~/.config/hai/.env). Read directly
+# instead of the hai-agents CLI's own credential helper, which lives in an
+# internal module (hai_agents_common) not exposed by the `desktop` extra.
+_HAI_ENV_PATH = (
+    Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+    / "hai"
+    / ".env"
+)
+
+
+def _resolve_api_key() -> str | None:
+    if key := os.environ.get("HAI_API_KEY"):
+        return key
+    return dotenv_values(_HAI_ENV_PATH).get("HAI_API_KEY")
 
 
 class Brain:
-    def __init__(self, *, port: int = DEFAULT_AGENT_API_PORT):
+    def __init__(self) -> None:
         self._current: Track | None = None
-        self._port = port
-        self._daemon: AgentDaemon | None = None
+        self._client: AsyncClient | None = None
+        self._agent = None
 
     async def __aenter__(self) -> Brain:
-        settings = load_holo_settings()
-        self._daemon = await ensure_running(SpawnConfig(port=self._port), settings=settings)
+        self._client = AsyncClient(api_key=_resolve_api_key())
+        try:
+            self._agent = await self._client.agents.create_agent(
+                name=AGENT_NAME,
+                description="Drives Mixxx's GUI on this machine for claw-dj.",
+                environments=[
+                    {"id": "this-machine", "kind": "desktop", "host": "user_device"}
+                ],
+            )
+        except ApiError as error:
+            if error.status_code != 409:
+                raise
+            self._agent = await self._client.agents.get_agent(AGENT_NAME)
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:
-        if self._daemon is not None:
-            await self._daemon.aclose()
-            self._daemon = None
+        # Local bridges run on daemon threads (hai_agents_local.manager); stop
+        # them explicitly because Brain may live inside a longer-running process.
+        stop_bridges()
+        self._client = None
+        self._agent = None
 
     def decide_next(self, requested_energy: Energy) -> Command | None:
         track = find_next(self._current, requested_energy)
@@ -58,13 +101,14 @@ class Brain:
     async def _run_task(
         self, task: str, *, max_steps: int | None = None, max_time_s: float | None = None
     ) -> str | dict:
-        if self._daemon is None:
+        if self._client is None or self._agent is None:
             raise RuntimeError("Brain must be entered via `async with Brain() as brain:` first")
-        request = build_session_request(task=task, max_steps=max_steps, max_time_s=max_time_s)
-        async with AgentApiClient(self._daemon.base_url, self._daemon.token) as client:
-            stream = client.stream(await client.create_session(request))
-            async for _event in stream.events():
-                pass
-            if stream.error:
-                raise RuntimeError(f"holo task failed: {stream.error}")
-            return stream.answer
+        result = await self._client.run_session(
+            agent=self._agent,
+            messages=task,
+            max_steps=max_steps or DEFAULT_MAX_STEPS,
+            timeout_seconds=max_time_s or DEFAULT_MAX_TIME_S,
+        )
+        if result.error:
+            raise RuntimeError(f"hai-agents task failed: {result.error}")
+        return result.answer

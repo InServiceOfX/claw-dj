@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "Autonomous hip-hop DJ: H Company agent as brain, MIDI engine as hands"
 requires-python = ">=3.13"
 dependencies = [
-    "holo-desktop-cli",
+    "hai-agents[desktop]",
+    "mido",
     "mutagen>=1.48.1",
+    "python-dotenv",
     "python-rtmidi",
 ]
 
