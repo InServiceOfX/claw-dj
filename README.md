@@ -10,20 +10,25 @@ the H Company computer-use agent (`brain/`) makes judgment calls and visibly
 drives Mixxx's GUI; a deterministic MIDI engine (`hands/`) executes anything
 beat-critical, because a screenshot-loop agent is too slow for that.
 
+- **Picking up this project on a new machine?** Start with
+  [docs/HANDOFF.md](docs/HANDOFF.md) — full environment setup, what's built,
+  what's in progress, known gaps.
+- **Hackathon context** (event rules, links, submission requirements):
+  [docs/HACKATHON.md](docs/HACKATHON.md).
+
 ## Setup
+
+See [docs/HANDOFF.md](docs/HANDOFF.md#environment-setup-on-a-new-machine)
+for the full walkthrough (holo-desktop-cli install + login, Mixxx, music
+library). Short version:
 
 ```
 uv venv --python 3.13
-source .venv/bin/activate
-uv pip install -e .
-export HAI_API_KEY="hk-..."   # from platform.hcompany.ai
+uv sync
+holo login   # from the holo-desktop-cli checkout — see HANDOFF.md
 ```
-
-Mixxx must be running locally with the `claw-dj` controller mapping loaded
-(see `hands/mixxx_mapping/README.md` — not written yet, do this first on
-hackathon day).
 
 ## Status
 
-Scaffolding only — command schema and module layout are in place, nothing
-is wired to a real Mixxx instance yet.
+See [docs/HANDOFF.md](docs/HANDOFF.md#whats-built-so-far) — actively being
+built during the hackathon, updated as work progresses.
