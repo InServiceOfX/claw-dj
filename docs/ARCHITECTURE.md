@@ -27,8 +27,12 @@ Responsibilities:
   decision to Hands as a command
 - Toggle non-time-critical GUI state: FX panel, filters, browser view
 
-Built on `hai-agents` (H Company SDK). This is the part that's actually on screen
-during the demo — judges need to see it act, not just emit JSON.
+Built on [`holo-desktop-cli`](https://github.com/hcompai/holo-desktop-cli)'s
+local desktop runtime (`holo_desktop.agent_client`), talking to the same
+`hai-agent-runtime` daemon `holo run` uses, over loopback — no vision-loop
+round-trip through a cloud browser. This is the part that's actually on
+screen during the demo — judges need to see it act, not just emit JSON.
+Requires `holo login` once on the demo machine first.
 
 ## Hands — deterministic execution engine
 

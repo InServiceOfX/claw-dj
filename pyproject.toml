@@ -4,10 +4,13 @@ version = "0.1.0"
 description = "Autonomous hip-hop DJ: H Company agent as brain, MIDI engine as hands"
 requires-python = ">=3.13"
 dependencies = [
-    "hai-agents",
+    "holo-desktop-cli",
     "python-rtmidi",
 ]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["brain", "hands", "shared"]
