@@ -182,8 +182,9 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `brain/build_demo_subset.py` | Picks a curated subset from the crate, writes `.m3u` for one-shot Mixxx import |
 | `hands/beatgrid.py` | Reads bpm from Mixxx's DB for a given track path (schema confirmed against a real install) |
 | `hands/midi_engine.py` | MIDI execution stub via `python-rtmidi`, made-up note/CC map — **superseded by the ported code below, not yet retired** |
-| `hands/mixxx_mapping/` | Real mapping (`clawdj.midi.xml`/`.js`), ported from prior work — installed on this machine, not yet live-validated |
-| `core-rust/` | Ported Rust workspace (`clawdj` lib + `clawdj-cli`) — builds, 5/5 tests pass, `cargo run -p clawdj-cli -- setup` confirms it sees the real MIDI ports |
+| `hands/mixxx_mapping/` | Real mapping (`clawdj.midi.xml`/`.js`) — **live-validated 2026-07-11**: enabled in Mixxx, commands audibly move decks, beat-tick feedback flows back |
+| `core-rust/` | Rust workspace (`clawdj` lib + `clawdj-cli`) — commands, queue, **plus the real-time layer** (`live.rs`): `BeatClock` reads Mixxx's live beat ticks, `clawdj monitor` shows live BPM, `clawdj transition --from 1 --to 2 --beats 16` does a measured-BPM, beat-anchored smoothstep crossfade (validated live: measured 91.47 BPM, 10.5s fade = exactly 16 beats) |
+| `brain/set_player.py` | Short-set orchestrator: holo (H Company agent) visibly loads each next track via the GUI while `clawdj transition` mixes beat-accurately; BPM-chained set planning; `--no-holo` for manual-load dry runs |
 | `agent/midi_bridge.py` | Ported Python MIDI bridge (`mido`-based), matches the real mapping's note/CC map |
 | `agent/hermes-skill/SKILL.md` | Ported Hermes agent-skill definition for a dedicated clawdj dev session |
 | `shared/commands.py` | Brain→Hands command schema (intent only, no MIDI/timing) — not yet wired to either MIDI implementation |
@@ -227,21 +228,46 @@ the real tempo on hip-hop/rap) rather than the track's actual BPM — worth
 eyeballing against the actual songs before scheduling beat-accurate moves
 against them.
 
+## Live-validated 2026-07-11 (the loop is closed)
+
+The gap that stalled the April and July prior efforts is done: mapping
+enabled in Mixxx (`[clawdj] init` in its log), `clawdj cmd play` audibly
+started a deck, `clawdj demo-juggle` beat-juggled two copies of "Drop It
+Like It's Hot", and the new real-time layer measured live BPM off Mixxx's
+beat-tick feedback and executed a beat-anchored 16-beat crossfade
+(measured 91.47 BPM → 10.5s fade, exactly right). Two operational gotchas
+worth knowing:
+
+- A deck parked at end-of-track accepts `play` but emits no beats — send
+  `cue` first (set_player does this).
+- The demo-* subcommands originally created a *new* virtual MIDI port and
+  demanded a Mixxx restart; fixed to attach to the live port instead
+  (commit `a282541`). Don't reintroduce `create_virtual` on macOS.
+
+## NemoClaw (Nvidia challenge) status
+
+Source-installed on the Mac from `repos/NemoClaw` (`npm install` →
+`nemoclaw v0.0.80` linked on PATH). Integration path researched and
+documented in `docs/LINUX_PORT.md` §5: serve H Company's open-weight
+Holo3 via vLLM on the NVIDIA box, `nemoclaw onboard` with the
+"Other OpenAI-compatible endpoint" provider → the sandboxed agent runs on
+H Company models through NemoClaw's routed inference. Onboarding is an
+interactive wizard — run with Ernest present. `holo install nemoclaw`
+(sandbox bridge MCP) is the optional extra leg, untested.
+
 ## Known gaps / next steps, roughly in priority order
 
-1. **Live-validate the mapping.** In Mixxx: Preferences → Controllers →
-   "IAC Driver clawdj" → Enabled → Load Mapping → "clawdj" → Apply. Then
-   send one real command (`cargo run -p clawdj-cli -- cmd '{"op":"play","deck":1}'`
-   with a track already loaded, or use `agent/midi_bridge.py`) and confirm
-   Mixxx reacts. This is the single biggest gap between "agent can open
-   Mixxx" and "agent can actually DJ," and it's been "one step away" twice
-   before (April and July) without anyone closing it.
-2. **Reconcile the two hands implementations** — retire `hands/midi_engine.py`
-   in favor of `agent/midi_bridge.py`/`core-rust/` (or explicitly decide to
-   keep both for a reason), and wire `shared/commands.py`'s dispatch to
-   whichever wins.
-3. `Track.energy` is still a placeholder (`MEDIUM` for everything scanned)
-   — no LOW/HIGH/PEAK tagging exists. Either hand-curate energy for the
-   ~30-track demo set, or decide it's out of scope for the hackathon demo.
-4. `brain/agent.py`'s `_next_free_deck()` is hardcoded to `2` — no real
-   deck-state tracking.
+1. **Run the full set-player demo end to end**
+   (`uv run python -m brain.set_player --tracks 3 --seconds 45`) with holo
+   doing the loads — each piece is validated but the whole loop hasn't run
+   attended yet. holo's GUI reliability is the weak link (dock misclicks,
+   focus loss); `--no-holo` is the fallback.
+2. **Linux port + NemoClaw/vLLM** — follow `docs/LINUX_PORT.md`.
+3. **Retire the superseded Python MIDI stubs** — `hands/midi_engine.py`
+   (made-up note/CC map) and possibly `agent/midi_bridge.py` are both
+   superseded by `core-rust/`; `shared/commands.py` isn't wired to anything.
+4. `Track.energy` is still a placeholder (`MEDIUM` for everything scanned);
+   `brain/agent.py`'s `_next_free_deck()` is hardcoded — set_player tracks
+   deck alternation itself instead.
+5. Double-time BPM suspects ("Don Doggy" 149, "Trust Me" ~160) — set_player
+   sidesteps them by BPM-chaining, but verify before juggling on them.
