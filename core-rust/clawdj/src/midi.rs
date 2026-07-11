@@ -1,11 +1,16 @@
 use anyhow::{Context, Result, anyhow};
-use midir::{MidiInput, MidiOutput, MidiOutputConnection, MidiOutputPort};
+use midir::{
+    Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection, MidiOutputPort,
+};
 use once_cell::sync::Lazy;
 
 use crate::command::Operation;
 
 pub const MIDI_NOTE_ON_STATUS: u8 = 0x9F;
 pub const MIDI_CONTROL_CHANGE_STATUS: u8 = 0xBF;
+// Feedback notes the mapping's <outputs> emit on Mixxx's beat_active edge.
+pub const BEAT_TICK_NOTE_DECK1: u8 = 0x40;
+pub const BEAT_TICK_NOTE_DECK2: u8 = 0x41;
 
 static MIDI_TARGET_HINTS: Lazy<Vec<&'static str>> =
     Lazy::new(|| vec!["IAC Driver clawdj", "clawdj"]);
@@ -95,6 +100,40 @@ pub fn open_output_port() -> Result<MidiOutputConnection> {
         .ok_or_else(|| anyhow!("no MIDI output port matching clawdj was found"))?;
 
     connect_output_port(midi_out, &port)
+}
+
+/// Open the clawdj port for input and stream every incoming message to `callback`.
+///
+/// The IAC bus loops our own sent commands back to us alongside Mixxx's
+/// feedback, so callers must filter (feedback notes/CCs live at 0x40+).
+pub fn open_input_port<F>(callback: F) -> Result<MidiInputConnection<()>>
+where
+    F: FnMut(&[u8]) + Send + 'static,
+{
+    let mut midi_in = MidiInput::new("clawdj-cli-in").context("failed to initialize MIDI input")?;
+    midi_in.ignore(Ignore::None);
+    let ports = midi_in.ports();
+
+    let port = ports
+        .iter()
+        .find(|candidate| {
+            midi_in
+                .port_name(candidate)
+                .map(|name| port_matches(&name))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .ok_or_else(|| anyhow!("no MIDI input port matching clawdj was found"))?;
+
+    let mut callback = callback;
+    midi_in
+        .connect(
+            &port,
+            "clawdj-cli-in",
+            move |_timestamp, bytes, ()| callback(bytes),
+            (),
+        )
+        .map_err(|error| anyhow!("failed to open MIDI input port: {error}"))
 }
 
 pub fn send_message(connection: &mut MidiOutputConnection, message: &MidiMessage) -> Result<()> {

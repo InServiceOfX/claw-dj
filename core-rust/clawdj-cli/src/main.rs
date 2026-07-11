@@ -1,4 +1,8 @@
-use std::{path::PathBuf, thread, time::Duration};
+use std::{
+    path::PathBuf,
+    thread,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -26,6 +30,21 @@ enum Commands {
     },
     Cmd {
         json: String,
+    },
+    /// Print live beat ticks + measured BPM from Mixxx's feedback bus.
+    Monitor {
+        #[arg(long, default_value_t = 10)]
+        seconds: u64,
+    },
+    /// Beat-anchored transition: measure the outgoing deck's live BPM, start
+    /// the incoming deck on a beat, sync it, crossfade over N beats.
+    Transition {
+        #[arg(long)]
+        from: Deck,
+        #[arg(long)]
+        to: Deck,
+        #[arg(long, default_value_t = 16)]
+        beats: u32,
     },
     DemoMix,
     DemoTransition,
@@ -60,6 +79,8 @@ fn main() -> Result<()> {
                 serde_json::from_str(&json).context("failed to parse command JSON")?;
             run_operation(command.into_operation()?)
         }
+        Commands::Monitor { seconds } => run_monitor(seconds),
+        Commands::Transition { from, to, beats } => run_transition(from, to, beats),
         Commands::DemoMix => run_demo_mix(),
         Commands::DemoTransition => run_demo_transition(),
         Commands::DemoJuggle => run_demo_juggle(),
@@ -96,6 +117,53 @@ fn run_operation(operation: clawdj::Operation) -> Result<()> {
 
     let message = operation.to_message();
     send_message(&mut connection, &message)
+}
+
+fn run_monitor(seconds: u64) -> Result<()> {
+    let clock = clawdj::BeatClock::start()?;
+    println!("listening for beat ticks for {seconds}s (start a deck if silent)...");
+
+    let deadline = Instant::now() + Duration::from_secs(seconds);
+    let mut last_tick: [Option<Instant>; 2] = [None, None];
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        let Ok(tick) = clock_next_any(&clock, remaining) else {
+            break;
+        };
+        let slot = usize::from(tick.deck - 1);
+        let bpm_note = match last_tick[slot] {
+            Some(previous) => {
+                let gap = tick.at.duration_since(previous).as_secs_f64();
+                format!("{:6.2} BPM", 60.0 / gap)
+            }
+            None => "  (first)".to_owned(),
+        };
+        last_tick[slot] = Some(tick.at);
+        println!("deck {}  beat  {bpm_note}", tick.deck);
+    }
+    Ok(())
+}
+
+// The monitor wants ticks from either deck; BeatClock::next_beat filters to
+// one, so peel ticks off directly via a throwaway single-deck wait per deck.
+fn clock_next_any(clock: &clawdj::BeatClock, timeout: Duration) -> Result<clawdj::BeatTick> {
+    clock.next_any(timeout)
+}
+
+fn run_transition(from: Deck, to: Deck, beats: u32) -> Result<()> {
+    let clock = clawdj::BeatClock::start()?;
+    let mut connection = open_output_port()?;
+    println!(
+        "transition deck {} -> deck {} over {beats} beats (measuring live BPM...)",
+        from.as_u8(),
+        to.as_u8()
+    );
+    let report = clawdj::transition(&mut connection, &clock, from, to, beats)?;
+    println!(
+        "done: measured {:.2} BPM, faded over {:.1}s",
+        report.measured_bpm,
+        report.fade.as_secs_f64()
+    );
+    Ok(())
 }
 
 fn run_demo_mix() -> Result<()> {

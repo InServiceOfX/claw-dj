@@ -51,6 +51,8 @@ pub enum Operation {
     Play { deck: Deck },
     Pause { deck: Deck },
     Cue { deck: Deck },
+    Sync { deck: Deck },
+    Volume { deck: Deck, value: u8 },
     Crossfade { value: u8 },
 }
 
@@ -62,6 +64,8 @@ impl Operation {
             Self::Play { deck } => MidiMessage::note_on(deck.play_note(), 0x7F),
             Self::Pause { deck } => MidiMessage::note_on(deck.pause_note(), 0x7F),
             Self::Cue { deck } => MidiMessage::note_on(deck.cue_note(), 0x7F),
+            Self::Sync { deck } => MidiMessage::note_on(deck.sync_note(), 0x7F),
+            Self::Volume { deck, value } => MidiMessage::control_change(deck.volume_cc(), value),
             Self::Crossfade { value } => MidiMessage::control_change(0x00, value),
         }
     }
@@ -95,6 +99,20 @@ impl Deck {
             Self::Two => 0x07,
         }
     }
+
+    const fn sync_note(self) -> u8 {
+        match self {
+            Self::One => 0x08,
+            Self::Two => 0x09,
+        }
+    }
+
+    const fn volume_cc(self) -> u8 {
+        match self {
+            Self::One => 0x01,
+            Self::Two => 0x02,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +141,15 @@ impl JsonCommand {
             }),
             "cue" => Ok(Operation::Cue {
                 deck: self.deck.ok_or_else(|| anyhow!("cue requires deck"))?,
+            }),
+            "sync" => Ok(Operation::Sync {
+                deck: self.deck.ok_or_else(|| anyhow!("sync requires deck"))?,
+            }),
+            "volume" => Ok(Operation::Volume {
+                deck: self.deck.ok_or_else(|| anyhow!("volume requires deck"))?,
+                value: self
+                    .value
+                    .ok_or_else(|| anyhow!("volume requires value (0-127)"))?,
             }),
             "crossfade" => Ok(Operation::Crossfade {
                 value: self.crossfade_value()?,
@@ -173,6 +200,22 @@ mod tests {
             (Operation::Pause { deck: Deck::Two }, [0x9F, 0x05, 0x7F]),
             (Operation::Cue { deck: Deck::One }, [0x9F, 0x06, 0x7F]),
             (Operation::Cue { deck: Deck::Two }, [0x9F, 0x07, 0x7F]),
+            (Operation::Sync { deck: Deck::One }, [0x9F, 0x08, 0x7F]),
+            (Operation::Sync { deck: Deck::Two }, [0x9F, 0x09, 0x7F]),
+            (
+                Operation::Volume {
+                    deck: Deck::One,
+                    value: 0x7F,
+                },
+                [0xBF, 0x01, 0x7F],
+            ),
+            (
+                Operation::Volume {
+                    deck: Deck::Two,
+                    value: 0x40,
+                },
+                [0xBF, 0x02, 0x40],
+            ),
             (Operation::Crossfade { value: 0x64 }, [0xBF, 0x00, 0x64]),
         ];
 
