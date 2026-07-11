@@ -138,7 +138,7 @@ folder naming (`.torrent` files, "by Hillside" tags were spotted in the
 source directory), not something to commit to a public hackathon repo.
 Regenerate it locally with the scripts above.
 
-## Demo subset in progress
+## Demo subset — analyzed, real BPM/key in hand
 
 Criteria chosen this session: **Snoop Dogg-centric, ~30 tracks, studio
 albums only** (excludes mixtapes/soundtracks/promo singles/interludes/skits;
@@ -147,22 +147,28 @@ early albums are tagged with his original stage name). Generated via
 `brain/build_demo_subset.py`, output at `brain/data/demo_set.{json,m3u}`
 (gitignored — rerun the script to regenerate).
 
-**As of this doc being written, mid-session:** a `holo run` was in progress
-driving Mixxx to (1) import `demo_set.m3u` as a playlist via File → Import
-Playlist and (2) select-all + right-click → Analyze to kick off BPM/key
-analysis on the subset. It had successfully opened Mixxx and found the real
-menu bar, but was intermittently losing window focus to other apps
-mid-task (same focus-stealing issue noted above) and hadn't yet confirmed
-the import completed. **Check `holo doctor` / rerun the task / verify via**:
+**Status: done.** Three `holo run` attempts at driving Mixxx failed —
+first from losing window focus to other apps mid-task, then from a wrong
+UI target (the agent, and an early version of these instructions, assumed
+File → Import Playlist; Mixxx's actual path is **right-click "Playlists"
+in the sidebar → Import Playlist**, confirmed against the official manual:
+https://manual.mixxx.org/2.3/en/chapters/library.html). Given the repeated
+failures, Ernest did the import + select-all + right-click → Analyze by
+hand instead — a couple of clicks, faster than debugging the agent further.
+`brain/sync_mixxx_analysis.py` confirmed all 30/30 demo-subset tracks now
+have real bpm/key (e.g. "Gin And Juice" 94.62 BPM / Bbm, "Drop It Like
+It's Hot" 92 BPM / Cm).
 
-```bash
-uv run python -m brain.sync_mixxx_analysis
-```
+**Lesson for next time a playlist needs importing:** tell `holo` to
+right-click "Playlists" in the sidebar directly, don't send it hunting
+through menus.
 
-If it reports tracks matched with real bpm values, the import+analyze
-succeeded; if 0 matched, it didn't and needs a retry (or do it manually in
-Mixxx: File → Import Playlist → `brain/data/demo_set.m3u`, select all,
-right-click → Analyze).
+**One thing to sanity-check before relying on it for beat-juggling:**
+"Don Doggy" (149 BPM) and "Trust Me" (~160 BPM) look like they might be
+double-time detections (Mixxx's beat detector sometimes locks onto 2x/0.5x
+the real tempo on hip-hop/rap) rather than the track's actual BPM — worth
+eyeballing against the actual songs before scheduling beat-accurate moves
+against them.
 
 ## Known gaps / next steps, roughly in priority order
 
@@ -171,11 +177,10 @@ right-click → Analyze).
    preferences at it, confirm `hands/midi_engine.py`'s note/CC numbers
    actually move a deck. This is the biggest gap between "agent can open
    Mixxx" and "agent can actually DJ."
-2. Confirm the demo-subset import/analyze actually finished (see above).
-3. `Track.energy` is still a placeholder (`MEDIUM` for everything scanned)
+2. `Track.energy` is still a placeholder (`MEDIUM` for everything scanned)
    — no LOW/HIGH/PEAK tagging exists. Either hand-curate energy for the
    ~30-track demo set, or decide it's out of scope for the hackathon demo.
-4. `brain/agent.py`'s `_next_free_deck()` is hardcoded to `2` — no real
+3. `brain/agent.py`'s `_next_free_deck()` is hardcoded to `2` — no real
    deck-state tracking.
-5. Nothing in `hands/` has been exercised against a live Mixxx MIDI session
+4. Nothing in `hands/` has been exercised against a live Mixxx MIDI session
    yet — `midi_engine.py` is unverified beyond importing cleanly.
