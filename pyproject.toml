@@ -5,6 +5,7 @@ description = "Autonomous hip-hop DJ: H Company agent as brain, MIDI engine as h
 requires-python = ">=3.13"
 dependencies = [
     "holo-desktop-cli",
+    "mutagen>=1.48.1",
     "python-rtmidi",
 ]
 

@@ -30,3 +30,6 @@ __pycache__/
 # secrets
 .env
 *.pem
+
+# scanned personal media metadata — not for a public repo
+brain/data/
