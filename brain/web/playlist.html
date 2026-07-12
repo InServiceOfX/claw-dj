@@ -164,7 +164,15 @@
     el('library').addEventListener('change',toggle); el('selected').addEventListener('change',toggle);
     el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
-    el('export').addEventListener('click',async()=>{const result=await api('/api/export',{method:'POST'});el('notice').textContent=`Finalized ${result.count} tracks — ${result.m3u} is ready to import into Mixxx (right-click Playlists → Import Playlist). Next: analyze in Mixxx, then build the mix.`;});
+    el('export').addEventListener('click',async()=>{
+      const button=el('export');const original=button.textContent;button.disabled=true;
+      try{
+        const result=await api('/api/export',{method:'POST'});
+        button.textContent=`✓ Finalized ${result.count} tracks`;
+        el('notice').textContent=`Finalized ${result.count} tracks — ${result.m3u} is ready. Next: uv run python -m brain.enrich_set (bpm/key, lyrics, chroma, phrase cues), then build the mix.`;
+      }catch(error){button.textContent='Finalize failed';el('notice').textContent=error.message;}
+      setTimeout(()=>{button.textContent=original;button.disabled=false;},4000);
+    });
     const ENGINE_NAMES = {'nemoclaw':'NemoClaw · Nemotron','h-agent':'H Company · Holo','mix-graph':'Mix-graph (deterministic)','both':'both engines'};
     function pickRow(pick) {
       const already = pick.enabled ? ' <span class="already">already in set</span>' : '';

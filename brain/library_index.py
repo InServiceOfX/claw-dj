@@ -41,6 +41,25 @@ CREATE TABLE IF NOT EXISTS roots (
     added_at REAL NOT NULL,
     last_scan_at REAL
 );
+-- Per-track enrichment, filled only for curated/finalized sets (never the
+-- full crate) and only when missing — see brain/enrich_set.py.
+CREATE TABLE IF NOT EXISTS lyrics (
+    track_id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    fetched_at REAL NOT NULL,
+    synced INTEGER NOT NULL DEFAULT 0,
+    lyrics TEXT
+);
+CREATE TABLE IF NOT EXISTS chroma (
+    track_id TEXT PRIMARY KEY,
+    computed_at REAL NOT NULL,
+    fingerprint TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS phrases (
+    track_id TEXT PRIMARY KEY,
+    analyzed_at REAL NOT NULL,
+    payload TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS scan_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     running INTEGER NOT NULL DEFAULT 0,

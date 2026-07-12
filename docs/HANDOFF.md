@@ -601,6 +601,26 @@ that find new music rebuild `new_music_agent.json` automatically. Next
 stage to build: post-finalize "Create the mix" button — flavor presets
 (e.g. DJ showcase) + free-text mix description feeding build_mix_plan.
 
+### Post-finalize enrichment (2026-07-12, `brain/enrich_set.py`)
+
+Runs over the finalized playlist only, check-before-fetch at every step,
+persists into `library.sqlite3` (`lyrics`/`chroma`/`phrases` tables +
+bpm/key on `tracks`): muted-deck Mixxx bpm/key for whatever's missing;
+full lyrics from LRCLIB (free API, disk-cached); Rust `clawdj chroma`
+12-dim fingerprints per track, with `chroma_similarity.json` rewritten as
+the full-set pairwise cosine matrix (so ordering/plan techniques get real
+texture coverage, not the stale 12-track set); phrase/cue analysis into
+the DB + `phrase_analysis.json` export for the planner. First run on the
+48-track set: 48/48 enriched, 44 with lyrics (one miss is an instrumental).
+
+**Mixxx analysis-persistence gotcha, worse than the flush lag:** some
+tracks' engine analysis (bpm readable over the API) takes many MINUTES to
+land in `mixxxdb.sqlite` — clean quit does NOT force it, and a 45s settle
+before eject doesn't either; it seems to persist when a LATER track gets
+analyzed. If a track stays `bpm=0.0/beats NULL`, keep working and re-check
+a few minutes later, or right-click → Analyze in the GUI (always
+persists). Cost ~30 min on "In Da Club" before the row appeared on its own.
+
 **NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
 Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.
 
