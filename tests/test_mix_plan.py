@@ -27,6 +27,26 @@ class MixPlanTest(TestCase):
         self.assertEqual(tech["technique"], "sample_callback_blend")
         self.assertGreaterEqual(tech["transition_beats"], 16)
 
+    def test_pick_technique_prefers_blend_over_hard_cut(self) -> None:
+        # Same tempo, clashing key → filtered blend, not a slam cut.
+        tech = pick_technique(
+            {"bpm": 100.0, "key": "C"},
+            {"bpm": 100.5, "key": "F#"},
+            {"score": 0.4, "lyric_score": 0.0, "chroma_score": 0.0, "reasons": []},
+        )
+        self.assertEqual(tech["technique"], "key_clash_blend")
+        self.assertNotIn("hard_cut", tech["moves"])
+        self.assertGreaterEqual(tech["transition_beats"], 12)
+        # Moderate tempo gap → tempo_gap_blend, not hard cut.
+        gap = pick_technique(
+            {"bpm": 90.0, "key": "Am"},
+            {"bpm": 140.0, "key": "Am"},
+            {"score": 0.3, "lyric_score": 0.0, "chroma_score": 0.0, "reasons": []},
+        )
+        self.assertIn(gap["technique"], {"tempo_gap_blend", "half_time_or_cut"})
+        if gap["technique"] == "tempo_gap_blend":
+            self.assertNotIn("hard_cut", gap["moves"])
+
     def test_build_plan_has_instrument_map_and_transitions(self) -> None:
         tracks = [
             {

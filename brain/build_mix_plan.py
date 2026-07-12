@@ -47,7 +47,12 @@ def load_phrase_lookup(path: Path = DEFAULT_PHRASES) -> dict[str, dict]:
 
 
 def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
-    """Choose how to play Mixxx between two tracks — instrument vocabulary."""
+    """Choose how to play Mixxx between two tracks — instrument vocabulary.
+
+    Default bias (Ernest, hackathon set): *blend* most of the time. Abrupt
+    hard cuts are rare — reserved for extreme tempo gaps with no texture
+    support (a "drop" moment), not the everyday path.
+    """
     bpm_s, bpm_r = bpm_compatibility(left.get("bpm"), right.get("bpm"))
     key_s, key_r = key_compatibility(left.get("key"), right.get("key"))
     reasons = [r for r in (bpm_r, key_r) if r]
@@ -57,39 +62,54 @@ def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
     score = float((affinity or {}).get("score") or (0.45 * bpm_s + 0.35 * key_s))
 
     # Technique selection — map musical situation → Mixxx knobs/moves.
+    # Prefer longer crossfades; only hard_cut when the gap is truly ugly.
     if lineage or lyric > 0.2:
         technique = "sample_callback_blend"
-        beats = 24
+        beats = 28
         notes = "Hold the shared sample/hook in the blend; EQ-swap lows so the sample bed stays continuous."
         moves = ["eq_kill_out_low", "eq_boost_in_mid", "sync", "long_crossfade", "filter_open_in"]
     elif bpm_s >= 0.9 and key_s >= 0.85:
         technique = "smooth_blend"
-        beats = 16
-        notes = "Near-identical tempo + friendly key — classic long crossfade with light EQ."
+        beats = 20
+        notes = "Near-identical tempo + friendly key — long crossfade with light EQ."
         moves = ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"]
     elif bpm_s >= 0.9 and key_s < 0.5:
-        technique = "key_clash_cut"
-        beats = 8
-        notes = "Tempo works; key is rough — short cut + high-pass filter sweep to mask clash."
-        moves = ["sync", "filter_sweep_out", "quick_crossfade", "filter_reset"]
-    elif bpm_s < 0.5:
+        # Was a short cut — now a filtered blend so the key clash is masked
+        # without slamming the crossfader.
+        technique = "key_clash_blend"
+        beats = 16
+        notes = "Tempo works; key is rough — longer filter-sweep blend to mask the clash (not a hard cut)."
+        moves = ["sync", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"]
+    elif bpm_s < 0.35 and not lineage and chroma < 0.55:
+        # Rare hard cut: only when tempos are far apart and nothing else backs the pair.
         technique = "half_time_or_cut"
         beats = 4
-        notes = "Tempo gap large — try half/double feel or a hard cut on the phrase."
+        notes = "Extreme tempo gap with no texture/lineage support — phrase-anchored hard cut (use sparingly)."
         moves = ["rate_nudge_in", "hard_cut", "optional_loop_roll_out"]
+    elif bpm_s < 0.5:
+        technique = "tempo_gap_blend"
+        beats = 16
+        notes = "Tempo gap large — rate-nudge into a longer EQ/filter blend rather than a slam cut."
+        moves = ["rate_nudge_in", "sync", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"]
     elif chroma > 0.7:
         technique = "chroma_matched_blend"
-        beats = 16
+        beats = 20
         notes = "Chromagram similar (tonal bed) — trust a longer EQ blend even if keys differ slightly."
         moves = ["sync", "eq_kill_out_high", "crossfade", "eq_restore"]
     else:
         technique = "standard_blend"
-        beats = 12
-        notes = "Default instrument path: sync, mid scoop, crossfade."
-        moves = ["sync", "eq_dip_out_mid", "crossfade"]
+        beats = 16
+        notes = "Default instrument path: sync, mid scoop, longer crossfade."
+        moves = ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"]
 
-    # Showcase spice every few transitions when compatibility is high.
-    if score >= 0.75 and technique in {"smooth_blend", "sample_callback_blend", "chroma_matched_blend"}:
+    # Showcase spice every few transitions when compatibility is high —
+    # scratch preview only, never upgrades a blend into a hard cut.
+    if score >= 0.75 and technique in {
+        "smooth_blend",
+        "sample_callback_blend",
+        "chroma_matched_blend",
+        "standard_blend",
+    }:
         moves = ["optional_scratch_in", *moves]
         notes += " Optional scratch-in on the incoming deck before the fade."
 

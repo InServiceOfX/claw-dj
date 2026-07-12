@@ -215,6 +215,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     if bpm <= 0:
         raise RuntimeError(f"{out_g} reports no BPM")
     sync = "sync" in moves and technique != "half_time_or_cut"
+    # Hard cuts are rare by design — only explicit hard_cut move or the
+    # extreme-tempo half_time_or_cut technique (key_clash is now a blend).
     hard = technique in {"key_clash_cut", "half_time_or_cut"} or "hard_cut" in moves
 
     print(f"  anchoring on {out_g} beat ({bpm:.2f} BPM)")

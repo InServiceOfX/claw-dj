@@ -38,9 +38,12 @@ PROFILES: dict[str, MixProfile] = {
     "dj-showcase": MixProfile(
         name="dj-showcase",
         description=(
-            "Short, varied segments that highlight interesting parts and the "
-            "DJ's transition vocabulary — quicker cuts, frequent flourishes."
+            "Short, varied segments that highlight interesting parts — "
+            "mostly smooth blends (hard cuts rare), light flourishes."
         ),
+        # Slightly longer fades by default so most landings feel mixed, not cut.
+        transition_scale=1.25,
+        flourish_every=2,
     ),
     "club-set": MixProfile(
         name="club-set",
@@ -48,7 +51,7 @@ PROFILES: dict[str, MixProfile] = {
         seconds_per_track=75.0,
         ride_phrases_pattern=(3, 2, 3, 4, 2, 3),
         intro_entry_every=6,
-        transition_scale=1.5,
+        transition_scale=1.75,
         flourish_every=4,
     ),
     "warm-up": MixProfile(
