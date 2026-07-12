@@ -16,6 +16,7 @@ to +1.0 (right/deck2); volume is 0..1; play is 0/1.
 Usage (Mixxx running with --control-api-port 9995, tracks loaded):
     uv run python -m hands.transition --from 1 --to 2 --beats 16
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,6 +62,7 @@ def transition(
     beats: int = 16,
     port: int = DEFAULT_PORT,
     step_s: float = 0.02,
+    sync: bool = True,
 ) -> None:
     if from_deck == to_deck:
         raise ValueError("from_deck and to_deck must differ")
@@ -75,25 +77,37 @@ def transition(
     with MixxxControl(port=port) as mixxx:
         bpm = mixxx.get(out_group, "bpm")
         if bpm <= 0:
-            raise RuntimeError(f"{out_group} reports no bpm — is it playing an analyzed track?")
+            raise RuntimeError(
+                f"{out_group} reports no bpm — is it playing an analyzed track?"
+            )
         fade_s = beats * 60.0 / bpm
-        print(f"[transition] {out_group} @ {bpm:.1f} BPM -> {in_group}, {beats} beats = {fade_s:.1f}s fade")
+        print(
+            f"[transition] {out_group} @ {bpm:.1f} BPM -> {in_group}, {beats} beats = {fade_s:.1f}s fade"
+        )
 
         mixxx.set(in_group, "volume", 1.0)
 
         print("[transition] waiting for a beat to anchor on...")
         wait_for_next_beat(port, out_group)
         mixxx.set(in_group, "play", 1)
-        mixxx.set(in_group, "beatsync", 1)
-        print(f"[transition] {in_group} started + beat-synced, fading...")
+        if sync:
+            mixxx.set(in_group, "beatsync", 1)
+            print(f"[transition] {in_group} started + beat-synced, fading...")
+        else:
+            print(
+                f"[transition] {in_group} started on-beat without tempo sync, cutting..."
+            )
 
         start_pos = mixxx.get("[Master]", "crossfader")
         end_pos = crossfader_target(to_deck)
         t0 = time.monotonic()
         while True:
             progress = (time.monotonic() - t0) / fade_s
-            mixxx.set("[Master]", "crossfader",
-                      start_pos + (end_pos - start_pos) * smoothstep(progress))
+            mixxx.set(
+                "[Master]",
+                "crossfader",
+                start_pos + (end_pos - start_pos) * smoothstep(progress),
+            )
             if progress >= 1.0:
                 break
             time.sleep(step_s)

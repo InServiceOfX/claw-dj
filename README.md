@@ -13,6 +13,9 @@ beat-critical, because a screenshot-loop agent is too slow for that.
 - **Need a live two-track transition immediately?**
   [docs/MIX_TWO_TRACKS.md](docs/MIX_TWO_TRACKS.md) is the shortest attended
   runbook.
+- **Need the short hackathon set?**
+  [docs/QUICK_MIX_DEMO.md](docs/QUICK_MIX_DEMO.md) runs a six-track,
+  sample-lineage mix with optional H Company agent ordering.
 
 - **Picking up this project on a new machine?** Start with
   [docs/HANDOFF.md](docs/HANDOFF.md) — full environment setup, what's built,

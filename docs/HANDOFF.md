@@ -247,6 +247,7 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `brain/analyze_bpm.py` / `brain/analyze_via_mixxx.py` | Provisional librosa BPM analysis and deterministic Mixxx analysis for the lineage set |
 | `brain/playlist_editor.py` | Local browser UI for searching the crate, enabling/disabling tracks, applying the researched R&B/West Coast hit seed, and exporting a Mixxx playlist without dropping BPM/key metadata |
 | `brain/playlist.py` | Playlist selection persistence, normalized seed matching, and JSON/`.m3u8` export logic |
+| `brain/quick_mix.py` | H-agent-optional six-track sample-lineage planner and live Mixxx quick-mix runner |
 | `hands/beatgrid.py` | Reads bpm from Mixxx's DB for a given track path (schema confirmed against a real install) |
 | `hands/midi_engine.py` | MIDI execution stub via `python-rtmidi`, made-up note/CC map — **superseded by the ported code below, not yet retired** |
 | `hands/midi_port_server.py` | Owns Linux's virtual `clawdj` ALSA MIDI port and relays FIFO commands |
@@ -264,6 +265,10 @@ purpose** — it's derived from a personal media library with scene-rip-style
 folder naming (`.torrent` files, "by Hillside" tags were spotted in the
 source directory), not something to commit to a public hackathon repo.
 Regenerate it locally with the scripts above.
+
+The hackathon-length live path is documented in `docs/QUICK_MIX_DEMO.md`.
+It was validated on 2026-07-11 with one on-beat lineage cut and four
+beat-synced blends across six tracks; the final deck stopped cleanly.
 
 ## Demo subset — analyzed, real BPM/key in hand
 

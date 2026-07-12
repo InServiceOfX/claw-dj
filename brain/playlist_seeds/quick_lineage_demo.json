@@ -1,0 +1,68 @@
+[
+  {
+    "id": "warning",
+    "artist": "The Notorious B.I.G.",
+    "title": "Warning",
+    "cue_seconds": 6.0,
+    "sample_artist": "Isaac Hayes",
+    "sample_title": "Walk On By",
+    "sample_element": "guitar and strings loop",
+    "hook_phrase": "who is this paging me",
+    "research_url": "https://www.whosampled.com/Isaac-Hayes/Walk-on-By/sampled/"
+  },
+  {
+    "id": "full_clip",
+    "artist": "Gang Starr",
+    "title": "Full Clip",
+    "cue_seconds": 5.0,
+    "sample_artist": "Cal Tjader",
+    "sample_title": "Walk On By",
+    "sample_element": "main jazz loop from another cover of the same composition",
+    "hook_phrase": "I got a full clip",
+    "research_url": "https://www.whosampled.com/Gang-Starr/Full-Clip/"
+  },
+  {
+    "id": "g_thang",
+    "artist": "Dr. Dre",
+    "title": "Nuthin' But A \"G\" Thang",
+    "cue_seconds": 6.0,
+    "sample_artist": "Leon Haywood",
+    "sample_title": "I Want'a Do Something Freaky to You",
+    "sample_element": "bassline, guitar, and keys groove",
+    "hook_phrase": "one two three and to the four",
+    "research_url": "https://en.wikipedia.org/wiki/Nuthin%27_but_a_%27G%27_Thang"
+  },
+  {
+    "id": "juicy",
+    "artist": "The Notorious B.I.G.",
+    "title": "Juicy",
+    "cue_seconds": 0.0,
+    "sample_artist": "Mtume",
+    "sample_title": "Juicy Fruit",
+    "sample_element": "whole R&B groove",
+    "hook_phrase": "it was all a dream",
+    "research_url": "https://en.wikipedia.org/wiki/Juicy_Fruit_(Mtume_song)"
+  },
+  {
+    "id": "hypnotize",
+    "artist": "The Notorious B.I.G.",
+    "title": "Hypnotize",
+    "cue_seconds": 0.0,
+    "sample_artist": "Herb Alpert",
+    "sample_title": "Rise",
+    "sample_element": "jazz-funk bassline and groove",
+    "hook_phrase": "Biggie Biggie Biggie",
+    "research_url": "https://en.wikipedia.org/wiki/Rise_(instrumental)"
+  },
+  {
+    "id": "next_episode",
+    "artist": "Dr. Dre",
+    "title": "The Next Episode",
+    "cue_seconds": 0.0,
+    "sample_artist": "David McCallum",
+    "sample_title": "The Edge",
+    "sample_element": "orchestral guitar figure",
+    "hook_phrase": "the next episode",
+    "research_url": "https://www.whosampled.com/sample/266/Dr.-Dre-Snoop-Dogg-Nate-Dogg-Kurupt-The-Next-Episode-David-McCallum-The-Edge/"
+  }
+]
