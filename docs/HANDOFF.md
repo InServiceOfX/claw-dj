@@ -369,6 +369,26 @@ interactive wizard — run with Ernest present. `holo install nemoclaw`
 5. Double-time BPM suspects ("Don Doggy" 149, "Trust Me" ~160) — set_player
    sidesteps them by BPM-chaining, but verify before juggling on them.
 
+## Linux drive scan + transfer-safe scanning (2026-07-12, `feat/complete-scan-dedupe`)
+
+`brain.scan_library` is now safe to run against a drive with active
+downloads/copies: it skips sibling partial-download markers
+(`.part`/`.crdownload`/`.!qB`/`.aria2`), zero-byte placeholders, and files
+modified within `--min-age-seconds` (default 300), writing the skipped list
+to `brain/data/scan_skipped.json` for a later rescan. Records gain
+`duration_seconds` + `size_bytes`; `brain.catalog` reports duplicate groups
+(normalized artist+title, then split by duration ±4 s so every album's
+"Intro" doesn't collapse into one pile). `brain.analyze_via_mixxx` takes
+`--tracks <playlist.json>` so the muted-deck BPM/key analysis runs on any
+subset, not just the lineage set.
+
+Tag reads are threaded (`--workers`, default 8) — measured serial rate on
+the contended USB drive (`/media/ernest/E8D6-7CB8`, exFAT, downloads
+running) was ~1 file/s ≈ 3 h for the crate; threaded took 14.5 min.
+Result on the Linux box: **9,105 HipHop tracks, 540 artists, 627
+duration-confirmed duplicate groups, 2 files skipped mid-download**
+(`brain/data/{crate,catalog}.json`, gitignored as always).
+
 ## Playlist curator branch (2026-07-11)
 
 Work on `feat/playlist-curator-ui` adds a localhost playlist picker and a
