@@ -44,6 +44,16 @@
     .ingest { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px; margin-bottom:12px; border:1px solid var(--line); background:var(--panel); }
     .ingest h2 { margin-bottom:3px; }
     .ingest-detail { color:var(--muted); }
+    .brain { padding:14px; margin-bottom:12px; border:1px solid var(--line); background:var(--panel); }
+    .brain h2 { margin-bottom:3px; }
+    .brain-form { display:grid; grid-template-columns:minmax(240px,1fr) 190px 70px auto; gap:8px; margin-top:10px; }
+    .brain-detail { color:var(--muted); min-height:20px; margin-top:8px; }
+    .picks { margin-top:8px; border-top:1px solid var(--line); }
+    .pick { display:grid; grid-template-columns:26px minmax(0,1fr); align-items:center; gap:8px; padding:6px 2px; border-bottom:1px solid #ecece8; }
+    .pick input { width:16px; min-height:16px; accent-color:var(--green); }
+    .pick .already { color:var(--muted); font-size:12px; }
+    .picks-actions { margin-top:10px; display:flex; gap:8px; }
+    @media (max-width:850px) { .brain-form { grid-template-columns:1fr; } }
     @media (max-width:850px) {
       header { align-items:flex-start; padding:12px 14px; }
       main { padding:12px; }
@@ -61,6 +71,25 @@
     <div class="ingest">
       <div><h2>New music</h2><div class="ingest-detail" id="ingest-detail">Checking the library index…</div></div>
       <button id="scan">Check for new music</button>
+    </div>
+    <div class="brain">
+      <h2>Ask the DJ brain</h2>
+      <div class="ingest-detail">Describe the set you want; an agent picks candidates from the new music. You review before anything is added.</div>
+      <div class="brain-form">
+        <input id="brief" type="text" placeholder="e.g. recognizable 90s/2000s hits that mix with the current showcase" aria-label="Brief for the agent">
+        <select id="engine" aria-label="Agent engine">
+          <option value="nemoclaw">NemoClaw · Nemotron</option>
+          <option value="h-agent">H Company · Holo</option>
+        </select>
+        <input id="pick-count" type="number" min="3" max="50" value="20" aria-label="How many picks">
+        <button id="ask" class="primary">Ask</button>
+      </div>
+      <div class="brain-detail" id="brain-detail"></div>
+      <div class="picks" id="picks" hidden></div>
+      <div class="picks-actions" id="picks-actions" hidden>
+        <button id="apply-picks" class="primary">Add checked to set</button>
+        <button id="clear-picks">Dismiss</button>
+      </div>
     </div>
     <div class="toolbar">
       <input id="search" type="search" placeholder="Search title, artist, or path" aria-label="Search tracks">
@@ -134,8 +163,44 @@
     el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('export').addEventListener('click',async()=>{const result=await api('/api/export',{method:'POST'});el('notice').textContent=`Exported ${result.count} tracks to ${result.m3u} and ${result.json}.`;});
+    function renderPicks(data) {
+      const picks = data.picks || [];
+      el('picks').hidden = el('picks-actions').hidden = picks.length === 0;
+      el('picks').innerHTML = picks.map(pick => {
+        const already = pick.enabled ? ' <span class="already">already in set</span>' : '';
+        const missing = pick.in_library ? '' : ' <span class="already">not in crate</span>';
+        const checked = pick.enabled || !pick.in_library ? '' : 'checked';
+        const disabled = pick.enabled || !pick.in_library ? 'disabled' : '';
+        return `<label class="pick"><input type="checkbox" data-pick="${esc(pick.track_id)}" ${checked} ${disabled}><span><span class="title">${esc(pick.title)}</span> <span class="artist">— ${esc(pick.artist)}</span>${already}${missing}</span></label>`;
+      }).join('');
+      el('brain-detail').textContent = `${data.engine === 'h-agent' ? 'H Company Holo' : 'NemoClaw Nemotron'} returned ${picks.length} candidates for: “${data.brief}”. Uncheck any you don't want.`;
+    }
+    async function pollBrain() {
+      const data = await api('/api/brain');
+      if (data.running) { el('brain-detail').textContent = `Asking ${data.engine === 'h-agent' ? 'H Company Holo' : 'NemoClaw Nemotron'}… (this takes a minute or two)`; return data; }
+      if (data.error) { el('brain-detail').textContent = `Agent call failed: ${data.error}`; el('ask').disabled = false; return data; }
+      if (data.picks) { renderPicks(data); el('ask').disabled = false; }
+      return data;
+    }
+    el('ask').addEventListener('click',async()=>{
+      const brief = el('brief').value.trim();
+      if (!brief) { el('brain-detail').textContent = 'Write a brief first — what kind of set do you want?'; return; }
+      el('ask').disabled = true; el('picks').hidden = el('picks-actions').hidden = true;
+      await api('/api/brain/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief,engine:el('engine').value,count:Number(el('pick-count').value)||20})});
+      const poll = setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);
+      await pollBrain();
+    });
+    el('apply-picks').addEventListener('click',async()=>{
+      const ids=[...document.querySelectorAll('#picks input[data-pick]:checked')].map(box=>box.dataset.pick);
+      if(!ids.length){el('brain-detail').textContent='Nothing checked to add.';return;}
+      const result=await api('/api/brain/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:ids})});
+      el('notice').textContent=`Added ${result.added} agent picks to the set (${result.selected_count} total). Analyze new tracks in Mixxx before performing.`;
+      el('picks').hidden=el('picks-actions').hidden=true;el('brain-detail').textContent='';
+      await Promise.all([loadMeta(),loadLibrary(),loadSelected()]);
+    });
+    el('clear-picks').addEventListener('click',()=>{el('picks').hidden=el('picks-actions').hidden=true;el('brain-detail').textContent='';});
     el('scan').addEventListener('click',async()=>{await api('/api/ingest/scan',{method:'POST'});el('notice').textContent='Looking for new or changed music. Existing files will not be reopened.';const poll=setInterval(async()=>{const status=await loadIngest();if(!status.running){clearInterval(poll);await Promise.all([loadMeta(),loadLibrary(),loadSelected()]);el('notice').textContent=status.error?`Scan failed: ${status.error}`:`Found ${status.new_count} new and ${status.changed_count} changed tracks.`}},750)});
-    (async()=>{await Promise.all([loadMeta(),loadIngest()]);await Promise.all([loadLibrary(),loadSelected()])})().catch(error=>{el('notice').textContent=error.message});
+    (async()=>{await Promise.all([loadMeta(),loadIngest()]);await Promise.all([loadLibrary(),loadSelected()]);const brain=await api('/api/brain');if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}else if(brain.picks)renderPicks(brain);})().catch(error=>{el('notice').textContent=error.message});
   </script>
 </body>
 </html>

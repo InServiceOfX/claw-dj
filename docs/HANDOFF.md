@@ -577,8 +577,17 @@ Real run, same 2,695-track view + brief: Nemotron returned 20 picks with
 some junk (a French charity single, G-Unit filler); Holo returned 14
 tighter picks and honored "fewer is fine". Picks land in
 `brain/data/new_music_picks*.json`; `--add-to-selection` merges them into
-the selection for the normal curate → analyze → plan flow. Next slice:
-surface picks + brief input in the playlist editor UI.
+the selection for the normal curate → analyze → plan flow.
+
+**"Ask the DJ brain" is in the playlist editor UI (2026-07-12).** Panel
+under New music: brief + engine (NemoClaw/H Company) + count → background
+agent call (`run_pick`) → picks rendered as checkboxes (pre-checked,
+already-in-set and not-in-crate flagged) → "Add checked to set". Endpoints:
+GET `/api/brain`, POST `/api/brain/ask`, POST `/api/brain/apply`. Validated
+end-to-end with a real NemoClaw call through the HTTP API. Note hermes
+agent turns take 1–7 minutes (it's an agent loop, not a raw model); the UI
+polls and survives page reloads mid-call. NemoClaw prereqs: Docker Desktop
+up + `openshell forward start --background 8642 hermes` once per boot.
 
 **NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
 Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.

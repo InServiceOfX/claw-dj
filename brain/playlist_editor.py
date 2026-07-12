@@ -24,6 +24,9 @@ class PlaylistApp:
     def __init__(self) -> None:
         self.scan_thread: threading.Thread | None = None
         self.scan_error: str | None = None
+        self.brain_thread: threading.Thread | None = None
+        self.brain_state: dict = {"running": 0, "error": None, "picks": None,
+                                  "brief": None, "engine": None}
         self.reload()
 
     def reload(self) -> None:
@@ -66,6 +69,54 @@ class PlaylistApp:
         self.scan_thread = threading.Thread(target=work, daemon=True)
         self.scan_thread.start()
         return {**self.ingest_status(), "running": 1}
+
+    def brain_status(self) -> dict:
+        status = dict(self.brain_state)
+        if status["picks"] is not None:
+            status["picks"] = [
+                {**pick, "in_library": pick["track_id"] in self.by_id,
+                 "enabled": pick["track_id"] in self.selected}
+                for pick in status["picks"]
+            ]
+        return status
+
+    def ask_brain(self, brief: str, engine: str, count: int) -> dict:
+        """Run one agent candidate-picking call in the background."""
+        if engine not in ("nemoclaw", "h-agent"):
+            raise ValueError(f"unknown engine {engine!r}")
+        if not brief.strip():
+            raise ValueError("brief is empty — say what kind of set you want")
+        if self.brain_thread and self.brain_thread.is_alive():
+            return self.brain_status()
+        self.brain_state = {"running": 1, "error": None, "picks": None,
+                            "brief": brief, "engine": engine}
+
+        def work() -> None:
+            try:
+                from brain.pick_candidates import run_pick
+
+                picks = run_pick(engine=engine, brief=brief, count=count)
+                self.brain_state.update(running=0, picks=picks)
+            except Exception as error:  # surfaced in the local UI
+                self.brain_state.update(running=0, error=str(error))
+
+        self.brain_thread = threading.Thread(target=work, daemon=True)
+        self.brain_thread.start()
+        return self.brain_status()
+
+    def apply_picks(self, track_ids: list[str]) -> dict:
+        added = 0
+        unknown = 0
+        for track_id in track_ids:
+            if track_id not in self.by_id:
+                unknown += 1
+                continue
+            if track_id not in self.selected:
+                self.selection.append(track_id)
+                self.selected.add(track_id)
+                added += 1
+        save_selection(self.selection)
+        return {"added": added, "unknown": unknown, "selected_count": len(self.selection)}
 
     def metadata(self) -> dict:
         return {
@@ -187,6 +238,9 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/ingest":
                 self._json(app.ingest_status())
                 return
+            if parsed.path == "/api/brain":
+                self._json(app.brain_status())
+                return
             if parsed.path in ("/", "/index.html"):
                 body = (WEB_ROOT / "playlist.html").read_bytes()
                 self.send_response(HTTPStatus.OK)
@@ -215,6 +269,21 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     return
                 if self.path == "/api/ingest/scan":
                     self._json(app.start_scan(), HTTPStatus.ACCEPTED)
+                    return
+                if self.path == "/api/brain/ask":
+                    payload = self._body()
+                    self._json(
+                        app.ask_brain(
+                            str(payload.get("brief", "")),
+                            str(payload.get("engine", "nemoclaw")),
+                            int(payload.get("count", 20)),
+                        ),
+                        HTTPStatus.ACCEPTED,
+                    )
+                    return
+                if self.path == "/api/brain/apply":
+                    payload = self._body()
+                    self._json(app.apply_picks(list(payload.get("track_ids", []))))
                     return
             except (KeyError, ValueError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)

@@ -150,6 +150,31 @@ def ask_h_agent(prompt: str) -> str:
     return asyncio.run(run())
 
 
+def run_pick(
+    *,
+    engine: str,
+    brief: str,
+    count: int = 20,
+    view_path: Path = DEFAULT_VIEW,
+    id_map_path: Path = DEFAULT_ID_MAP,
+) -> list[dict]:
+    """One agent call: view + brief in, resolved picks out. UI entry point."""
+    view = json.loads(view_path.read_text())
+    id_to_path = {v: k for k, v in json.loads(id_map_path.read_text()).items()}
+    by_id = {t["id"]: t for t in view["tracks"]}
+    prompt = build_prompt(view, brief, count)
+    answer = ask_nemoclaw(prompt) if engine == "nemoclaw" else ask_h_agent(prompt)
+    return [
+        {
+            "id": pick_id,
+            "artist": by_id[pick_id]["artist"],
+            "title": by_id[pick_id]["title"],
+            "track_id": id_to_path[pick_id],
+        }
+        for pick_id in parse_pick_ids(answer, set(by_id))
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", choices=("nemoclaw", "h-agent"), default="nemoclaw")
@@ -166,27 +191,17 @@ def main() -> None:
     args = parser.parse_args()
 
     view = json.loads(args.view.read_text())
-    id_to_path = {v: k for k, v in json.loads(args.id_map.read_text()).items()}
-    by_id = {t["id"]: t for t in view["tracks"]}
-
-    prompt = build_prompt(view, args.brief, args.count)
     print(f"engine={args.engine}: asking for up to {args.count} candidates "
           f"from {view['track_count']} new tracks…")
-    answer = ask_nemoclaw(prompt) if args.engine == "nemoclaw" else ask_h_agent(prompt)
-    ids = parse_pick_ids(answer, set(by_id))
-
-    picks = []
-    for pick_id in ids:
-        track = by_id[pick_id]
-        picks.append(
-            {
-                "id": pick_id,
-                "artist": track["artist"],
-                "title": track["title"],
-                "track_id": id_to_path[pick_id],
-            }
-        )
-        print(f"  {pick_id}: {track['artist']} — {track['title']}")
+    picks = run_pick(
+        engine=args.engine,
+        brief=args.brief,
+        count=args.count,
+        view_path=args.view,
+        id_map_path=args.id_map,
+    )
+    for pick in picks:
+        print(f"  {pick['id']}: {pick['artist']} — {pick['title']}")
 
     args.out.write_text(
         json.dumps({"engine": args.engine, "brief": args.brief, "picks": picks}, indent=1)
