@@ -341,6 +341,48 @@ budget real wall-clock time and expect some flailing before it lands —
 don't read early misclicks as failure, let it keep going unless it's
 genuinely stuck (bouncing between the same 2-3 wrong targets 5+ times).
 
+## Patched Mixxx on the Mac (2026-07-12) — control API live, default app
+
+The patched Mixxx (fork branch `localhost-control-api` at
+`repos/mixxxes/mixxx`, Mixxx 2.7.0-alpha base) is now built natively for
+arm64 and installed as **the default `/Applications/Mixxx.app`**; stock
+2.5.3 is kept at `/Applications/Mixxx-stock.app`. Verified end-to-end:
+`hands.mixxx_control.MixxxControl` get/set round-trips against the live app
+on port 9995. Launch it as:
+
+```bash
+open -a /Applications/Mixxx.app --args --control-api-port 9995
+```
+
+Build notes (all verified on this MacBook Pro M5, macOS 26):
+
+- `source tools/macos_buildenv.sh setup` with `BUILDENV_RELEASE=1`, then
+  cmake with the CI's arm64 args (`-DMACOS_BUNDLE=ON -DQML=ON` etc.,
+  triplet `arm64-osx-min1100-release`) and `cmake --build`. Do NOT call
+  `tools/macos_release_buildenv.sh` directly — it's CI-only and exits.
+  Full build ≈ 25 min on 10 cores; deps zip auto-downloads during configure.
+- The build-tree `Mixxx.app` is NOT self-contained; run
+  `cmake --install . --prefix stage` to get the bundled, ad-hoc-signed app.
+- **macOS gotcha that cost an hour:** Mixxx's bundle is App-Sandboxed, and
+  without `com.apple.security.network.server` in the entitlements the
+  control API's listen() dies with "Unknown error" (EPERM) — port never
+  opens even though `--control-api-port` parses fine. Fixed in fork commit
+  `722eac1bce` (entitlement added + re-sign). Also: `--` is illegal inside
+  XML comments; codesign rejects the whole entitlements file with a cryptic
+  AMFIUnserializeXML error.
+- Because the app is sandboxed, it uses the **container** settings/DB
+  (`~/Library/Containers/org.mixxx.mixxx/...`) — same data stock used, so
+  the analyzed library and clawdj mapping carried over with zero work. The
+  2.7 first launch upgraded that DB's schema in place; a pristine
+  pre-upgrade copy sits at `~/Library/Application Support/Mixxx` if stock
+  2.5.3 ever balks at the upgraded container DB.
+
+Production demo assets (2026-07-12, all `brain/data/`, gitignored): 58-track
+curated set (brief: "Hip-hop and RnB hits that mix well together in a DJ
+showcase"), all tracks Mixxx-analyzed, phrase analysis done, 57-transition
+~39-minute mix plan built, `hands.run_mix_plan --dry-run` passes (176
+events). Next: run it live against the patched Mixxx.
+
 ## NemoClaw (Nvidia challenge) status
 
 Source-installed on the Mac from `repos/NemoClaw` (`npm install` →
