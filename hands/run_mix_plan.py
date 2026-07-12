@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from hands.mixxx_control import DEFAULT_PORT, MixxxControl
-from hands.transition import crossfader_target, deck_group, transition
+from hands.transition import crossfader_target, deck_group, smoothstep, wait_for_beats, wait_for_next_beat
 
 PLAN_DEFAULT = Path(__file__).resolve().parent.parent / "brain" / "data" / "mix_plan.json"
 LOAD_TIMEOUT_S = 30.0
@@ -71,7 +71,13 @@ def reset_instrument(mixxx: MixxxControl) -> None:
             pass
 
 
-def load_deck(mixxx: MixxxControl, deck: int, path: str, cue_fraction: float) -> None:
+def load_deck(
+    mixxx: MixxxControl,
+    deck: int,
+    path: str,
+    cue_fraction: float = 0.1,
+    cue_seconds: float | None = None,
+) -> None:
     group = deck_group(deck)
     mixxx.set(group, "play", 0)
     try:
@@ -83,12 +89,14 @@ def load_deck(mixxx: MixxxControl, deck: int, path: str, cue_fraction: float) ->
     _wait_for(mixxx, group, "track_loaded", lambda v: v >= 0.5, LOAD_TIMEOUT_S)
     duration = _wait_for(mixxx, group, "duration", lambda v: v > 0, LOAD_TIMEOUT_S)
     _wait_for(mixxx, group, "bpm", lambda v: v > 0, LOAD_TIMEOUT_S)
-    mixxx.set(group, "playposition", min(0.95, max(0.0, cue_fraction)))
+    position = cue_seconds / duration if cue_seconds is not None else cue_fraction
+    mixxx.set(group, "playposition", min(0.95, max(0.0, position)))
     mixxx.set(group, "volume", 1.0)
     mixxx.set(group, "keylock", 1)
     mixxx.set(group, "quantize", 1)
     mixxx.set(group, "rate", 0.0)
-    print(f"[load] deck {deck}: {Path(path).name}  ({duration:.0f}s)")
+    cue_label = f"{cue_seconds:.2f}s" if cue_seconds is not None else f"{position:.1%}"
+    print(f"[load] deck {deck}: {Path(path).name}  ({duration:.0f}s, cue {cue_label})")
 
 
 def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[str]) -> None:
@@ -146,15 +154,21 @@ def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[s
         elif move == "rate_nudge_in":
             mixxx.set(in_g, "rate", 0.05)
         elif move == "optional_scratch_in":
-            # short rate-wiggle "scratch" gesture
+            # Briefly reveal a rate-wiggle, then restore the analyzed cue.
+            cue = mixxx.get(in_g, "playposition")
+            start_cf = mixxx.get("[Master]", "crossfader")
+            preview_cf = start_cf + 0.28 * (crossfader_target(to_deck) - start_cf)
             mixxx.set(in_g, "keylock", 0)
             mixxx.set(in_g, "play", 1)
             for i in range(6):
                 mixxx.set(in_g, "rate", -0.6 if i % 2 == 0 else 0.7)
+                mixxx.set("[Master]", "crossfader", preview_cf if i % 2 else start_cf)
                 time.sleep(0.07)
+            mixxx.set("[Master]", "crossfader", start_cf)
             mixxx.set(in_g, "rate", 0.0)
             mixxx.set(in_g, "keylock", 1)
             mixxx.set(in_g, "play", 0)
+            mixxx.set(in_g, "playposition", cue)
         elif move == "optional_loop_roll_out":
             try:
                 mixxx.set(out_g, "beatloop_4_activate", 1)
@@ -163,6 +177,72 @@ def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[s
             except Exception:
                 pass
         # sync / crossfade handled by transition()
+
+
+def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
+    """Execute one beat-anchored transition with continuous instrument curves."""
+    from_deck = int(event["from_deck"])
+    to_deck = int(event["to_deck"])
+    beats = int(event.get("transition_beats", 16))
+    moves = list(event.get("moves") or [])
+    technique = event.get("technique", "standard_blend")
+    out_g, in_g = deck_group(from_deck), deck_group(to_deck)
+    bpm = mixxx.get(out_g, "bpm")
+    if bpm <= 0:
+        raise RuntimeError(f"{out_g} reports no BPM")
+    sync = "sync" in moves and technique != "half_time_or_cut"
+    hard = technique in {"key_clash_cut", "half_time_or_cut"} or "hard_cut" in moves
+
+    print(f"  anchoring on {out_g} beat ({bpm:.2f} BPM)")
+    wait_for_next_beat(port, out_g)
+    mixxx.set(in_g, "play", 1)
+    if sync:
+        mixxx.set(in_g, "beatsync", 1)
+
+    start_cf = mixxx.get("[Master]", "crossfader")
+    end_cf = crossfader_target(to_deck)
+    if hard:
+        mixxx.set("[Master]", "crossfader", end_cf)
+        mixxx.set(out_g, "play", 0)
+        print(f"  on-beat cut -> deck {to_deck} ({'sync' if sync else 'native tempo'})")
+        return
+
+    fade_s = beats * 60.0 / bpm
+    bass_swap = any(move in moves for move in ("eq_kill_out_low", "eq_dip_out_mid", "eq_kill_out_high"))
+    if bass_swap:
+        try:
+            mixxx.set(eq_group(to_deck), "parameter1", 0.0)
+        except Exception:
+            bass_swap = False
+
+    swapped = False
+    t0 = time.monotonic()
+    while True:
+        progress = min(1.0, (time.monotonic() - t0) / fade_s)
+        curve = smoothstep(progress)
+        mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * curve)
+        if bass_swap and progress >= 0.5 and not swapped:
+            mixxx.set(eq_group(from_deck), "parameter1", 0.0)
+            mixxx.set(eq_group(to_deck), "parameter1", 0.5)
+            swapped = True
+            print("  bass swap")
+        if "filter_sweep_out" in moves:
+            try:
+                mixxx.set(filter_group(from_deck), "super1", 0.5 - 0.4 * curve)
+            except Exception:
+                pass
+        if "optional_transformer_cuts" in moves and progress > 0.72:
+            # Four restrained chops near the landing, still ending on target.
+            phase = int((progress - 0.72) / 0.07)
+            if phase < 4 and phase % 2 == 0:
+                mixxx.set("[Master]", "crossfader", start_cf)
+        if progress >= 1.0:
+            break
+        time.sleep(0.02)
+
+    mixxx.set("[Master]", "crossfader", end_cf)
+    mixxx.set(out_g, "play", 0)
+    print(f"  {beats}-beat landing -> deck {to_deck}")
 
 
 def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) -> None:
@@ -185,17 +265,30 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
             if op == "reset_instrument":
                 reset_instrument(mixxx)
             elif op == "load":
-                load_deck(mixxx, event["deck"], event["track_id"], event.get("cue_fraction", 0.1))
+                load_deck(
+                    mixxx,
+                    event["deck"],
+                    event["track_id"],
+                    event.get("cue_fraction", 0.1),
+                    event.get("cue_seconds"),
+                )
             elif op == "start":
                 deck = event["deck"]
                 mixxx.set("[Master]", "crossfader", crossfader_target(deck))
                 mixxx.set(deck_group(deck), "play", 1)
                 print(f"  deck {deck} playing")
             elif op == "play_body":
+                beats = event.get("beats")
                 seconds = float(event.get("seconds", 30))
-                print(f"  riding {event.get('track')} for {seconds:.0f}s")
+                if beats is not None:
+                    print(f"  riding {event.get('track')} for {beats} live beats")
+                else:
+                    print(f"  riding {event.get('track')} for {seconds:.0f}s")
                 print(f"  hints: {event.get('instrument_hints')}")
-                time.sleep(seconds)
+                if beats is not None:
+                    wait_for_beats(port, deck_group(int(event["deck"])), int(beats))
+                else:
+                    time.sleep(seconds)
             elif op == "preload_after_transition":
                 pending_preload = event
             elif op == "transition":
@@ -207,19 +300,15 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                 print(f"  moves: {moves}")
                 print(f"  notes: {event.get('notes')}")
                 # Ensure incoming is loaded (may already be)
-                apply_moves(mixxx, from_deck, to_deck, [m for m in moves if m not in {"sync", "crossfade", "long_crossfade", "quick_crossfade", "hard_cut"}])
-                hard = event.get("technique") in {"key_clash_cut", "half_time_or_cut"} or "hard_cut" in moves
-                if hard and beats <= 4:
-                    # hard cut path
-                    mixxx.set(deck_group(to_deck), "play", 1)
-                    mixxx.set(deck_group(to_deck), "beatsync", 1)
-                    mixxx.set("[Master]", "crossfader", crossfader_target(to_deck))
-                    mixxx.set(deck_group(from_deck), "play", 0)
-                else:
-                    fade_beats = beats if "long_crossfade" not in moves else max(beats, 24)
-                    if "quick_crossfade" in moves:
-                        fade_beats = min(beats, 8)
-                    transition(from_deck, to_deck, beats=fade_beats, port=port, sync="sync" in moves or True)
+                preview_moves = {
+                    "optional_scratch_in",
+                    "optional_loop_roll_out",
+                    "rate_nudge_in",
+                    "eq_boost_in_mid",
+                    "filter_open_in",
+                }
+                apply_moves(mixxx, from_deck, to_deck, [move for move in moves if move in preview_moves])
+                perform_transition(mixxx, event, port=port)
                 # restore EQ/filter after land
                 apply_moves(mixxx, from_deck, to_deck, ["eq_restore", "filter_reset"])
                 if pending_preload and pending_preload.get("deck") == from_deck:
@@ -229,12 +318,18 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                         from_deck,
                         pending_preload["track_id"],
                         pending_preload.get("cue_fraction", 0.1),
+                        pending_preload.get("cue_seconds"),
                     )
                     pending_preload = None
             elif op == "finale":
+                beats = event.get("beats")
                 seconds = float(event.get("seconds", 30))
-                print(f"  finale {event.get('track')} ({seconds:.0f}s)")
-                time.sleep(seconds)
+                if beats:
+                    print(f"  finale {event.get('track')} ({beats} beats)")
+                    wait_for_beats(port, deck_group(int(event["deck"])), int(beats))
+                else:
+                    print(f"  finale {event.get('track')} ({seconds:.0f}s)")
+                    time.sleep(seconds)
             elif op == "stop_all":
                 for deck in (1, 2):
                     mixxx.set(deck_group(deck), "play", 0)

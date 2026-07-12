@@ -9,13 +9,16 @@ executes on the beat.
 
 ```bash
 # 1) curated hits already on disk (playlist.json)
-# 2) enrich: sample lineage + lyrics + optional Rust chromagram
+# 2) find exact Mixxx-grid phrase cues from a small selected subset
+uv run python -m brain.phrase_analysis --tracks 6
+
+# 3) enrich: sample lineage + lyrics + optional Rust chromagram
 uv run python -m brain.enrich_playlist --chroma --chroma-limit 12
 
-# 3) build a multi-song mix plan (techniques + Mixxx control map)
-uv run python -m brain.build_mix_plan --tracks 8 --seconds-per-track 40
+# 4) build a short phrase-counted performance plan
+uv run python -m brain.build_mix_plan --tracks 6 --phrase-beats 32
 
-# 4) preview or perform
+# 5) preview or perform
 uv run python -m hands.run_mix_plan --dry-run
 # Mixxx must be running with --control-api-port 9995
 uv run python -m hands.run_mix_plan
@@ -58,6 +61,17 @@ same spirit as `hands/showcase_mix.py`.
 - **Ordered hit set (≤12–16 tracks): yes**, via Rust:
   `cargo run -p clawdj-cli -- chroma --out brain/data/chroma_similarity.json -- path1 path2 ...`
 - Mixxx still owns **beatgrids** for true beatmatching after Analyze.
+
+`brain.phrase_analysis` decodes Mixxx's `BeatGrid-2.0` protobuf for exact
+first-beat phase, then decodes at most the first two minutes of each selected
+track through local `ffmpeg`. It ranks only 16-beat-aligned candidates using
+energy level and energy rise. The waveform does not become a second beatgrid.
+
+At runtime, `hands.run_mix_plan` counts Mixxx `beat_active` events. Each new
+track starts on a phrase boundary, the next transition begins after a fixed
+32-beat interval, and the fade itself is measured in beats. The recipes curve
+the crossfader, EQ bass swap, and filter continuously; one showcase gesture is
+rotated per transition (scratch preview, loop roll, or transformer cuts).
 
 ## Lyrics policy
 

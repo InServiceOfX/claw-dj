@@ -53,11 +53,14 @@ uv run python -m brain.curate_playlist --mode selection --planner h-agent
 # browser picker: enable hits, "Order for mixes", export
 uv run python -m brain.playlist_editor --open
 
+# find beatgrid-aligned entry phrases for the short demo subset
+uv run python -m brain.phrase_analysis --tracks 6
+
 # enrich hit pool (sample lineage + lyrics + optional Rust chromagram)
 uv run python -m brain.enrich_playlist --chroma --chroma-limit 12
 
 # continuous multi-song mix plan → perform in Mixxx
-uv run python -m brain.build_mix_plan --tracks 8
+uv run python -m brain.build_mix_plan --tracks 6 --phrase-beats 32
 uv run python -m hands.run_mix_plan --dry-run
 # Mixxx with --control-api-port 9995:
 uv run python -m hands.run_mix_plan

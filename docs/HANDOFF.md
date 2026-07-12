@@ -412,3 +412,24 @@ owns beatgrids for beatmatch.
 
 **NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
 Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.
+
+## Phrase-aware full demo mix (2026-07-11)
+
+Branch `feat/phrase-aware-demo-mix` closes the gap between a compatible order
+and a performed set. `brain/phrase_analysis.py` decodes Mixxx's
+`BeatGrid-2.0` protobuf (BPM plus exact first-beat frame), uses local `ffmpeg`
+to rank 16-beat-aligned energy changes in only the selected demo tracks, and
+writes cue timestamps to gitignored `brain/data/phrase_analysis.json`.
+
+`brain.build_mix_plan` version 2 consumes those cues and expresses excerpts in
+beats. `hands.run_mix_plan` preloads alternating decks, counts live
+`beat_active` edges, anchors cuts and blends on beats, respects unsynced cuts,
+and performs continuous crossfader/EQ/filter curves. Showcase gestures rotate
+instead of firing on every compatible pair: bass swap, scratch preview, loop
+roll, and transformer cut.
+
+The generated six-track Mac plan is roughly two minutes: Beautiful -> Fallin'
+-> Off the Books -> Round & Round -> Regulate -> Love's Theme. All six cue
+points came from Mixxx grids plus local energy scoring. Live autonomous
+execution requires the patched Mixxx control API; port 9995 was not listening
+on the Mac during this implementation, so the plan was dry-run verified there.

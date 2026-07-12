@@ -23,6 +23,7 @@ from brain.mix_graph import bpm_compatibility, key_compatibility
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_PLAYLIST = DATA_DIR / "playlist.json"
 DEFAULT_AFFINITY = DATA_DIR / "mix_affinity.json"
+DEFAULT_PHRASES = DATA_DIR / "phrase_analysis.json"
 DEFAULT_PLAN = DATA_DIR / "mix_plan.json"
 
 
@@ -35,6 +36,14 @@ def load_affinity_lookup(path: Path = DEFAULT_AFFINITY) -> dict[tuple[str, str],
     for row in pairs:
         out[tuple(sorted((row["a"], row["b"])))] = row
     return out
+
+
+def load_phrase_lookup(path: Path = DEFAULT_PHRASES) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text())
+    rows = payload.get("tracks", payload if isinstance(payload, list) else [])
+    return {row["track_id"]: row for row in rows}
 
 
 def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
@@ -103,12 +112,26 @@ def build_plan(
     count: int,
     seconds_per_track: float,
     affinity_lookup: dict[tuple[str, str], dict],
+    phrase_lookup: dict[str, dict] | None = None,
+    phrase_beats: int = 32,
 ) -> dict:
     selected = tracks[:count]
     if len(selected) < 2:
         raise SystemExit("need at least 2 tracks in the filtered playlist")
 
+    phrase_lookup = phrase_lookup or {}
     events: list[dict] = []
+
+    def cue_fields(track: dict, fallback_fraction: float) -> dict:
+        phrase = phrase_lookup.get(track["track_id"])
+        if phrase:
+            return {
+                "cue_seconds": phrase["cue_seconds"],
+                "cue_beat_index": phrase.get("beat_index"),
+                "cue_confidence": phrase.get("confidence"),
+                "cue_source": "mixxx_beatgrid+energy",
+            }
+        return {"cue_fraction": fallback_fraction, "cue_source": "fraction_fallback"}
     # Instrument reset
     events.append(
         {
@@ -125,7 +148,7 @@ def build_plan(
             "track_id": selected[0]["track_id"],
             "artist": selected[0]["artist"],
             "title": selected[0]["title"],
-            "cue_fraction": 0.08,
+            **cue_fields(selected[0], 0.08),
         }
     )
     events.append(
@@ -135,7 +158,7 @@ def build_plan(
             "track_id": selected[1]["track_id"],
             "artist": selected[1]["artist"],
             "title": selected[1]["title"],
-            "cue_fraction": 0.12,
+            **cue_fields(selected[1], 0.12),
         }
     )
     events.append(
@@ -149,6 +172,7 @@ def build_plan(
     live_deck = 1
     play_s = seconds_per_track
     segments = []
+    previous_fade_beats = 0
 
     for index in range(len(selected) - 1):
         outgoing = selected[index]
@@ -158,12 +182,34 @@ def build_plan(
         aff = affinity_lookup.get(tuple(sorted((outgoing["track_id"], incoming["track_id"]))))
         tech = pick_technique(outgoing, incoming, aff)
 
+        # One intentional flourish per transition slot. Compatibility chooses
+        # the base recipe; position in the set controls how often we show off.
+        tech["moves"] = [move for move in tech["moves"] if move != "optional_scratch_in"]
+        flourish = ("bass_swap", "scratch_preview", "loop_roll", "transformer_cut")[index % 4]
+        if flourish == "scratch_preview" and tech["score"] >= 0.7:
+            tech["moves"].insert(0, "optional_scratch_in")
+        elif flourish == "loop_roll":
+            tech["moves"].insert(0, "optional_loop_roll_out")
+        elif flourish == "transformer_cut":
+            tech["moves"].insert(0, "optional_transformer_cuts")
+        tech["showcase_move"] = flourish
+
+        # Reserve the final beat for perform_transition() to anchor on. After
+        # the first fade, the incoming deck has already consumed fade beats of
+        # its phrase, so only count the remainder before the next anchor.
+        elapsed_in_phrase = previous_fade_beats
+        next_boundary = phrase_beats
+        while next_boundary <= elapsed_in_phrase:
+            next_boundary += phrase_beats
+        ride_beats = max(0, next_boundary - elapsed_in_phrase - 1)
+
         # Play body of outgoing track
         events.append(
             {
                 "op": "play_body",
                 "deck": out_deck,
                 "seconds": play_s,
+                "beats": ride_beats,
                 "track": f"{outgoing['artist']} — {outgoing['title']}",
                 "instrument_hints": [
                     "Optional: tweak [ChannelN] filterHighEq mid-phrase",
@@ -183,7 +229,7 @@ def build_plan(
                     "track_id": nxt["track_id"],
                     "artist": nxt["artist"],
                     "title": nxt["title"],
-                    "cue_fraction": 0.1,
+                    **cue_fields(nxt, 0.1),
                 }
             )
 
@@ -205,15 +251,18 @@ def build_plan(
                 "technique": tech["technique"],
                 "beats": tech["transition_beats"],
                 "score": tech["score"],
+                "showcase_move": tech["showcase_move"],
             }
         )
         live_deck = in_deck
+        previous_fade_beats = tech["transition_beats"]
 
     events.append(
         {
             "op": "finale",
             "deck": live_deck,
             "seconds": play_s,
+            "beats": max(16, phrase_beats - previous_fade_beats),
             "track": f"{selected[-1]['artist']} — {selected[-1]['title']}",
             "detail": "Ride out the last track; optional loop_roll or EQ kill for ending",
         }
@@ -221,9 +270,10 @@ def build_plan(
     events.append({"op": "stop_all"})
 
     return {
-        "version": 1,
+        "version": 2,
         "track_count": len(selected),
         "seconds_per_track": seconds_per_track,
+        "phrase_interval_beats": phrase_beats,
         "tracks": [
             {
                 "artist": t["artist"],
@@ -231,6 +281,7 @@ def build_plan(
                 "bpm": t.get("bpm"),
                 "key": t.get("key"),
                 "track_id": t["track_id"],
+                **cue_fields(t, 0.1),
             }
             for t in selected
         ],
@@ -283,6 +334,8 @@ def main() -> None:
     parser.add_argument("--playlist", type=Path, default=DEFAULT_PLAYLIST)
     parser.add_argument("--tracks", type=int, default=8, help="how many songs in the continuous mix")
     parser.add_argument("--seconds-per-track", type=float, default=40.0)
+    parser.add_argument("--phrase-analysis", type=Path, default=DEFAULT_PHRASES)
+    parser.add_argument("--phrase-beats", type=int, default=32, choices=(16, 32, 48, 64))
     parser.add_argument("--out", type=Path, default=DEFAULT_PLAN)
     args = parser.parse_args()
 
@@ -291,11 +344,14 @@ def main() -> None:
     analyzed = [t for t in tracks if t.get("bpm")]
     pool = analyzed if len(analyzed) >= 2 else tracks
     affinity = load_affinity_lookup()
+    phrases = load_phrase_lookup(args.phrase_analysis)
     plan = build_plan(
         pool,
         count=min(args.tracks, len(pool)),
         seconds_per_track=args.seconds_per_track,
         affinity_lookup=affinity,
+        phrase_lookup=phrases,
+        phrase_beats=args.phrase_beats,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(plan, indent=2) + "\n")

@@ -38,9 +38,13 @@ class MixPlanTest(TestCase):
         ]
         plan = build_plan(tracks, count=4, seconds_per_track=20.0, affinity_lookup={})
         self.assertEqual(plan["track_count"], 4)
+        self.assertEqual(plan["version"], 2)
+        self.assertEqual(plan["phrase_interval_beats"], 32)
         self.assertIn("crossfader", plan["instrument_map"]["levels"])
         ops = [event["op"] for event in plan["events"]]
         self.assertIn("reset_instrument", ops)
         self.assertIn("transition", ops)
         self.assertIn("stop_all", ops)
         self.assertEqual(len(plan["segments"]), 3)
+        body = next(event for event in plan["events"] if event["op"] == "play_body")
+        self.assertEqual(body["beats"], 31)

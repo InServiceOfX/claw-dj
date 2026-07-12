@@ -56,6 +56,30 @@ def wait_for_next_beat(port: int, group: str, timeout_s: float = 10.0) -> None:
     raise TimeoutError(f"no beat from {group} within {timeout_s}s")
 
 
+def wait_for_beats(port: int, group: str, beats: int, timeout_s: float = 90.0) -> None:
+    """Count beat_active rising edges on a dedicated event connection."""
+    if beats <= 0:
+        return
+    with MixxxControl(port=port, timeout_s=timeout_s) as events_conn:
+        events_conn.subscribe(group, "beat_active")
+        count = 0
+        previous = 0.0
+        deadline = time.monotonic() + timeout_s
+        try:
+            for event in events_conn.events():
+                value = float(event["value"])
+                if value >= 1.0 and previous < 1.0:
+                    count += 1
+                    if count >= beats:
+                        return
+                previous = value
+                if time.monotonic() > deadline:
+                    break
+        except TimeoutError:
+            pass
+    raise TimeoutError(f"received fewer than {beats} beats from {group} within {timeout_s}s")
+
+
 def transition(
     from_deck: int,
     to_deck: int,
