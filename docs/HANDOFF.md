@@ -105,11 +105,42 @@ favor of the ported code — rather than maintaining both. Not done yet
 because it wasn't clear which direction was wanted until this port
 happened.
 
-**Still not done, inherited from the prior effort:** actually enabling the
-mapping in Mixxx (Preferences → Controllers → "IAC Driver clawdj" → Enabled
-→ Load Mapping → Apply) and a live end-to-end validation — send one real
-MIDI message, confirm Mixxx reacts. The prior effort got all the way to
-"ready to test" twice (April and July) and never closed this loop.
+**DONE 2026-07-11 (evening, Linux laptop): the end-to-end MIDI loop is
+closed.** The validation the prior effort never reached (April and July
+both stalled at "ready to test") now passes: a Note On / CC sent from
+Python arrives in Mixxx, runs `clawdj.scripts.js`, and changes the live
+engine — verified by reading `[Master],crossfader` over the control API
+before (0) and after (1) sending `cc 0x00 127`. Notes on how, because the
+Linux setup differs from the macOS IAC design:
+
+- **Linux has no IAC driver; some process must own the virtual ALSA port.**
+  `mido.open_output("clawdj", virtual=True)` creates it; when that process
+  dies the port vanishes and Mixxx loses the device (restart Mixxx after
+  recreating it — PortMidi only scans at startup). `hands/midi_port_server.py`
+  is that owner: it holds the port and relays commands written to
+  `/tmp/clawdj.fifo` (`note 2` = play deck 1, `cc 0 64` = crossfader
+  center). `agent/midi_bridge.py`'s `mido.open_output(name)` (no
+  `virtual=True`) is the macOS model and can't create the port on Linux —
+  send through the port owner instead.
+- **No GUI clicking needed to enable the controller.** Mixxx reads two
+  config entries from `~/.mixxx/mixxx.cfg` (written while Mixxx is not
+  running; it saves config only on clean quit, not SIGTERM):
+  `[Controller]\nclawdj 1` and `[ControllerPreset]\nclawdj clawdj.midi.xml`.
+  Device name is whatever PortMidi reports (here exactly `clawdj`),
+  sanitized spaces→underscores (`controllermanager.cpp`).
+- **Run the patched Mixxx** (fork at `repos/mixxxes/mixxx`, built in
+  `BuildGcc/`, binary verified) as
+  `./mixxx --developer --controller-debug --control-api-port 9995`; log
+  should show `[clawdj] init: clawdj mapping loaded`. The control API
+  (`hands/mixxx_control.py` client) is the readback/deterministic-action
+  channel; MIDI stays the beat-accurate channel.
+- Deck `play` won't hold 1 while the deck is empty — load a track first
+  (control API `load` op) before using play for validation.
+- **Build note for this laptop (16 cores, 15 GiB RAM):** never `make -j16`
+  in `BuildGcc` — RelWithDebInfo link jobs OOM-freeze the machine (that
+  caused the 2026-07-11 freeze). Use `nice -n19 make -j4`. The `mixxx`
+  binary is already built; only `mixxx-test` was never finished (not
+  needed).
 
 ## Environment setup on a new machine
 
@@ -209,14 +240,18 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `docs/ARCHITECTURE.md` | Brain/Hands design, MVP cut-list, judging-criteria mapping |
 | `brain/agent.py` | `Brain` class — registers/reuses a `hai-agents` desktop agent and drives Mixxx through `hai_agents_local` (confirmed on Linux/X11) |
 | `brain/library.py` | `Track`/`Energy` types, `CRATE` loaded from `brain/data/crate.json` |
-| `brain/scan_library.py` | Scans a music directory's ID3 tags (mutagen) into the crate cache |
+| `brain/scan_library.py` | Scans one or more music directories' ID3 tags (mutagen) into the crate cache |
 | `brain/sync_mixxx_analysis.py` | Merges Mixxx's analyzed bpm/key (read from its own DB) into the crate cache |
 | `brain/build_demo_subset.py` | Picks a curated subset from the crate, writes `.m3u` for one-shot Mixxx import |
+| `brain/build_lineage_set.py` | Builds the sample-lineage playlist from canonical hip-hop/RnB tracks in the crate |
+| `brain/analyze_bpm.py` / `brain/analyze_via_mixxx.py` | Provisional librosa BPM analysis and deterministic Mixxx analysis for the lineage set |
 | `hands/beatgrid.py` | Reads bpm from Mixxx's DB for a given track path (schema confirmed against a real install) |
 | `hands/midi_engine.py` | MIDI execution stub via `python-rtmidi`, made-up note/CC map — **superseded by the ported code below, not yet retired** |
+| `hands/midi_port_server.py` | Owns Linux's virtual `clawdj` ALSA MIDI port and relays FIFO commands |
+| `hands/mixxx_control.py` / `hands/transition.py` | Client and beat-anchored transition engine for the patched Mixxx JSON control API |
 | `hands/mixxx_mapping/` | Real mapping (`clawdj.midi.xml`/`.js`) — **live-validated 2026-07-11**: enabled in Mixxx, commands audibly move decks, beat-tick feedback flows back |
 | `core-rust/` | Rust workspace (`clawdj` lib + `clawdj-cli`) — commands, queue, **plus the real-time layer** (`live.rs`): `BeatClock` reads Mixxx's live beat ticks, `clawdj monitor` shows live BPM, `clawdj transition --from 1 --to 2 --beats 16` does a measured-BPM, beat-anchored smoothstep crossfade (validated live: measured 91.47 BPM, 10.5s fade = exactly 16 beats) |
-| `brain/set_player.py` | Short-set orchestrator: the H Company agent visibly loads each next track via the GUI while `clawdj transition` mixes beat-accurately; BPM-chained set planning; `--no-agent` for manual-load dry runs (`--no-holo` remains an alias) |
+| `brain/set_player.py` | Short-set orchestrator with agent, manual, or control-API loading and MIDI or control-API transitions; BPM-chained set planning |
 | `agent/midi_bridge.py` | Ported Python MIDI bridge (`mido`-based), matches the real mapping's note/CC map |
 | `agent/hermes-skill/SKILL.md` | Ported Hermes agent-skill definition for a dedicated clawdj dev session |
 | `shared/commands.py` | Brain→Hands command schema (intent only, no MIDI/timing) — not yet wired to either MIDI implementation |

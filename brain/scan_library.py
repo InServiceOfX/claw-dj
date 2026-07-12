@@ -2,7 +2,7 @@
 cache. The cache (brain/data/crate.json) is gitignored — a personal media
 library's track listing doesn't belong committed to a public repo.
 
-Usage: uv run python -m brain.scan_library /path/to/music/dir
+Usage: uv run python -m brain.scan_library /path/to/music/dir [more/dirs...]
 """
 from __future__ import annotations
 
@@ -46,11 +46,17 @@ def scan(root: Path) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("root", type=Path, help="directory to scan for audio files")
+    parser.add_argument(
+        "roots", type=Path, nargs="+", help="directories to scan for audio files"
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_CRATE_CACHE)
     args = parser.parse_args()
 
-    records = scan(args.root)
+    records = []
+    for root in args.roots:
+        found = scan(root)
+        print(f"  {root}: {len(found)} tracks")
+        records.extend(found)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(records, indent=2))
     print(f"scanned {len(records)} tracks -> {args.out}")
