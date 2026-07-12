@@ -389,6 +389,12 @@ Result on the Linux box: **9,105 HipHop tracks, 540 artists, 627
 duration-confirmed duplicate groups, 2 files skipped mid-download**
 (`brain/data/{crate,catalog}.json`, gitignored as always).
 
+Mac rescan 2026-07-12 (`/Volumes/USB322FD/Music/{HipHop,RnB}`, 16 workers,
+~600 files/s, 33.6 s): **19,624 tracks (5,859 HipHop + 13,765 RnB), 815
+artist tags, 2,275 duplicate groups, 0 skipped** — no transfers were
+running, so this scan is complete. The 77 previously Mixxx-analyzed tracks
+carried their bpm/key forward; 57/58 hit-seed rows now match the crate.
+
 ## Playlist curator branch (2026-07-11)
 
 Work on `feat/playlist-curator-ui` adds a localhost playlist picker and a
@@ -416,7 +422,7 @@ user-chosen roots (e.g. `/Volumes/USB322FD/Music/RnB` + `.../HipHop`).
 | `brain/catalog.py` | Slim agent index (`catalog.json`) + path-stripped `agent_view` for NemoClaw upload. |
 | `brain/playlist_seeds/*.json` | Wikipedia/chart **hit seeds** per folder artist + sample-lineage edges. |
 | `brain/mix_graph.py` | Transition scores: BPM (rate-adjust tolerant), Camelot key, sample lineage, title tokens. **No full-library waveform** (too heavy; use Mixxx beatgrids). |
-| `brain/curate_playlist.py` | Pipeline: keep user selection → match researched hits to crate → mix-order → optional H-agent **reorder only** (never invents deep cuts). |
+| `brain/curate_playlist.py` | Pipeline: keep user selection → match researched hits to crate → mix-order → optional H-agent **reorder only** (never invents deep cuts). Subjective asks (genre/region/era/mood) are **per-playlist input** via `--brief` and `--seed`, not rules — the default brief is neutral (Ernest, 2026-07-12: the earlier West Coast slant was a one-time ask, don't hardcode it). |
 | playlist UI | "Add researched hits" + "Order for mixes" (reorder enabled set; never drops picks). |
 
 **Hackathon demo line:** "Yes — H agents curate researched hits from *your*

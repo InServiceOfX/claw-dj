@@ -13,6 +13,11 @@ Pipeline (this is the hackathon answer to "can H agents curate a playlist?"):
 4. **Waveform** is *not* used on the large list (too heavy; Mixxx beatgrids
    already cover beatmatch once analyzed). See `brain/mix_graph.py`.
 
+Subjective asks (genre, region, era, mood) are **per-playlist input**, not
+rules: pass them with `--brief` (feeds the h-agent/offline planners) and/or
+`--seed` (narrows which researched-hit pool is drawn from). The default brief
+is neutral — it asks only for good mixing, no genre/region slant.
+
 Usage:
     # rebuild from researched hits + keep current user selection, mix-order
     uv run python -m brain.curate_playlist --mode hits --planner mix-graph
@@ -22,6 +27,10 @@ Usage:
 
     # re-order the CURRENT enabled set only (what you like in the UI)
     uv run python -m brain.curate_playlist --mode selection --planner h-agent
+
+    # per-playlist subjective ask, this run only
+    uv run python -m brain.curate_playlist --mode hits --planner h-agent \
+        --brief "West Coast hip-hop into classic R&B; end on slow jams"
 """
 from __future__ import annotations
 
@@ -56,11 +65,23 @@ DEFAULT_PICKS = DATA_DIR / "agent_picks.json"
 EXTRA_HITS = Path(__file__).parent / "playlist_seeds" / "extra_folder_hits.json"
 DEFAULT_REPORT = DATA_DIR / "mix_transitions.json"
 
+# Objective mixing goals only — subjective asks (genre, region, era, mood)
+# belong in a per-playlist --brief, never hardcoded here.
+NEUTRAL_BRIEF = (
+    "maximize seamless blends and sample call-backs; "
+    "dancefloor energy that builds then cools"
+)
 
-def all_hit_seeds() -> list[dict]:
-    seeds = list(load_seed(DEFAULT_SEED))
-    if EXTRA_HITS.exists():
-        seeds.extend(json.loads(EXTRA_HITS.read_text()))
+
+def all_hit_seeds(paths: list[Path] | None = None) -> list[dict]:
+    if paths:
+        seeds: list[dict] = []
+        for path in paths:
+            seeds.extend(load_seed(path))
+    else:
+        seeds = list(load_seed(DEFAULT_SEED))
+        if EXTRA_HITS.exists():
+            seeds.extend(json.loads(EXTRA_HITS.read_text()))
     # de-dupe by normalized artist|title
     seen: set[str] = set()
     unique: list[dict] = []
@@ -73,8 +94,8 @@ def all_hit_seeds() -> list[dict]:
     return unique
 
 
-def match_hits(tracks: list[Track]) -> list[Track]:
-    matches = match_seed(tracks, all_hit_seeds())
+def match_hits(tracks: list[Track], seed_paths: list[Path] | None = None) -> list[Track]:
+    matches = match_seed(tracks, all_hit_seeds(seed_paths))
     found = [m.track for m in matches if m.track is not None]
     # stable unique by path
     out: list[Track] = []
@@ -246,9 +267,21 @@ def main() -> None:
     )
     parser.add_argument(
         "--brief",
-        default=(
-            "West Coast hip-hop into classic R&B hits; maximize seamless blends "
-            "and sample call-backs; dancefloor energy that builds then cools"
+        default=NEUTRAL_BRIEF,
+        help=(
+            "per-playlist subjective ask, in your own words (e.g. 'West Coast "
+            "hip-hop into classic R&B', 'slow-jam 90s R&B only', 'keep it "
+            "grimy East Coast'). Default applies no genre/region/era slant."
+        ),
+    )
+    parser.add_argument(
+        "--seed",
+        type=Path,
+        action="append",
+        default=None,
+        help=(
+            "seed file(s) under brain/playlist_seeds/ to draw researched hits "
+            "from (repeatable). Default: all standard hit seeds."
         ),
     )
     parser.add_argument(
@@ -279,8 +312,8 @@ def main() -> None:
             raise SystemExit("no current selection — enable tracks in playlist_editor or use --mode hits")
         print(f"mode=selection: {len(pool)} user-enabled tracks")
     else:
-        hits = match_hits(crate)
-        unmatched = len(all_hit_seeds()) - len(hits)
+        hits = match_hits(crate, args.seed)
+        unmatched = len(all_hit_seeds(args.seed)) - len(hits)
         print(f"mode=hits: matched {len(hits)} researched hits ({unmatched} seed rows unmatched)")
         pool = hits if args.replace_user else merge_keep_user(hits, user_ids, crate)
         print(f"pool after merging user selection: {len(pool)} tracks "
@@ -347,7 +380,12 @@ def main() -> None:
     save_selection(ids, DEFAULT_SELECTION)
     export_playlist(crate, ids, json_path=DEFAULT_PLAYLIST_JSON, m3u_path=DEFAULT_PLAYLIST_M3U)
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps({"mean_score": avg, "transitions": report}, indent=2) + "\n")
+    args.report.write_text(
+        json.dumps(
+            {"brief": args.brief, "mean_score": avg, "transitions": report}, indent=2
+        )
+        + "\n"
+    )
     print(f"wrote {DEFAULT_SELECTION}")
     print(f"wrote {DEFAULT_PLAYLIST_JSON}")
     print(f"wrote {DEFAULT_PLAYLIST_M3U}")
