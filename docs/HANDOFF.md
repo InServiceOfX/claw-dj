@@ -245,7 +245,9 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `brain/build_demo_subset.py` | Picks a curated subset from the crate, writes `.m3u` for one-shot Mixxx import |
 | `brain/build_lineage_set.py` | Builds the sample-lineage playlist from canonical hip-hop/RnB tracks in the crate |
 | `brain/analyze_bpm.py` / `brain/analyze_via_mixxx.py` | Provisional librosa BPM analysis and deterministic Mixxx analysis for the lineage set |
-| `brain/playlist_editor.py` | Local browser UI for searching the crate, enabling/disabling tracks, applying the researched R&B/West Coast hit seed, and exporting a Mixxx playlist without dropping BPM/key metadata |
+| `brain/playlist_editor.py` | Local browser UI for searching the crate, enabling/disabling tracks, applying the researched R&B/West Coast hit seed, exporting a Mixxx playlist without dropping BPM/key metadata, "Ask the DJ brain", and post-finalize **Create the mix** (profile + brief → plan → confirmed live start) |
+| `brain/mix_profiles.py` | Named mix-feel presets + free-text brief → profile overrides |
+| `brain/build_mix_plan.py` | Continuous mix plan builder; `compose_mix_plan` / `plan_summary` shared by CLI and editor |
 | `brain/playlist.py` | Playlist selection persistence, normalized seed matching, and JSON/`.m3u8` export logic |
 | `brain/quick_mix.py` | H-agent-optional six-track sample-lineage planner and live Mixxx quick-mix runner |
 | `hands/beatgrid.py` | Reads bpm from Mixxx's DB for a given track path (schema confirmed against a real install) |
@@ -597,9 +599,22 @@ re-enabled; **Finalize for Mixxx** = the lock-in step before analysis.
 "Ask the DJ brain" supports Both engines with per-engine cached results
 (`brain_picks_{engine}.json`); "Suggest blends" deterministically scores
 analyzed/unselected/non-excluded tracks against the current set. Scans
-that find new music rebuild `new_music_agent.json` automatically. Next
-stage to build: post-finalize "Create the mix" button — flavor presets
-(e.g. DJ showcase) + free-text mix description feeding build_mix_plan.
+that find new music rebuild `new_music_agent.json` automatically.
+
+**"Create the mix" is in the playlist editor UI (2026-07-12).** Panel
+under Ask the DJ brain: profile presets (`dj-showcase` / `club-set` /
+`warm-up`) + free-text mix description → background
+`compose_mix_plan` (same path as
+`brain.build_mix_plan --profile … --mix-brief …`; editor default uses
+**all** analyzed tracks in the finalized playlist, CLI still defaults to
+8 for short demos) → dry-run summary (track/event/segment counts,
+technique histogram, cue sources, full transition list) → **Start mix**
+gated behind `window.confirm` *and* `POST {"confirm": true}` (server
+refuses without it), with a Mixxx control-API ping on port 9995 before
+dispatch. Live performance runs `hands.run_mix_plan.run_plan` in a
+daemon thread so the editor keeps polling. Endpoints: GET `/api/mix`,
+POST `/api/mix/build`, POST `/api/mix/start`. Shared helpers:
+`brain.build_mix_plan.compose_mix_plan` + `plan_summary`.
 
 ### Mix profiles (2026-07-12, `brain/mix_profiles.py`)
 
@@ -614,8 +629,8 @@ maps deterministically onto overrides (keyword pass; agent-backed mapper
 is a drop-in later), every adjustment is named in the plan's `profile`
 provenance block. Gotcha fixed: negation keywords ("no tricks") must be
 checked exclusively before positives ("tricks"). Only knobs validated by
-real runs get added — grow one at a time. The "Create the mix" UI button
-should be preset buttons + a text box calling exactly this CLI.
+real runs get added — grow one at a time. The "Create the mix" UI panel
+is preset buttons + a text box calling this exact path.
 
 ### Post-finalize enrichment (2026-07-12, `brain/enrich_set.py`)
 

@@ -373,8 +373,96 @@ INSTRUMENT_MAP = {
 }
 
 
-def main() -> None:
+def compose_mix_plan(
+    *,
+    playlist: Path = DEFAULT_PLAYLIST,
+    profile_name: str = "dj-showcase",
+    mix_brief: str = "",
+    tracks: int | None = None,
+    seconds_per_track: float | None = None,
+    phrase_analysis: Path = DEFAULT_PHRASES,
+    phrase_beats: int | None = None,
+    out: Path = DEFAULT_PLAN,
+) -> dict:
+    """Build a mix plan from the finalized playlist and write it to disk.
+
+    Same logic as the CLI entrypoint so the playlist editor and
+    `python -m brain.build_mix_plan` stay in lockstep. `tracks=None` means
+    "use every analyzed song in the playlist" (the editor default); the CLI
+    still defaults to 8 for short demos.
+    """
     from brain.mix_profiles import PROFILES, apply_brief, profile_provenance
+
+    if profile_name not in PROFILES:
+        raise ValueError(f"unknown profile {profile_name!r}; choose from {sorted(PROFILES)}")
+    if not playlist.exists():
+        raise FileNotFoundError(
+            f"missing {playlist} — finalize a set first (playlist editor → Finalize for Mixxx)"
+        )
+
+    profile, brief_notes = apply_brief(PROFILES[profile_name], mix_brief)
+    rows = json.loads(playlist.read_text())
+    analyzed = [t for t in rows if t.get("bpm")]
+    pool = analyzed if len(analyzed) >= 2 else rows
+    if len(pool) < 2:
+        raise ValueError("need at least 2 tracks with BPM in the finalized playlist")
+    count = len(pool) if tracks is None else min(tracks, len(pool))
+    plan = build_plan(
+        pool,
+        count=count,
+        seconds_per_track=seconds_per_track if seconds_per_track is not None else profile.seconds_per_track,
+        affinity_lookup=load_affinity_lookup(),
+        phrase_lookup=load_phrase_lookup(phrase_analysis),
+        phrase_beats=phrase_beats if phrase_beats is not None else profile.phrase_beats,
+        profile=profile,
+        provenance=profile_provenance(profile, mix_brief, brief_notes),
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(plan, indent=2) + "\n")
+    return plan
+
+
+def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
+    """Dry-run-style summary for the UI — no Mixxx connection required."""
+    segments = plan.get("segments") or []
+    events = plan.get("events") or []
+    techniques: dict[str, int] = {}
+    for seg in segments:
+        name = seg.get("technique") or "unknown"
+        techniques[name] = techniques.get(name, 0) + 1
+    cue_sources: dict[str, int] = {}
+    for track in plan.get("tracks") or []:
+        source = track.get("cue_source") or "unknown"
+        cue_sources[source] = cue_sources.get(source, 0) + 1
+    return {
+        "plan_path": str(plan_path) if plan_path else None,
+        "version": plan.get("version"),
+        "track_count": plan.get("track_count"),
+        "event_count": len(events),
+        "segment_count": len(segments),
+        "seconds_per_track": plan.get("seconds_per_track"),
+        "phrase_interval_beats": plan.get("phrase_interval_beats"),
+        "profile": plan.get("profile"),
+        "techniques": techniques,
+        "cue_sources": cue_sources,
+        "tracks": [
+            {
+                "artist": t.get("artist"),
+                "title": t.get("title"),
+                "bpm": t.get("bpm"),
+                "key": t.get("key"),
+                "cue_source": t.get("cue_source"),
+            }
+            for t in (plan.get("tracks") or [])
+        ],
+        "segments": segments,
+        "dry_run_ok": True,
+        "dry_run_note": f"{len(events)} events validated in-process (no Mixxx connection)",
+    }
+
+
+def main() -> None:
+    from brain.mix_profiles import PROFILES
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--playlist", type=Path, default=DEFAULT_PLAYLIST)
@@ -397,29 +485,20 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_PLAN)
     args = parser.parse_args()
 
-    profile, brief_notes = apply_brief(PROFILES[args.profile], args.mix_brief)
-    print(f"profile: {profile.name} — {profile.description}")
-    for note in brief_notes:
-        print(f"  brief adjustment: {note}")
-
-    tracks = json.loads(args.playlist.read_text())
-    # Prefer analyzed tracks for a live mix
-    analyzed = [t for t in tracks if t.get("bpm")]
-    pool = analyzed if len(analyzed) >= 2 else tracks
-    affinity = load_affinity_lookup()
-    phrases = load_phrase_lookup(args.phrase_analysis)
-    plan = build_plan(
-        pool,
-        count=min(args.tracks, len(pool)),
-        seconds_per_track=args.seconds_per_track if args.seconds_per_track is not None else profile.seconds_per_track,
-        affinity_lookup=affinity,
-        phrase_lookup=phrases,
-        phrase_beats=args.phrase_beats if args.phrase_beats is not None else profile.phrase_beats,
-        profile=profile,
-        provenance=profile_provenance(profile, args.mix_brief, brief_notes),
+    plan = compose_mix_plan(
+        playlist=args.playlist,
+        profile_name=args.profile,
+        mix_brief=args.mix_brief,
+        tracks=args.tracks,
+        seconds_per_track=args.seconds_per_track,
+        phrase_analysis=args.phrase_analysis,
+        phrase_beats=args.phrase_beats,
+        out=args.out,
     )
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(plan, indent=2) + "\n")
+    profile = plan.get("profile") or {}
+    print(f"profile: {profile.get('name')} — {(profile.get('values') or {}).get('description', '')}")
+    for note in profile.get("brief_adjustments") or []:
+        print(f"  brief adjustment: {note}")
     print(f"mix plan: {plan['track_count']} tracks -> {args.out}")
     for seg in plan["segments"]:
         print(

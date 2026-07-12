@@ -28,6 +28,8 @@ from brain.playlist import (
 )
 
 BRAIN_CACHE = {engine: DATA_DIR / f"brain_picks_{engine}.json" for engine in ("nemoclaw", "h-agent")}
+MIX_PLAN_PATH = DATA_DIR / "mix_plan.json"
+DEFAULT_PLAYLIST_JSON = DATA_DIR / "playlist.json"
 
 WEB_ROOT = Path(__file__).parent / "web"
 
@@ -39,6 +41,18 @@ class PlaylistApp:
         self.brain_thread: threading.Thread | None = None
         self.brain_state: dict = {"running": 0, "error": None, "picks": None,
                                   "brief": None, "engine": None}
+        self.mix_thread: threading.Thread | None = None
+        self.mix_run_thread: threading.Thread | None = None
+        self.mix_state: dict = {
+            "building": 0,
+            "running": 0,
+            "error": None,
+            "profile": None,
+            "mix_brief": None,
+            "summary": None,
+            "live_error": None,
+            "live_message": None,
+        }
         self.reload()
 
     def reload(self) -> None:
@@ -335,6 +349,131 @@ class PlaylistApp:
         selected = export_playlist(self.tracks, self.selection)
         return {"count": len(selected), "json": "brain/data/playlist.json", "m3u": "brain/data/playlist.m3u8"}
 
+    def _load_plan_summary(self) -> dict | None:
+        if not MIX_PLAN_PATH.exists():
+            return None
+        from brain.build_mix_plan import plan_summary
+
+        plan = json.loads(MIX_PLAN_PATH.read_text())
+        return plan_summary(plan, plan_path=MIX_PLAN_PATH)
+
+    def mix_status(self) -> dict:
+        from brain.mix_profiles import PROFILES
+
+        status = dict(self.mix_state)
+        if not status.get("summary"):
+            try:
+                status["summary"] = self._load_plan_summary()
+            except Exception as error:  # surface corrupt plan without crashing the UI
+                status["error"] = status.get("error") or f"could not read existing plan: {error}"
+        status["profiles"] = [
+            {"name": name, "description": profile.description}
+            for name, profile in PROFILES.items()
+        ]
+        status["plan_ready"] = bool(status.get("summary"))
+        status["playlist_ready"] = DEFAULT_PLAYLIST_JSON.exists()
+        return status
+
+    def build_mix(self, profile: str, mix_brief: str, tracks: int | None = None) -> dict:
+        """Build a mix plan in the background (profile + free-text brief).
+
+        Mirrors `uv run python -m brain.build_mix_plan --profile … --mix-brief …`.
+        """
+        from brain.mix_profiles import PROFILES
+
+        if profile not in PROFILES:
+            raise ValueError(f"unknown profile {profile!r}; choose from {sorted(PROFILES)}")
+        if self.mix_thread and self.mix_thread.is_alive():
+            return self.mix_status()
+        if self.mix_run_thread and self.mix_run_thread.is_alive():
+            raise ValueError("a live mix is already running — stop it before rebuilding the plan")
+        if not DEFAULT_PLAYLIST_JSON.exists():
+            raise ValueError("no finalized playlist yet — click Finalize for Mixxx first")
+
+        self.mix_state = {
+            "building": 1,
+            "running": 0,
+            "error": None,
+            "profile": profile,
+            "mix_brief": mix_brief,
+            "summary": None,
+            "live_error": None,
+            "live_message": None,
+        }
+
+        def work() -> None:
+            try:
+                from brain.build_mix_plan import compose_mix_plan, plan_summary
+
+                plan = compose_mix_plan(
+                    playlist=DEFAULT_PLAYLIST_JSON,
+                    profile_name=profile,
+                    mix_brief=mix_brief or "",
+                    tracks=tracks,
+                    out=MIX_PLAN_PATH,
+                )
+                summary = plan_summary(plan, plan_path=MIX_PLAN_PATH)
+                self.mix_state.update(
+                    building=0,
+                    error=None,
+                    summary=summary,
+                    profile=profile,
+                    mix_brief=mix_brief,
+                )
+            except Exception as error:  # surfaced in the local UI
+                self.mix_state.update(building=0, error=str(error), summary=None)
+
+        self.mix_thread = threading.Thread(target=work, daemon=True)
+        self.mix_thread.start()
+        return self.mix_status()
+
+    def start_mix(self, *, confirm: bool, port: int = 9995) -> dict:
+        """Perform the current mix plan live. Requires confirm=True (UI double-gate)."""
+        if not confirm:
+            raise ValueError(
+                "refusing to start without explicit confirmation "
+                "(POST {\"confirm\": true} after the dry-run summary looks right)"
+            )
+        if self.mix_thread and self.mix_thread.is_alive():
+            raise ValueError("mix plan is still building — wait for the dry-run summary")
+        if self.mix_run_thread and self.mix_run_thread.is_alive():
+            return self.mix_status()
+        if not MIX_PLAN_PATH.exists():
+            raise ValueError("no mix plan yet — build one first")
+
+        from hands.mixxx_control import MixxxControl, MixxxControlError
+
+        try:
+            with MixxxControl(port=port, timeout_s=2.0) as mixxx:
+                if not mixxx.ping():
+                    raise MixxxControlError("Mixxx control API did not pong")
+        except Exception as error:
+            raise ValueError(
+                f"Mixxx control API not reachable on port {port}: {error}. "
+                "Launch with: open -a Mixxx --args --control-api-port 9995"
+            ) from error
+
+        plan = json.loads(MIX_PLAN_PATH.read_text())
+        self.mix_state.update(
+            running=1,
+            live_error=None,
+            live_message=f"Starting live mix ({plan.get('track_count')} tracks, "
+                         f"{len(plan.get('events') or [])} events)…",
+        )
+
+        def work() -> None:
+            try:
+                from hands.run_mix_plan import run_plan
+
+                run_plan(plan, port=port, dry_run=False, max_events=None)
+                self.mix_state.update(running=0, live_message="Mix finished.", live_error=None)
+            except Exception as error:  # surfaced in the local UI
+                self.mix_state.update(running=0, live_error=str(error), live_message=None)
+
+        self.mix_run_thread = threading.Thread(target=work, daemon=True)
+        self.mix_run_thread.start()
+        return self.mix_status()
+
 
 def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
@@ -363,6 +502,9 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/brain":
                 self._json(app.brain_status())
+                return
+            if parsed.path == "/api/mix":
+                self._json(app.mix_status())
                 return
             if parsed.path in ("/", "/index.html"):
                 body = (WEB_ROOT / "playlist.html").read_bytes()
@@ -411,6 +553,26 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                 if self.path == "/api/suggest":
                     payload = self._body()
                     self._json(app.suggest_blends(int(payload.get("limit", 20))))
+                    return
+                if self.path == "/api/mix/build":
+                    payload = self._body()
+                    tracks = payload.get("tracks")
+                    self._json(
+                        app.build_mix(
+                            str(payload.get("profile", "dj-showcase")),
+                            str(payload.get("mix_brief", "")),
+                            int(tracks) if tracks is not None else None,
+                        ),
+                        HTTPStatus.ACCEPTED,
+                    )
+                    return
+                if self.path == "/api/mix/start":
+                    payload = self._body()
+                    port = int(payload.get("port", 9995))
+                    self._json(
+                        app.start_mix(confirm=bool(payload.get("confirm")), port=port),
+                        HTTPStatus.ACCEPTED,
+                    )
                     return
             except (KeyError, ValueError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)

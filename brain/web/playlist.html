@@ -53,7 +53,19 @@
     .pick input { width:16px; min-height:16px; accent-color:var(--green); }
     .pick .already { color:var(--muted); font-size:12px; }
     .picks-actions { margin-top:10px; display:flex; gap:8px; }
-    @media (max-width:850px) { .brain-form { grid-template-columns:1fr; } }
+    .mix-form { display:grid; grid-template-columns:minmax(240px,1fr) auto; gap:8px; margin-top:10px; align-items:start; }
+    .mix-presets { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+    .mix-presets button.active { background:#deded8; border-color:#85857f; }
+    .mix-summary { margin-top:10px; border-top:1px solid var(--line); padding-top:10px; }
+    .mix-summary[hidden] { display:none; }
+    .mix-stats { display:flex; flex-wrap:wrap; gap:10px 18px; margin-bottom:8px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .mix-segments { max-height:220px; overflow:auto; border:1px solid #ecece8; background:#fafaf7; }
+    .mix-seg { display:grid; grid-template-columns:36px minmax(0,1fr) 110px 48px; gap:8px; padding:5px 8px; border-bottom:1px solid #ecece8; font-size:13px; }
+    .mix-seg .tech { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .mix-actions { margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    button.danger { background:var(--red); border-color:var(--red); color:white; }
+    button:disabled { opacity:0.55; cursor:not-allowed; }
+    @media (max-width:850px) { .brain-form, .mix-form { grid-template-columns:1fr; } }
     @media (max-width:850px) {
       header { align-items:flex-start; padding:12px 14px; }
       main { padding:12px; }
@@ -90,6 +102,24 @@
       <div class="picks-actions" id="picks-actions" hidden>
         <button id="apply-picks" class="primary">Add checked to set</button>
         <button id="clear-picks">Dismiss</button>
+      </div>
+    </div>
+    <div class="brain" id="mix-panel">
+      <h2>Create the mix</h2>
+      <div class="ingest-detail">After Finalize + enrichment, pick how the set should feel and optionally describe it. Builds <code>mix_plan.json</code>, shows a dry-run summary, then starts only after you confirm.</div>
+      <div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div>
+      <div class="mix-form">
+        <input id="mix-brief" type="text" placeholder="e.g. smooth, longer blends, no tricks" aria-label="Free-text mix description">
+        <button id="build-mix" class="primary">Build mix plan</button>
+      </div>
+      <div class="brain-detail" id="mix-detail"></div>
+      <div class="mix-summary" id="mix-summary" hidden>
+        <div class="mix-stats" id="mix-stats"></div>
+        <div class="mix-segments" id="mix-segments"></div>
+        <div class="mix-actions">
+          <button id="start-mix" class="danger" disabled title="Plays through Mixxx / AirPlay — requires confirmation">Start mix</button>
+          <span class="ingest-detail" id="mix-live"></span>
+        </div>
       </div>
     </div>
     <div class="toolbar">
@@ -169,7 +199,7 @@
       try{
         const result=await api('/api/export',{method:'POST'});
         button.textContent=`✓ Finalized ${result.count} tracks`;
-        el('notice').textContent=`Finalized ${result.count} tracks — ${result.m3u} is ready. Next: uv run python -m brain.enrich_set (bpm/key, lyrics, chroma, phrase cues), then build the mix.`;
+        el('notice').textContent=`Finalized ${result.count} tracks — ${result.m3u} is ready. Next: uv run python -m brain.enrich_set (if needed), then use Create the mix below.`;
       }catch(error){button.textContent='Finalize failed';el('notice').textContent=error.message;}
       setTimeout(()=>{button.textContent=original;button.disabled=false;},4000);
     });
@@ -226,7 +256,149 @@
       el('brain-detail').textContent=`Mix-graph scored ${data.candidates_considered} analyzed candidates against your ${state.meta.selected_count}-track set. These respect your removals.`;
     });
     el('scan').addEventListener('click',async()=>{await api('/api/ingest/scan',{method:'POST'});el('notice').textContent='Looking for new or changed music. Existing files will not be reopened.';const poll=setInterval(async()=>{const status=await loadIngest();if(!status.running){clearInterval(poll);await Promise.all([loadMeta(),loadLibrary(),loadSelected()]);el('notice').textContent=status.error?`Scan failed: ${status.error}`:`Found ${status.new_count} new and ${status.changed_count} changed tracks.`}},750)});
-    (async()=>{await Promise.all([loadMeta(),loadIngest()]);await Promise.all([loadLibrary(),loadSelected()]);const brain=await pollBrain();if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}})().catch(error=>{el('notice').textContent=error.message});
+
+    // --- Create the mix ---
+    const mixState = { profile: 'dj-showcase', pollTimer: null };
+    const PROFILE_LABELS = {
+      'dj-showcase': 'DJ showcase',
+      'club-set': 'Club set',
+      'warm-up': 'Warm-up',
+    };
+    function renderPresets(profiles) {
+      const list = profiles && profiles.length ? profiles : [
+        {name:'dj-showcase', description:'Short varied segments, frequent flourishes'},
+        {name:'club-set', description:'Longer rides and blends'},
+        {name:'warm-up', description:'Unhurried, smooth, no tricks'},
+      ];
+      el('mix-presets').innerHTML = list.map(p =>
+        `<button type="button" data-profile="${esc(p.name)}" title="${esc(p.description || '')}" class="${p.name===mixState.profile?'active':''}">${esc(PROFILE_LABELS[p.name] || p.name)}</button>`
+      ).join('');
+    }
+    function renderMixSummary(summary) {
+      if (!summary) { el('mix-summary').hidden = true; el('start-mix').disabled = true; return; }
+      el('mix-summary').hidden = false;
+      const profile = summary.profile || {};
+      const adjustments = (profile.brief_adjustments || []).join('; ') || 'none';
+      const tech = Object.entries(summary.techniques || {}).map(([k,v]) => `${k}×${v}`).join(' · ') || '—';
+      const cues = Object.entries(summary.cue_sources || {}).map(([k,v]) => `${k}×${v}`).join(' · ') || '—';
+      el('mix-stats').innerHTML =
+        `<span><strong>${summary.track_count}</strong> tracks</span>` +
+        `<span><strong>${summary.event_count}</strong> events</span>` +
+        `<span><strong>${summary.segment_count}</strong> transitions</span>` +
+        `<span>profile <strong>${esc(profile.name || mixState.profile)}</strong></span>` +
+        `<span>brief tweaks: ${esc(adjustments)}</span>` +
+        `<span>${esc(tech)}</span>` +
+        `<span>cues: ${esc(cues)}</span>` +
+        `<span>${esc(summary.dry_run_note || 'dry-run ok')}</span>`;
+      const segments = summary.segments || [];
+      el('mix-segments').innerHTML = segments.length
+        ? segments.map(seg =>
+            `<div class="mix-seg"><span>${String(seg.index+1).padStart(2,'0')}</span>` +
+            `<span class="title">${esc(seg.from)} → ${esc(seg.to)}</span>` +
+            `<span class="tech">${esc(seg.technique)}${seg.showcase_move ? ' · '+esc(seg.showcase_move) : ''}</span>` +
+            `<span class="bpm">${seg.beats}b · ${seg.score}</span></div>`
+          ).join('')
+        : '<div class="empty">No transitions in this plan.</div>';
+    }
+    async function pollMix() {
+      const data = await api('/api/mix');
+      if (data.profile) mixState.profile = data.profile;
+      renderPresets(data.profiles);
+      el('build-mix').disabled = Boolean(data.building) || Boolean(data.running);
+      const canStart = Boolean(data.plan_ready || data.summary) && !data.building && !data.running;
+      el('start-mix').disabled = !canStart;
+      if (data.building) {
+        el('mix-detail').textContent = `Building mix plan (${PROFILE_LABELS[data.profile] || data.profile || '…'}${data.mix_brief ? ' · “'+data.mix_brief+'”' : ''})…`;
+      } else if (data.error) {
+        el('mix-detail').textContent = `Build failed: ${data.error}`;
+      } else if (data.summary) {
+        const brief = data.mix_brief ? ` · brief “${data.mix_brief}”` : '';
+        el('mix-detail').textContent = `Dry-run ready — ${data.summary.track_count} tracks, ${data.summary.event_count} events${brief}. Review below, then Start mix.`;
+      } else if (!data.playlist_ready) {
+        el('mix-detail').textContent = 'Finalize a set for Mixxx first, then build the mix here.';
+      } else {
+        el('mix-detail').textContent = 'Pick a profile (and optional description), then build the plan from the finalized playlist.';
+      }
+      renderMixSummary(data.summary);
+      if (data.running) {
+        el('mix-live').textContent = data.live_message || 'Live mix running… audio goes through Mixxx (Office HomePod via AirPlay).';
+        el('start-mix').disabled = true;
+      } else if (data.live_error) {
+        el('mix-live').textContent = `Live mix stopped: ${data.live_error}`;
+      } else if (data.live_message) {
+        el('mix-live').textContent = data.live_message;
+      } else {
+        el('mix-live').textContent = canStart ? 'Mixxx must be running with --control-api-port 9995.' : '';
+      }
+      return data;
+    }
+    el('mix-presets').addEventListener('click', event => {
+      const button = event.target.closest('button[data-profile]');
+      if (!button) return;
+      mixState.profile = button.dataset.profile;
+      el('mix-presets').querySelectorAll('button').forEach(b => b.classList.toggle('active', b === button));
+    });
+    el('build-mix').addEventListener('click', async () => {
+      el('build-mix').disabled = true;
+      el('mix-detail').textContent = 'Starting build…';
+      try {
+        await api('/api/mix/build', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ profile: mixState.profile, mix_brief: el('mix-brief').value.trim() }),
+        });
+        if (mixState.pollTimer) clearInterval(mixState.pollTimer);
+        mixState.pollTimer = setInterval(async () => {
+          const status = await pollMix();
+          if (!status.building && !status.running) { clearInterval(mixState.pollTimer); mixState.pollTimer = null; }
+        }, 750);
+        await pollMix();
+      } catch (error) {
+        el('mix-detail').textContent = error.message;
+        el('build-mix').disabled = false;
+      }
+    });
+    el('start-mix').addEventListener('click', async () => {
+      const summary = el('mix-stats').textContent || 'the current plan';
+      const ok = window.confirm(
+        'Start the live mix now?\n\nThis plays through Mixxx (and AirPlay to the Office HomePod). ' +
+        'Only continue if the dry-run summary looks right and Mixxx is open on port 9995.\n\n' +
+        summary.slice(0, 200)
+      );
+      if (!ok) return;
+      el('start-mix').disabled = true;
+      el('mix-live').textContent = 'Confirming Mixxx and starting…';
+      try {
+        await api('/api/mix/start', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ confirm: true }),
+        });
+        if (mixState.pollTimer) clearInterval(mixState.pollTimer);
+        mixState.pollTimer = setInterval(async () => {
+          const status = await pollMix();
+          if (!status.running && !status.building) { clearInterval(mixState.pollTimer); mixState.pollTimer = null; }
+        }, 2000);
+        await pollMix();
+      } catch (error) {
+        el('mix-live').textContent = error.message;
+        el('start-mix').disabled = false;
+      }
+    });
+
+    (async()=>{
+      await Promise.all([loadMeta(),loadIngest()]);
+      await Promise.all([loadLibrary(),loadSelected()]);
+      const brain=await pollBrain();
+      if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}
+      const mix=await pollMix();
+      if(mix.building || mix.running){
+        mixState.pollTimer=setInterval(async()=>{
+          const status=await pollMix();
+          if(!status.building && !status.running){clearInterval(mixState.pollTimer);mixState.pollTimer=null;}
+        }, mix.running ? 2000 : 750);
+      }
+    })().catch(error=>{el('notice').textContent=error.message});
   </script>
 </body>
 </html>
