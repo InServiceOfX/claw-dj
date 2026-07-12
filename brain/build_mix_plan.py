@@ -215,6 +215,16 @@ def build_plan(
         next_boundary = phrase_beats
         while next_boundary <= elapsed_in_phrase:
             next_boundary += phrase_beats
+
+        # Showcase pacing varies (Ernest, 2026-07-12): not every segment is
+        # one phrase — some key parts get to play out (2-3 phrases, e.g. the
+        # opener), never the whole song. Slot rotation gives the baseline;
+        # a confident phrase pick earns an extra phrase.
+        ride_phrases = (2, 1, 1, 2, 1, 3, 1, 1)[index % 8]
+        out_phrase = phrase_lookup.get(outgoing["track_id"]) or {}
+        if ride_phrases == 1 and (out_phrase.get("confidence") or 0.0) >= 0.60:
+            ride_phrases = 2
+        next_boundary += (ride_phrases - 1) * phrase_beats
         ride_beats = max(0, next_boundary - elapsed_in_phrase - 1)
 
         # Play body of outgoing track
@@ -224,6 +234,7 @@ def build_plan(
                 "deck": out_deck,
                 "seconds": play_s,
                 "beats": ride_beats,
+                "ride_phrases": ride_phrases,
                 "track": f"{outgoing['artist']} — {outgoing['title']}",
                 "instrument_hints": [
                     "Optional: tweak [ChannelN] filterHighEq mid-phrase",

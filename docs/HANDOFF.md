@@ -400,6 +400,34 @@ DJ-craft feedback from that run, now encoded as defaults (Ernest,
   `intro`/`body` candidates, no 90s cue cap), with roughly every 4th slot
   taking the intro for texture (`build_mix_plan.cue_fields`). Latest plan:
   46 body entries / 12 intro entries.
+- **Genre continuity**: dramatic genre switches are a statement, used
+  sparingly — same-artist/same-genre transitions get a bonus, an *unbacked*
+  cross-genre jump pays a toll plus a cooldown in the greedy tour. A jump is
+  "earned" (exempt) when sample lineage or chromagram texture backs it
+  (`mix_graph.genre_of`/`load_chroma_pairs`; chroma coverage is currently
+  just the 12-track lineage set — extend with `clawdj chroma`).
+- **Sample lineage is the foundation**: a researched sample/cover edge
+  floors the pair score at 0.92, nearly overriding everything — mixing the
+  original into the song that samples it (across genres) is the showcase.
+  **`mix_lineage.json` was pruned 40 → 10 edges**: the agent-researched file
+  had padded real samples with "era pairing"/"continuum" vibes (that fake
+  lineage is exactly what made Beautiful→Bernard Wright look backed — Ernest
+  heard it as jarring, and the data was the bug). Same-artist/genre bonuses
+  now cover what the soft edges faked. Three originals found on the drive
+  and added to the set: Marvin Gaye "T Plays It Cool" (→ Erick Sermon
+  "Music"), Isaac Hayes "A Few More Kisses To Go" (→ Ain't No Fun), James
+  Brown "Papa Don't Take No Mess" (→ That's the Way Love Goes) — all three
+  place adjacent at the 0.92 floor. Remaining lineage edges cite originals
+  not on the drive (verify "Beautiful ↔ Mr. Lonely" with a real
+  whosampled-style lookup sometime; it smells like more agent hallucination).
+- **Segment variety**: rides are no longer uniform — slot rotation gives
+  1/2/3-phrase segments (opener gets 2; a confident phrase pick earns an
+  extra), so key parts play out while staying showcase-length.
+- `brain.analyze_via_mixxx` fix: eject + wait for bpm to drop before each
+  load — the deck's stale bpm otherwise satisfies the wait instantly and
+  every track after the first silently skips analysis. Mixxx flushes
+  analysis to the DB lazily (sometimes ~a minute after eject) — re-run
+  `sync_mixxx_analysis` if bpm comes back None right after analyzing.
 
 ## NemoClaw (Nvidia challenge) status
 

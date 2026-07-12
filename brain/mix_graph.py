@@ -23,6 +23,12 @@ from brain.library import Track
 from brain.playlist import normalize
 
 DEFAULT_LINEAGE = Path(__file__).parent / "playlist_seeds" / "mix_lineage.json"
+DEFAULT_CHROMA = Path(__file__).parent / "data" / "chroma_similarity.json"
+
+# Chromagram similarity above this counts as "the texture/beat aligns" — the
+# evidence that lets a cross-genre transition off the hook. The current
+# matrix (clawdj chroma, lineage set) clusters 0.95-0.99, so the bar is high.
+CHROMA_MATCH = 0.975
 
 # Open Key / Camelot notation without the A/B letter first — map common Mixxx
 # key strings (e.g. "Am", "C#m", "F") onto Camelot numbers.
@@ -172,6 +178,36 @@ def load_lineage(path: Path = DEFAULT_LINEAGE) -> list[dict]:
     return json.loads(path.read_text())
 
 
+def load_chroma_pairs(path: Path = DEFAULT_CHROMA) -> dict[tuple[str, str], float]:
+    """Pairwise chromagram similarity keyed by sorted track_id pair.
+
+    Produced by `clawdj chroma` on a small ordered set (never the full
+    crate); coverage grows as more sets get enriched.
+    """
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text())
+    paths = data.get("paths") or []
+    similarity = data.get("similarity") or []
+    pairs: dict[tuple[str, str], float] = {}
+    for i, a in enumerate(paths):
+        for j in range(i + 1, len(paths)):
+            pairs[tuple(sorted((a, paths[j])))] = similarity[i][j]
+    return pairs
+
+
+def genre_of(track: Track) -> str | None:
+    """Coarse genre: the library folder root is the reliable signal on this
+    drive (HipHop/RnB); fall back to the ID3 genre tag's first token."""
+    for root in ("HipHop", "RnB"):
+        if f"/{root}/" in track.track_id:
+            return root.lower()
+    if track.genre:
+        tokens = normalize(track.genre).split()
+        return tokens[0] if tokens else None
+    return None
+
+
 def lineage_pairs(tracks: list[Track], lineage: list[dict] | None = None) -> set[tuple[str, str]]:
     """Undirected edges between track_ids that share a researched sample link."""
     lineage = lineage if lineage is not None else load_lineage()
@@ -229,6 +265,7 @@ def pair_score(
     b: Track,
     *,
     lineage: set[tuple[str, str]] | None = None,
+    chroma: dict[tuple[str, str], float] | None = None,
 ) -> MixEdge:
     reasons: list[str] = []
     bpm_s, bpm_r = bpm_compatibility(a.bpm, b.bpm)
@@ -237,20 +274,44 @@ def pair_score(
         reasons.append(bpm_r)
     if key_r:
         reasons.append(key_r)
+    pair = tuple(sorted((a.track_id, b.track_id)))
     lineage_s = 0.0
-    if lineage:
-        pair = tuple(sorted((a.track_id, b.track_id)))
-        if pair in lineage:
-            lineage_s = 1.0
-            reasons.append("sample/cover lineage")
+    if lineage and pair in lineage:
+        lineage_s = 1.0
+        reasons.append("sample/cover lineage")
     tok_s, tok_r = title_token_overlap(a, b)
     if tok_r:
         reasons.append(tok_r)
     # Weighted: BPM and key dominate; lineage is a strong story boost.
     score = 0.45 * bpm_s + 0.35 * key_s + 0.15 * lineage_s + 0.05 * tok_s
+
+    # Continuity guideline (Ernest, 2026-07-12): dramatic genre switches are
+    # a statement to use sparingly — same artist / same genre reads as a
+    # coherent journey. A cross-genre move is "earned" when sample lineage
+    # or chromagram texture backs it; otherwise it pays a toll here and a
+    # streak penalty in greedy_mix_order.
+    chroma_sim = chroma.get(pair) if chroma else None
+    texture_match = chroma_sim is not None and chroma_sim >= CHROMA_MATCH
+    if normalize(a.artist) == normalize(b.artist):
+        score += 0.10
+        reasons.append("same artist")
+    ga, gb = genre_of(a), genre_of(b)
+    if ga and gb:
+        if ga == gb:
+            score += 0.05
+        elif texture_match:
+            score += 0.03
+            reasons.append(f"cross-genre but texture aligns (chroma {chroma_sim:.2f})")
+        elif not lineage_s:
+            score -= 0.12
+            reasons.append(f"genre jump ({ga}→{gb}, unbacked)")
+
+    # Sample lineage is the foundation of the showcase: mixing the original
+    # with the song that samples it (often a very different genre) is the
+    # story, so it nearly overrides everything else.
     if lineage_s:
-        score = min(1.0, score + 0.2)
-    return MixEdge(a.track_id, b.track_id, score, tuple(reasons))
+        score = max(score, 0.92)
+    return MixEdge(a.track_id, b.track_id, min(1.0, score), tuple(reasons))
 
 
 def greedy_mix_order(
@@ -258,7 +319,9 @@ def greedy_mix_order(
     *,
     start: Track | None = None,
     lineage: set[tuple[str, str]] | None = None,
+    chroma: dict[tuple[str, str], float] | None = None,
     max_consecutive_slowdowns: int = 2,
+    genre_jump_cooldown: int = 4,
 ) -> list[Track]:
     """Nearest-neighbor tour maximizing successive mix scores.
 
@@ -266,20 +329,41 @@ def greedy_mix_order(
     tempo get a bonus, slowing down is tolerated at most
     `max_consecutive_slowdowns` transitions in a row (DJ note from Ernest:
     one or two successive slow-downs is fine, more kills the room).
+
+    Keeps genre switches rare: an *unbacked* genre jump (no lineage, no
+    chroma texture match) starts a cooldown of `genre_jump_cooldown` picks
+    during which further unbacked jumps are heavily discouraged — dramatic
+    switches are a statement, not a habit. Lineage/chroma-backed crossings
+    are exempt: those are the showcase.
     """
     if not tracks:
         return []
+    if chroma is None:
+        chroma = load_chroma_pairs()
+
+    def unbacked_jump(a: Track, b: Track) -> bool:
+        ga, gb = genre_of(a), genre_of(b)
+        if not ga or not gb or ga == gb:
+            return False
+        pair = tuple(sorted((a.track_id, b.track_id)))
+        if lineage and pair in lineage:
+            return False
+        sim = chroma.get(pair)
+        return not (sim is not None and sim >= CHROMA_MATCH)
+
     remaining = {track.track_id: track for track in tracks}
     current = start if start and start.track_id in remaining else tracks[0]
     order = [current]
     del remaining[current.track_id]
     slowdown_streak = 0
+    jump_cooldown = 0
     while remaining:
         best: Track | None = None
         best_score = -1e9
         best_slow = False
+        best_jump = False
         for candidate in remaining.values():
-            edge = pair_score(current, candidate, lineage=lineage)
+            edge = pair_score(current, candidate, lineage=lineage, chroma=chroma)
             step = tempo_step(current.bpm, candidate.bpm)
             adjusted = edge.score
             slow = step is not None and step < 0.98
@@ -290,15 +374,20 @@ def greedy_mix_order(
                     adjusted -= 0.03
                     if slowdown_streak >= max_consecutive_slowdowns:
                         adjusted -= 0.35  # only if nothing better exists
+            jump = unbacked_jump(current, candidate)
+            if jump and jump_cooldown > 0:
+                adjusted -= 0.30  # a second dramatic switch too soon
             if adjusted > best_score:
                 best_score = adjusted
                 best = candidate
                 best_slow = slow
+                best_jump = jump
         assert best is not None
         order.append(best)
         del remaining[best.track_id]
         current = best
         slowdown_streak = slowdown_streak + 1 if best_slow else 0
+        jump_cooldown = genre_jump_cooldown if best_jump else max(0, jump_cooldown - 1)
     return order
 
 
@@ -306,10 +395,13 @@ def transition_report(
     tracks: list[Track],
     *,
     lineage: set[tuple[str, str]] | None = None,
+    chroma: dict[tuple[str, str], float] | None = None,
 ) -> list[dict]:
+    if chroma is None:
+        chroma = load_chroma_pairs()
     report = []
     for left, right in zip(tracks, tracks[1:]):
-        edge = pair_score(left, right, lineage=lineage)
+        edge = pair_score(left, right, lineage=lineage, chroma=chroma)
         report.append(
             {
                 "from": f"{left.artist} — {left.title}",

@@ -28,6 +28,13 @@ ANALYZE_TIMEOUT_S = 60.0
 
 
 def wait_for_bpm(mixxx: MixxxControl, group: str, timeout_s: float) -> float | None:
+    """Wait for the deck's analyzer to produce a bpm for the *current* track.
+
+    The deck's bpm control keeps the previous track's value briefly after a
+    new load, so eject first (the caller does) and require a fresh non-zero
+    reading — otherwise every track after the first "passes" instantly with
+    the stale bpm and never actually gets analyzed (bit us 2026-07-12).
+    """
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         bpm = mixxx.get(group, "bpm")
@@ -57,6 +64,16 @@ def main() -> None:
         for r in records:
             label = f"{r['artist']} - {r['title']}" if "artist" in r else r["track_id"]
             print(label)
+            # Eject so the bpm control drops to 0 before the next load — a
+            # stale non-zero reading otherwise satisfies wait_for_bpm
+            # immediately and the track never gets analyzed. Ejecting also
+            # forces Mixxx to flush the previous track's analysis to the DB.
+            mixxx.set(group, "eject", 1)
+            time.sleep(1.0)
+            mixxx.set(group, "eject", 0)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and mixxx.get(group, "bpm") > 0:
+                time.sleep(0.5)
             mixxx.load(args.deck, r["track_id"])
             bpm = wait_for_bpm(mixxx, group, ANALYZE_TIMEOUT_S)
             if bpm is None:
