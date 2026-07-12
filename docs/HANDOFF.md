@@ -539,6 +539,25 @@ Run the CLI once with the desired roots. After that, the playlist editor's
 and reports new/changed/unchanged/missing-tag counts. Expensive BPM/key, phrase,
 lyrics, and chromagram work remains downstream and scoped to selected tracks.
 
+**Migration caveat (fixed post-hoc 2026-07-12):** the first migration
+stamped every row with the same `first_seen_at`, so "which tracks are new"
+survived only as a count. Reconstructed exactly via file birthtimes (a
+4.5-hour copy gap sat precisely at the 2,695 boundary) and backfilled into
+the index; future scans persist real first-seen times naturally.
+`sync_mixxx_analysis` now writes bpm/key into the index too and exports
+full-fidelity records from it (review fix — crate rewrites used to drop
+album/duration and revert re-analyzed bpm on the next scan).
+
+**New-music batch 2026-07-12 (2,695 tracks: 1,817 RnB / 878 HipHop):**
+dominated by Charles Aznavour (~1,416 — chanson, in the RnB folder), 50
+Cent (332), Fat Joe (177), Aaliyah (170), Keith Murray (193), G-Unit,
+Terror Squad; 46 tracks untagged. Agent-facing candidates file:
+`brain/data/new_music_agent.json` (path-stripped, short `n####` ids,
+metadata only) + `new_music_ids.json` (id → path resolution, stays local).
+This is the input for the NemoClaw / H-agent "pick playlist candidates
+from the new music" conversation; resolve returned ids locally, never let
+the agent touch paths.
+
 **NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
 Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.
 
