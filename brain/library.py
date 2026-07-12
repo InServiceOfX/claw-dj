@@ -27,6 +27,7 @@ class Track:
     title: str
     artist: str
     genre: str | None = None
+    album: str | None = None
     bpm: float | None = None
     key: str | None = None
     energy: Energy = Energy.MEDIUM
@@ -42,6 +43,7 @@ def load_crate(path: Path = DEFAULT_CRATE_CACHE) -> list[Track]:
             title=r["title"],
             artist=r["artist"],
             genre=r.get("genre"),
+            album=r.get("album"),
             bpm=r.get("bpm"),
             key=r.get("key"),
             energy=Energy(r.get("energy", Energy.MEDIUM.value)),

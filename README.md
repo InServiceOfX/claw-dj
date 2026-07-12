@@ -30,13 +30,29 @@ idea — see [docs/prior-research/](docs/prior-research/) for provenance and
 
 ## Curate a playlist
 
-Scan one or more library roots, merge Mixxx's existing BPM/key analysis, and
-open the local playlist picker:
+Playlist data is **only songs available on this machine**. Scan one or more
+library roots for metadata (title/artist/album/genre via mutagen — no audio
+analysis; typically a few ms/file), optionally hand the slim catalog to an
+agent, then export a Mixxx playlist:
 
 ```bash
-uv run python -m brain.scan_library /path/to/HipHop /path/to/RnB
-uv run python -m brain.sync_mixxx_analysis
+# multi-directory availability scan (metadata only)
+uv run python -m brain.scan_library \
+  /Volumes/USB322FD/Music/RnB /Volumes/USB322FD/Music/HipHop --catalog
+
+# H Company agent picks from the local crate only (planning, no GUI)
+uv run python -m brain.curate_playlist \
+  --brief "late-night West Coast R&B into Snoop-era hip-hop" \
+  --count 12 --planner h-agent
+
+# or: NemoClaw / Hermes fills brain/data/agent_picks.json, then
+uv run python -m brain.curate_playlist --planner offline --from-picks brain/data/agent_picks.json
+
+# browser picker (search / enable / export)
 uv run python -m brain.playlist_editor --open
+
+# after Mixxx analyzes newly imported tracks
+uv run python -m brain.sync_mixxx_analysis
 ```
 
 The picker can add the researched R&B/West Coast seed, search and filter all

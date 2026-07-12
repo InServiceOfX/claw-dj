@@ -384,3 +384,22 @@ tracks. After importing and analyzing the curated playlist, Mixxx had 77 crate
 matches; all 49 tracks in the current enabled set have both BPM and key. The
 current set intentionally differs from the 50-track seed: two seed tracks were
 disabled and The-Dream's "Falsetto" was added.
+
+## Available catalog + agent curation (2026-07-11 evening)
+
+Playlist selection is constrained to **songs physically available** under the
+user-chosen roots (e.g. `/Volumes/USB322FD/Music/RnB` + `.../HipHop`).
+
+| Module | Role |
+| --- | --- |
+| `brain/scan_library.py` | Multi-root **metadata-only** scan (mutagen tags: title/artist/album/genre). ~few ms/file; no BPM analysis. Optional `--catalog`. |
+| `brain/catalog.py` | Slim agent index (`catalog.json`) + path-stripped `agent_view` for NemoClaw upload. |
+| `brain/curate_playlist.py` | Curate only from crate: `--planner h-agent` (H Company planning-only) or `--planner offline` (resolve NemoClaw/Hermes picks). Brief-ranks a candidate pool so 14k tracks never dump into one prompt. |
+
+**NemoClaw on this Mac (status 2026-07-11 ~19:20 PT):** sandbox `hermes` is
+Ready; `nemoclaw hermes doctor` healthy; inference via
+`nvidia/nemotron-3-super-120b-a12b` (nvidia-prod). Interactive `nemoclaw onboard`
+still in progress at the **policies** step (`Connected: no` in global status).
+Not yet on H Company Holo3/vLLM — that path is still `docs/LINUX_PORT.md` §5.
+Host→sandbox flow for curation: scan on host → upload path-stripped catalog →
+agent returns picks JSON → `curate_playlist --planner offline`.
