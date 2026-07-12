@@ -525,6 +525,20 @@ owns beatgrids for beatmatch.
 **Continuous mix path:** `enrich_playlist` → `build_mix_plan` →
 `hands.run_mix_plan` (control API). Knobs/docs: `docs/MIX_INSTRUMENT.md`.
 
+### Incremental new-music ingestion (2026-07-12)
+
+`brain/data/library.sqlite3` is now the local source of scan state. It stores
+configured roots plus each file's path, size, nanosecond mtime, embedded tags,
+availability, first/last-seen times, and analysis fields. `brain.scan_library`
+still writes `crate.json` and optional `catalog.json`, so existing curation is
+unchanged, but repeat scans only open new or changed files with Mutagen.
+Removed files are marked unavailable rather than erasing their history.
+
+Run the CLI once with the desired roots. After that, the playlist editor's
+**Check for new music** button reuses those roots, scans in a background thread,
+and reports new/changed/unchanged/missing-tag counts. Expensive BPM/key, phrase,
+lyrics, and chromagram work remains downstream and scoped to selected tracks.
+
 **NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
 Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.
 

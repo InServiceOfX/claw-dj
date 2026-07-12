@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from brain.library import Track, load_crate
+from brain.library_index import configured_roots, scan_status
 from brain.playlist import export_playlist, load_seed, load_selection, match_seed, save_selection, track_record
 
 WEB_ROOT = Path(__file__).parent / "web"
@@ -21,10 +22,50 @@ WEB_ROOT = Path(__file__).parent / "web"
 
 class PlaylistApp:
     def __init__(self) -> None:
+        self.scan_thread: threading.Thread | None = None
+        self.scan_error: str | None = None
+        self.reload()
+
+    def reload(self) -> None:
         self.tracks = load_crate()
         self.by_id = {track.track_id: track for track in self.tracks}
         self.selection = [track_id for track_id in load_selection() if track_id in self.by_id]
         self.selected = set(self.selection)
+
+    def ingest_status(self) -> dict:
+        status = scan_status()
+        if self.scan_error:
+            status["error"] = self.scan_error
+        return status
+
+    def start_scan(self) -> dict:
+        if self.scan_thread and self.scan_thread.is_alive():
+            return self.ingest_status()
+        roots = [Path(path) for path in configured_roots()]
+        if not roots:
+            raise ValueError(
+                "No music folders configured. Run brain.scan_library with your RnB and HipHop folders once."
+            )
+
+        def work() -> None:
+            self.scan_error = None
+            try:
+                from brain.catalog import write_catalog
+                from brain.library_index import export_records
+                from brain.scan_library import incremental_scan
+
+                incremental_scan(roots)
+                records = export_records()
+                from brain.library import DEFAULT_CRATE_CACHE
+                DEFAULT_CRATE_CACHE.write_text(json.dumps(records, indent=2))
+                write_catalog(records, roots=[str(root) for root in roots])
+                self.reload()
+            except Exception as error:  # surfaced in the local UI
+                self.scan_error = str(error)
+
+        self.scan_thread = threading.Thread(target=work, daemon=True)
+        self.scan_thread.start()
+        return {**self.ingest_status(), "running": 1}
 
     def metadata(self) -> dict:
         return {
@@ -143,6 +184,9 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/tracks":
                 self._json(app.search(parse_qs(parsed.query)))
                 return
+            if parsed.path == "/api/ingest":
+                self._json(app.ingest_status())
+                return
             if parsed.path in ("/", "/index.html"):
                 body = (WEB_ROOT / "playlist.html").read_bytes()
                 self.send_response(HTTPStatus.OK)
@@ -168,6 +212,9 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     return
                 if self.path == "/api/export":
                     self._json(app.export())
+                    return
+                if self.path == "/api/ingest/scan":
+                    self._json(app.start_scan(), HTTPStatus.ACCEPTED)
                     return
             except (KeyError, ValueError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)

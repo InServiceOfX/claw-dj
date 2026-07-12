@@ -55,6 +55,27 @@ def main() -> None:
             }
         )
 
+    # The SQLite index is the scan state's source of truth — write bpm/key
+    # there too, or the next incremental scan's export reverts crate.json to
+    # the index's stale values (its bootstrap backfill only fills NULLs).
+    from contextlib import closing
+
+    from brain.library_index import connect, export_records
+
+    with closing(connect()) as db:
+        for location, hit in analyzed.items():
+            if hit["bpm"]:
+                db.execute(
+                    "UPDATE tracks SET bpm=?, key=? WHERE track_id=?",
+                    (hit["bpm"], hit["key"], location),
+                )
+        db.commit()
+        indexed = db.execute("SELECT count(*) FROM tracks").fetchone()[0]
+    if indexed:
+        # Full-fidelity export (album/duration/size preserved) once the
+        # index exists; the legacy slim records are only a fresh-clone path.
+        records = export_records()
+
     DEFAULT_CRATE_CACHE.write_text(json.dumps(records, indent=2))
     print(f"{matched}/{len(tracks)} tracks matched Mixxx's analyzed library -> {DEFAULT_CRATE_CACHE}")
     print(f"{len(analyzed)} analyzed tracks total in Mixxx's library (including ones outside this crate)")

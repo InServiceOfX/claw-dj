@@ -47,4 +47,6 @@ class MixPlanTest(TestCase):
         self.assertIn("stop_all", ops)
         self.assertEqual(len(plan["segments"]), 3)
         body = next(event for event in plan["events"] if event["op"] == "play_body")
-        self.assertEqual(body["beats"], 31)
+        # The opener now rides two phrases; varied segment lengths are an
+        # intentional part of the current plan defaults.
+        self.assertEqual(body["beats"], 63)

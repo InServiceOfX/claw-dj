@@ -27,6 +27,7 @@ from pathlib import Path
 from mutagen import File as MutagenFile
 
 from brain.library import DEFAULT_CRATE_CACHE
+from brain.library_index import DEFAULT_INDEX, begin_scan, bootstrap_analysis, connect, export_records
 
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".wav", ".aiff"}
 
@@ -134,12 +135,141 @@ def scan(
     return records
 
 
+def incremental_scan(
+    roots: list[Path], *, index_path: Path = DEFAULT_INDEX,
+    min_age_seconds: float = 300, workers: int = 8,
+) -> dict:
+    """Index only new/changed files and return a user-facing scan summary."""
+    normalized = [root.expanduser().resolve() for root in roots]
+    for root in normalized:
+        if not root.exists():
+            raise FileNotFoundError(f"scan root does not exist: {root}")
+    paths_by_root: dict[str, Path] = {}
+    for root in normalized:
+        for path in root.rglob("*"):
+            if path.suffix.lower() in AUDIO_EXTENSIONS and not path.name.startswith("._"):
+                paths_by_root[str(path)] = root
+
+    db = connect(index_path)
+    started_at = begin_scan(db, len(paths_by_root))
+    try:
+        baseline_paths: set[str] = set()
+        if DEFAULT_CRATE_CACHE.exists():
+            try:
+                baseline_paths = {
+                    row["track_id"] for row in json.loads(DEFAULT_CRATE_CACHE.read_text())
+                }
+            except (OSError, json.JSONDecodeError, KeyError):
+                baseline_paths = set()
+        for root in normalized:
+            db.execute(
+                "INSERT INTO roots(path, added_at) VALUES (?, ?) "
+                "ON CONFLICT(path) DO NOTHING", (str(root), started_at),
+            )
+        existing = {
+            row["track_id"]: row for row in db.execute(
+                "SELECT track_id,size_bytes,mtime_ns FROM tracks"
+            )
+        }
+        changed: list[Path] = []
+        unchanged = 0
+        for raw_path in sorted(paths_by_root):
+            path = Path(raw_path)
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            old = existing.get(raw_path)
+            if old and old["size_bytes"] == stat.st_size and old["mtime_ns"] == stat.st_mtime_ns:
+                unchanged += 1
+                db.execute(
+                    "UPDATE tracks SET available=1,last_seen_at=? WHERE track_id=?",
+                    (started_at, raw_path),
+                )
+            else:
+                changed.append(path)
+
+        now = time.time()
+        skipped: list[dict] = []
+        records: list[dict] = []
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = pool.map(
+                lambda p: _read_record(p, min_age_seconds=min_age_seconds, now=now), changed
+            )
+            for result in results:
+                if result is None:
+                    continue
+                kind, payload = result
+                (skipped if kind == "skip" else records).append(payload)
+
+        new_count = changed_count = migrated_count = 0
+        for record in records:
+            track_id = record["track_id"]
+            stat = Path(track_id).stat()
+            is_new = track_id not in existing and track_id not in baseline_paths
+            new_count += int(is_new)
+            changed_count += int(track_id in existing)
+            migrated_count += int(track_id not in existing and track_id in baseline_paths)
+            tag_status = "ok"
+            if record["artist"] == "Unknown Artist" or record["title"] == Path(track_id).stem:
+                tag_status = "missing_tags"
+            old_analysis = db.execute(
+                "SELECT bpm,key,energy,first_seen_at FROM tracks WHERE track_id=?", (track_id,)
+            ).fetchone()
+            first_seen = old_analysis["first_seen_at"] if old_analysis else started_at
+            db.execute(
+                """INSERT OR REPLACE INTO tracks
+                (track_id,root,size_bytes,mtime_ns,title,artist,album,genre,duration_seconds,
+                 bpm,key,energy,first_seen_at,last_seen_at,available,tag_status)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
+                (track_id, str(paths_by_root[track_id]), stat.st_size, stat.st_mtime_ns,
+                 record["title"], record["artist"], record.get("album"), record.get("genre"),
+                 record.get("duration_seconds"), old_analysis["bpm"] if old_analysis else None,
+                 old_analysis["key"] if old_analysis else None,
+                 old_analysis["energy"] if old_analysis else None, first_seen, started_at, tag_status),
+            )
+
+        present = set(paths_by_root)
+        scoped = [row["track_id"] for row in db.execute(
+            "SELECT track_id FROM tracks WHERE root IN (%s) AND available=1" %
+            ",".join("?" * len(normalized)), tuple(map(str, normalized)),
+        )] if normalized else []
+        missing = [track_id for track_id in scoped if track_id not in present]
+        db.executemany("UPDATE tracks SET available=0 WHERE track_id=?", ((p,) for p in missing))
+        bootstrap_analysis(db)
+        finished = time.time()
+        db.execute(
+            "UPDATE roots SET last_scan_at=? WHERE path IN (%s)" % ",".join("?" * len(normalized)),
+            (finished, *map(str, normalized)),
+        )
+        db.execute(
+            """UPDATE scan_state SET running=0,finished_at=?,processed=?,new_count=?,
+            changed_count=?,unchanged_count=?,missing_count=?,skipped_count=? WHERE id=1""",
+            (finished, len(paths_by_root), new_count, changed_count, unchanged + migrated_count,
+             len(missing), len(skipped)),
+        )
+        db.commit()
+        return {"tracks": len(paths_by_root), "new": new_count, "changed": changed_count,
+                "unchanged": unchanged + migrated_count, "missing": len(missing), "skipped": len(skipped),
+                "elapsed_seconds": round(finished - started_at, 2), "skipped_records": skipped}
+    except Exception as error:
+        db.execute(
+            "UPDATE scan_state SET running=0,finished_at=?,error=? WHERE id=1",
+            (time.time(), str(error)),
+        )
+        db.commit()
+        raise
+    finally:
+        db.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "roots", type=Path, nargs="+", help="directories to scan for audio files"
     )
     parser.add_argument("--out", type=Path, default=DEFAULT_CRATE_CACHE)
+    parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
     parser.add_argument(
         "--catalog",
         action="store_true",
@@ -159,46 +289,27 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    previous = {}
-    if args.out.exists():
-        previous = {
-            record["track_id"]: record for record in json.loads(args.out.read_text())
-        }
-
     started = time.perf_counter()
-    records_by_path: dict[str, dict] = {}
-    skipped: list[dict] = []
-    for root in args.roots:
-        if not root.exists():
-            raise SystemExit(f"scan root does not exist: {root}")
-        found = scan(
-            root,
-            min_age_seconds=args.min_age_seconds,
-            skipped=skipped,
+    try:
+        summary = incremental_scan(
+            args.roots, index_path=args.index, min_age_seconds=args.min_age_seconds,
             workers=args.workers,
         )
-        print(f"  {root}: {len(found)} tracks")
-        records_by_path.update({record["track_id"]: record for record in found})
-
-    records = []
-    for track_id in sorted(records_by_path):
-        record = records_by_path[track_id]
-        old = previous.get(track_id, {})
-        # Carry analysis forward; never invent bpm/key here.
-        for field in ("bpm", "key", "energy"):
-            if old.get(field) is not None:
-                record[field] = old[field]
-        if record.get("album") is None and old.get("album") is not None:
-            record["album"] = old["album"]
-        records.append(record)
+    except FileNotFoundError as error:
+        raise SystemExit(str(error)) from error
+    records = export_records(args.index)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(records, indent=2))
     elapsed = time.perf_counter() - started
-    print(f"scanned {len(records)} tracks -> {args.out} ({elapsed:.1f}s, metadata only)")
+    print(
+        f"indexed {len(records)} tracks -> {args.out} ({elapsed:.1f}s; "
+        f"{summary['new']} new, {summary['changed']} changed, "
+        f"{summary['unchanged']} unchanged)"
+    )
 
     skipped_report = args.out.parent / DEFAULT_SKIPPED_REPORT.name
-    skipped_report.write_text(json.dumps(skipped, indent=2))
-    print(f"skipped {len(skipped)} incomplete/in-transfer files -> {skipped_report}")
+    skipped_report.write_text(json.dumps(summary["skipped_records"], indent=2))
+    print(f"skipped {summary['skipped']} incomplete/in-transfer files -> {skipped_report}")
 
     if args.catalog:
         from brain.catalog import write_catalog

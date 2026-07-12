@@ -36,7 +36,7 @@ analysis; typically a few ms/file), optionally hand the slim catalog to an
 agent, then export a Mixxx playlist:
 
 ```bash
-# multi-directory availability scan (metadata only)
+# first scan records the roots; later runs only reopen new/changed files
 uv run python -m brain.scan_library \
   /Volumes/USB322FD/Music/RnB /Volumes/USB322FD/Music/HipHop --catalog
 
@@ -51,6 +51,7 @@ uv run python -m brain.curate_playlist --mode hits --planner h-agent
 uv run python -m brain.curate_playlist --mode selection --planner h-agent
 
 # browser picker: enable hits, "Order for mixes", export
+# it also provides a one-click incremental "Check for new music" workflow
 uv run python -m brain.playlist_editor --open
 
 # find beatgrid-aligned entry phrases for the short demo subset
