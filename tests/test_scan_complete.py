@@ -4,7 +4,19 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from brain.catalog import find_duplicates
-from brain.scan_library import incomplete_reason
+from brain.scan_library import choose_title, incomplete_reason, title_from_filename
+
+
+class TitleFromRenameTest(TestCase):
+    def test_filename_preferred_for_man_men_typo(self) -> None:
+        path = Path("/music/04. Many Men (Wish Death).mp3")
+        self.assertEqual(title_from_filename(path), "Many Men (Wish Death)")
+        self.assertEqual(
+            choose_title("Many Man (Wish Death)", "Many Men (Wish Death)"),
+            "Many Men (Wish Death)",
+        )
+        # Unrelated tag wins when not a near-typo of the filename.
+        self.assertEqual(choose_title("In Da Club", "04. Track"), "In Da Club")
 
 
 class IncompleteFileTest(TestCase):

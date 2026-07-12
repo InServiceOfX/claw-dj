@@ -165,6 +165,7 @@
             <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end">
               <button type="button" id="back-curate">← Back to curate</button>
               <button type="button" id="refresh-finalized" title="Reload crate + rewrite playlist.json from the enabled set">Refresh list</button>
+              <button type="button" id="rescan-tags" title="Re-read tags/filenames for the set (picks up renames like Many Man→Many Men)">Rescan titles/paths</button>
               <button type="button" id="sync-mixxx" title="Pull BPM/key already in Mixxx's DB into claw-dj">Sync from Mixxx</button>
               <button type="button" id="enrich-set" class="primary" title="Analyze missing BPM/key via Mixxx control API, then lyrics/chroma/phrases">Analyze &amp; enrich missing</button>
             </div>
@@ -174,15 +175,17 @@
         </div>
         <div class="banner" id="plan-stale-banner" hidden>The dry-run plan below is <strong>stale</strong> — it does not match the current finalized set (e.g. you added a track). Rebuild the mix plan.</div>
         <div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div>
-        <div class="mix-form">
+        <div class="mix-form" style="grid-template-columns:minmax(200px,1fr) 170px auto auto">
           <input id="mix-brief" type="text" placeholder='e.g. put Parce Que Tu Crois next to What&apos;s The Difference in the first half; smooth, no tricks' aria-label="Free-text mix description">
           <select id="order-engine" aria-label="Order engine for the brief">
             <option value="nemoclaw">NemoClaw · order</option>
             <option value="h-agent">H Company · order</option>
             <option value="none">Feel only (no reorder)</option>
           </select>
+          <button id="shuffle-opener" title="Pick a random opener and re-unfold the blend graph (nearest-neighbor tour). Adjacent pairs stay mixable; narrative shifts.">Shuffle opener</button>
           <button id="build-mix" class="primary">Build mix plan</button>
         </div>
+        <div class="ingest-detail" id="opener-detail" style="margin-top:6px"></div>
         <div class="brain-detail" id="mix-detail"></div>
         <div class="mix-summary" id="mix-summary" hidden>
           <div class="mix-stats" id="mix-stats"></div>
@@ -434,6 +437,8 @@
       el('enrich-set').disabled = busy || !data.playlist_ready;
       el('sync-mixxx').disabled = busy;
       el('refresh-finalized').disabled = busy;
+      el('rescan-tags').disabled = busy;
+      el('shuffle-opener').disabled = busy || !data.playlist_ready;
       // Start only when plan is ready AND not stale.
       const canStart = Boolean(data.plan_ready) && !data.plan_stale && !busy;
       el('start-mix').disabled = !canStart;
@@ -497,6 +502,43 @@
         el('enrich-detail').textContent = 'Finalized list reloaded from current enabled set + crate metadata.';
       } catch (error) {
         el('enrich-detail').textContent = error.message;
+      }
+    });
+    el('rescan-tags').addEventListener('click', async () => {
+      el('enrich-detail').textContent = 'Re-reading tags/filenames for the finalized set (renames, ID3 lag)…';
+      el('rescan-tags').disabled = true;
+      try {
+        const result = await api('/api/mix/rescan-tags', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+        el('enrich-detail').textContent = result.message || 'Rescan complete.';
+        await pollMix();
+      } catch (error) {
+        el('enrich-detail').textContent = error.message;
+      } finally {
+        el('rescan-tags').disabled = false;
+      }
+    });
+    el('shuffle-opener').addEventListener('click', async () => {
+      el('shuffle-opener').disabled = true;
+      el('opener-detail').textContent = 'Re-unfolding blend graph from a new random opener…';
+      try {
+        const result = await api('/api/mix/shuffle-opener', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({}),
+        });
+        const o = result.opener || {};
+        el('opener-detail').textContent =
+          (result.message || 'Reshuffled.') +
+          (result.preview && result.preview.length
+            ? ' Next: ' + result.preview.slice(0, 4).map(t => t.title).join(' → ')
+            : '');
+        el('enrich-detail').textContent =
+          `Opener: ${o.artist || ''} — ${o.title || ''} (${o.bpm ? Number(o.bpm).toFixed(1)+' BPM' : 'no bpm'}). Plan is stale until you Build mix plan.`;
+        await pollMix();
+      } catch (error) {
+        el('opener-detail').textContent = error.message;
+      } finally {
+        el('shuffle-opener').disabled = false;
       }
     });
     el('sync-mixxx').addEventListener('click', async () => {

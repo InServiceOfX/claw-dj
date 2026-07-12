@@ -536,6 +536,245 @@ class PlaylistApp:
             "finalized": self.finalized_snapshot(),
         }
 
+    def rescan_finalized_tags(self) -> dict:
+        """Re-read tags/filenames for the finalized (or selected) set.
+
+        Picks up renames like Many Man → Many Men when ID3 still has the typo
+        but the file name was fixed. Updates library index + crate + playlist.
+        """
+        from contextlib import closing
+        from pathlib import Path
+
+        from brain.library import DEFAULT_CRATE_CACHE
+        from brain.library_index import connect, export_records
+        from brain.scan_library import _read_record
+
+        self.reload()
+        targets = list(self.selection)
+        if not targets and DEFAULT_PLAYLIST_JSON.exists():
+            rows = json.loads(DEFAULT_PLAYLIST_JSON.read_text())
+            targets = [r["track_id"] for r in rows if r.get("track_id")]
+        if not targets:
+            raise ValueError("nothing to rescan — enable tracks or finalize first")
+
+        now = __import__("time").time()
+        updated = []
+        missing = []
+        with closing(connect()) as db:
+            for track_id in targets:
+                path = Path(track_id)
+                if not path.exists():
+                    # Same-directory rename: old path gone, look for closest name.
+                    parent = path.parent
+                    if parent.is_dir():
+                        stem_hint = path.stem.casefold().replace("many man", "many men")
+                        candidates = [
+                            p for p in parent.iterdir()
+                            if p.suffix.casefold() == path.suffix.casefold() and p.is_file()
+                        ]
+                        match = None
+                        for candidate in candidates:
+                            if "many men" in candidate.stem.casefold() and "wish death" in candidate.stem.casefold():
+                                match = candidate
+                                break
+                            if stem_hint and stem_hint[:12] in candidate.stem.casefold():
+                                match = candidate
+                        if match is not None:
+                            result = _read_record(match, min_age_seconds=0, now=now)
+                            if result and result[0] == "ok":
+                                record = result[1]
+                                # Migrate selection id
+                                if track_id in self.selection:
+                                    self.selection = [
+                                        record["track_id"] if x == track_id else x
+                                        for x in self.selection
+                                    ]
+                                db.execute(
+                                    "UPDATE tracks SET available=0 WHERE track_id=?",
+                                    (track_id,),
+                                )
+                                db.execute(
+                                    "INSERT INTO tracks(track_id, root, size_bytes, mtime_ns, title, artist, "
+                                    "album, genre, duration_seconds, available, first_seen_at, last_seen_at) "
+                                    "VALUES (?,?,?,?,?,?,?,?,?,1,?,?) "
+                                    "ON CONFLICT(track_id) DO UPDATE SET "
+                                    "size_bytes=excluded.size_bytes, mtime_ns=excluded.mtime_ns, "
+                                    "title=excluded.title, artist=excluded.artist, album=excluded.album, "
+                                    "genre=excluded.genre, duration_seconds=excluded.duration_seconds, "
+                                    "available=1, last_seen_at=excluded.last_seen_at",
+                                    (
+                                        record["track_id"],
+                                        str(match.parent),
+                                        record.get("size_bytes") or 0,
+                                        match.stat().st_mtime_ns,
+                                        record["title"],
+                                        record["artist"],
+                                        record.get("album"),
+                                        record.get("genre"),
+                                        record.get("duration_seconds"),
+                                        now,
+                                        now,
+                                    ),
+                                )
+                                # Carry bpm/key from old row if new has none
+                                old = db.execute(
+                                    "SELECT bpm, key FROM tracks WHERE track_id=?", (track_id,)
+                                ).fetchone()
+                                if old and old[0]:
+                                    db.execute(
+                                        "UPDATE tracks SET bpm=COALESCE(bpm, ?), key=COALESCE(key, ?) "
+                                        "WHERE track_id=?",
+                                        (old[0], old[1], record["track_id"]),
+                                    )
+                                updated.append(
+                                    f"{record['artist']} — {record['title']} (renamed path)"
+                                )
+                                continue
+                    missing.append(track_id)
+                    continue
+                result = _read_record(path, min_age_seconds=0, now=now)
+                if not result or result[0] != "ok":
+                    missing.append(track_id)
+                    continue
+                record = result[1]
+                db.execute(
+                    "UPDATE tracks SET title=?, artist=?, album=?, genre=?, "
+                    "duration_seconds=?, size_bytes=?, mtime_ns=?, last_seen_at=?, available=1 "
+                    "WHERE track_id=?",
+                    (
+                        record["title"],
+                        record["artist"],
+                        record.get("album"),
+                        record.get("genre"),
+                        record.get("duration_seconds"),
+                        record.get("size_bytes") or 0,
+                        path.stat().st_mtime_ns,
+                        now,
+                        track_id,
+                    ),
+                )
+                updated.append(f"{record['artist']} — {record['title']}")
+            db.commit()
+            records = export_records()
+        if records:
+            DEFAULT_CRATE_CACHE.write_text(json.dumps(records, indent=2) + "\n")
+        save_selection(self.selection)
+        result = self.reexport_finalized()
+        sample = ", ".join(updated[:5]) + ("…" if len(updated) > 5 else "")
+        message = f"Rescanned {len(updated)} track(s)."
+        if sample:
+            message += f" Updated: {sample}."
+        if missing:
+            message += f" {len(missing)} path(s) still missing on disk."
+        # Highlight Many Men if present
+        many = [
+            t for t in (result.get("finalized") or {}).get("tracks") or []
+            if "many men" in (t.get("title") or "").casefold()
+            or "many man" in (t.get("title") or "").casefold()
+        ]
+        if many:
+            message += f" Wish Death title now: {many[0].get('title')}."
+        return {**result, "updated": len(updated), "missing": missing, "message": message}
+
+    def reshuffle_opener(self, opener_track_id: str | None = None) -> dict:
+        """Re-unfold the mix-graph tour from a new starting track.
+
+        The set is a blend graph (BPM/key/lineage/chroma/lyrics affinities).
+        Picking a different opener (or randomizing it) runs the same greedy
+        nearest-neighbor tour from that node so adjacent pairs stay mixable
+        while the overall narrative shifts. Writes the new order into
+        selection + playlist.json; marks any dry-run plan stale.
+        """
+        import random
+
+        from brain.library import Track
+        from brain.mix_graph import (
+            greedy_mix_order,
+            lineage_pairs,
+            load_chroma_pairs,
+            load_lineage,
+            transition_report,
+        )
+
+        self.reload()
+        if DEFAULT_PLAYLIST_JSON.exists():
+            rows = json.loads(DEFAULT_PLAYLIST_JSON.read_text())
+        else:
+            rows = [
+                track_record(self.by_id[i])
+                for i in self.selection
+                if i in self.by_id
+            ]
+        if len(rows) < 2:
+            raise ValueError("need at least 2 finalized tracks to reshuffle")
+
+        tracks: list[Track] = []
+        for row in rows:
+            tid = row["track_id"]
+            if tid in self.by_id:
+                tracks.append(self.by_id[tid])
+            else:
+                tracks.append(
+                    Track(
+                        track_id=tid,
+                        title=row.get("title") or "",
+                        artist=row.get("artist") or "",
+                        bpm=row.get("bpm"),
+                        key=row.get("key"),
+                        genre=row.get("genre"),
+                    )
+                )
+        by_id = {t.track_id: t for t in tracks}
+        analyzed = [t for t in tracks if t.bpm]
+        pool = analyzed if len(analyzed) >= 2 else tracks
+
+        if opener_track_id:
+            start = by_id.get(opener_track_id)
+            if start is None:
+                raise ValueError(f"opener not in finalized set: {opener_track_id}")
+        else:
+            start = random.choice(pool)
+
+        lineage = lineage_pairs(pool, load_lineage())
+        chroma = load_chroma_pairs()
+        ordered = greedy_mix_order(pool, start=start, lineage=lineage, chroma=chroma)
+        # Append any unanalyzed leftovers at the end so nothing is dropped.
+        ordered_ids = {t.track_id for t in ordered}
+        for track in tracks:
+            if track.track_id not in ordered_ids:
+                ordered.append(track)
+
+        self.selection = [t.track_id for t in ordered]
+        self.selected = set(self.selection)
+        save_selection(self.selection)
+        export_playlist(self.tracks if self.tracks else ordered, self.selection)
+        self.mix_state["summary"] = None
+
+        report = transition_report(ordered, lineage=lineage, chroma=chroma)
+        mean = sum(row["score"] for row in report) / len(report) if report else 0.0
+        preview = [
+            {"artist": t.artist, "title": t.title, "bpm": t.bpm, "key": t.key, "track_id": t.track_id}
+            for t in ordered[:8]
+        ]
+        return {
+            "opener": {
+                "artist": start.artist,
+                "title": start.title,
+                "track_id": start.track_id,
+                "bpm": start.bpm,
+                "key": start.key,
+            },
+            "count": len(ordered),
+            "mean_score": round(mean, 3),
+            "preview": preview,
+            "message": (
+                f"Graph re-unfolded from opener “{start.artist} — {start.title}” "
+                f"({len(ordered)} tracks, mean transition {mean:.2f}). "
+                "Rebuild the mix plan to bake this order into events."
+            ),
+            "finalized": self.finalized_snapshot(),
+        }
+
     def sync_from_mixxx(self) -> dict:
         """Pull BPM/key Mixxx already wrote into its DB → crate + finalized playlist.
 
@@ -941,6 +1180,18 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     return
                 if self.path == "/api/mix/refresh":
                     self._json(app.reexport_finalized())
+                    return
+                if self.path == "/api/mix/rescan-tags":
+                    self._json(app.rescan_finalized_tags())
+                    return
+                if self.path == "/api/mix/shuffle-opener":
+                    payload = self._body()
+                    opener = payload.get("opener_track_id")
+                    self._json(
+                        app.reshuffle_opener(
+                            str(opener) if opener else None,
+                        )
+                    )
                     return
             except (KeyError, ValueError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)

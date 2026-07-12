@@ -625,6 +625,13 @@ re-export so Build mix plan sees the new BPM/key), and **Refresh list**.
 No Holo/GUI agent required when the patched Mixxx control API is up on
 9995. Endpoints: POST `/api/mix/sync`, `/api/mix/enrich`, `/api/mix/refresh`.
 
+**Rename + mix graph opener (2026-07-12):** File rename to `Many Men…mp3`
+left ID3 as "Many Man"; path was already new. Mix page **Rescan titles/paths**
+re-reads tags and prefers filename when it fixes man→men-style typos.
+**Shuffle opener** re-runs `greedy_mix_order` from a random (or chosen)
+start so the blend graph unfolds differently while keeping adjacent pairs
+mixable; then rebuild the plan.
+
 **BPM control-API vs Mixxx DB lag (Many Man case, 2026-07-12):** muted-deck
 analysis printed `mixxx bpm: 97.14` but mixxxdb stayed `bpm=0` / no beatgrid
 even after 45s + re-sync — so claw-dj stayed empty. Fix: `analyze_via_mixxx`

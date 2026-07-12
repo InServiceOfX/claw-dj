@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -28,6 +29,7 @@ from mutagen import File as MutagenFile
 
 from brain.library import DEFAULT_CRATE_CACHE
 from brain.library_index import DEFAULT_INDEX, begin_scan, bootstrap_analysis, connect, export_records
+from brain.playlist import normalize
 
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".wav", ".aiff"}
 
@@ -42,6 +44,34 @@ DEFAULT_SKIPPED_REPORT = DEFAULT_CRATE_CACHE.parent / "scan_skipped.json"
 def _first(tags: dict, key: str) -> str | None:
     values = tags.get(key)
     return values[0] if values else None
+
+
+def title_from_filename(path: Path) -> str:
+    """Strip leading track numbers: '04. Many Men (Wish Death)' → 'Many Men (Wish Death)'."""
+    stem = path.stem.strip()
+    cleaned = re.sub(r"^\d{1,3}[\s.\-_]+", "", stem).strip()
+    return cleaned or stem
+
+
+def choose_title(tag_title: str | None, file_title: str) -> str:
+    """Prefer filename when the user renamed a near-identical typo (Many Man→Men).
+
+    ID3 tags often lag renames; if the tag and filename are the same song with
+    a small spelling fix, trust the file name the user just fixed.
+    """
+    if not tag_title:
+        return file_title
+    if not file_title:
+        return tag_title
+    nt, nf = normalize(tag_title), normalize(file_title)
+    if nt == nf:
+        return tag_title
+    # man/men and similar one-character plural fixes after the same stem
+    if nt.replace(" man ", " men ") == nf or nf.replace(" man ", " men ") == nt:
+        return file_title
+    if nt.replace("mans ", "mens ") == nf:
+        return file_title
+    return tag_title
 
 
 def incomplete_reason(path: Path, *, min_age_seconds: float, now: float) -> str | None:
@@ -72,9 +102,10 @@ def _read_record(
         return None
     size_bytes = path.stat().st_size
     duration = getattr(getattr(tagged, "info", None), "length", None)
+    file_title = title_from_filename(path)
     record = {
         "track_id": str(path),
-        "title": path.stem,
+        "title": file_title,
         "artist": "Unknown Artist",
         "album": None,
         "genre": None,
@@ -83,8 +114,10 @@ def _read_record(
     }
     if tagged is not None:
         # Untagged audio still counts as available; name falls back to filename.
+        # When the user renames the file to fix a typo (Many Man→Many Men) but
+        # leaves ID3 alone, prefer the filename.
         tags = tagged.tags or {}
-        record["title"] = _first(tags, "title") or path.stem
+        record["title"] = choose_title(_first(tags, "title"), file_title)
         record["artist"] = _first(tags, "artist") or "Unknown Artist"
         record["album"] = _first(tags, "album")
         record["genre"] = _first(tags, "genre")
