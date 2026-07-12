@@ -122,16 +122,30 @@ def build_plan(
     phrase_lookup = phrase_lookup or {}
     events: list[dict] = []
 
-    def cue_fields(track: dict, fallback_fraction: float) -> dict:
+    def cue_fields(track: dict, fallback_fraction: float, slot: int = 0) -> dict:
         phrase = phrase_lookup.get(track["track_id"])
-        if phrase:
-            return {
-                "cue_seconds": phrase["cue_seconds"],
-                "cue_beat_index": phrase.get("beat_index"),
-                "cue_confidence": phrase.get("confidence"),
-                "cue_source": "mixxx_beatgrid+energy",
-            }
-        return {"cue_fraction": fallback_fraction, "cue_source": "fraction_fallback"}
+        if not phrase:
+            return {"cue_fraction": fallback_fraction, "cue_source": "fraction_fallback"}
+        body = phrase.get("body")
+        intro = phrase.get("intro")
+        # Default entry: a high-energy phrase past the intro (chorus / first
+        # verse). Intros are softer — interesting occasionally, so roughly
+        # every 4th slot takes the intro instead, when it holds up. (DJ note
+        # from Ernest: don't open every track from the top.)
+        pick, source = (body, "phrase_body") if body else (None, "mixxx_beatgrid+energy")
+        if intro and (
+            body is None
+            or (slot % 4 == 2 and intro["score"] >= 0.75 * body["score"])
+        ):
+            pick, source = intro, "phrase_intro"
+        if pick is None:
+            pick = phrase
+        return {
+            "cue_seconds": pick["cue_seconds"],
+            "cue_beat_index": pick.get("beat_index"),
+            "cue_confidence": pick.get("confidence"),
+            "cue_source": source,
+        }
     # Instrument reset
     events.append(
         {
@@ -148,7 +162,7 @@ def build_plan(
             "track_id": selected[0]["track_id"],
             "artist": selected[0]["artist"],
             "title": selected[0]["title"],
-            **cue_fields(selected[0], 0.08),
+            **cue_fields(selected[0], 0.08, 0),
         }
     )
     events.append(
@@ -158,7 +172,7 @@ def build_plan(
             "track_id": selected[1]["track_id"],
             "artist": selected[1]["artist"],
             "title": selected[1]["title"],
-            **cue_fields(selected[1], 0.12),
+            **cue_fields(selected[1], 0.12, 1),
         }
     )
     events.append(
@@ -229,7 +243,7 @@ def build_plan(
                     "track_id": nxt["track_id"],
                     "artist": nxt["artist"],
                     "title": nxt["title"],
-                    **cue_fields(nxt, 0.1),
+                    **cue_fields(nxt, 0.1, index + 2),
                 }
             )
 
@@ -281,9 +295,9 @@ def build_plan(
                 "bpm": t.get("bpm"),
                 "key": t.get("key"),
                 "track_id": t["track_id"],
-                **cue_fields(t, 0.1),
+                **cue_fields(t, 0.1, slot),
             }
-            for t in selected
+            for slot, t in enumerate(selected)
         ],
         "segments": segments,
         "events": events,

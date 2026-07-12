@@ -381,7 +381,25 @@ Production demo assets (2026-07-12, all `brain/data/`, gitignored): 58-track
 curated set (brief: "Hip-hop and RnB hits that mix well together in a DJ
 showcase"), all tracks Mixxx-analyzed, phrase analysis done, 57-transition
 ~39-minute mix plan built, `hands.run_mix_plan --dry-run` passes (176
-events). Next: run it live against the patched Mixxx.
+events). **First live run 2026-07-12: 103/176 events through the HomePod
+before Ernest stopped it (sounding great).** Output chain: Mac + Mixxx both
+on the Office HomePod via AirPlay ("AirPlay" CoreAudio device; constant
+~2s latency, harmless to the beat-anchored mix, waveforms just lead audio).
+
+DJ-craft feedback from that run, now encoded as defaults (Ernest,
+2026-07-12):
+
+- **Tempo direction**: keep energy up — equal-or-slightly-faster transitions
+  preferred, at most 2 consecutive slow-downs (`mix_graph.greedy_mix_order`,
+  `max_consecutive_slowdowns`). Observed live failure mode: beatsync chained
+  track 1's 101 BPM through the entire set; `run_mix_plan.settle_rate` now
+  glides each landed track back to native tempo (keylock on) so tempo
+  direction is audible.
+- **Entry points**: don't open every track from its intro — default to a
+  high-energy body phrase (chorus/first verse; `phrase_analysis` now emits
+  `intro`/`body` candidates, no 90s cue cap), with roughly every 4th slot
+  taking the intro for texture (`build_mix_plan.cue_fields`). Latest plan:
+  46 body entries / 12 intro entries.
 
 ## NemoClaw (Nvidia challenge) status
 

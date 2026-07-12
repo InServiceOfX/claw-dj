@@ -71,6 +71,30 @@ def reset_instrument(mixxx: MixxxControl) -> None:
             pass
 
 
+def settle_rate(mixxx: MixxxControl, deck: int, steps: int = 8) -> None:
+    """Glide the deck back to its native tempo after a beatsync landing.
+
+    Without this, sync chains the first track's tempo through the whole set
+    (observed live: every transition anchored at 101 BPM). Riding the pitch
+    back to 0 lets each track keep its own energy, and makes the planner's
+    tempo-direction choices audible. Keylock is on, so pitch is unaffected.
+    """
+    group = deck_group(deck)
+    try:
+        current = mixxx.get(group, "rate")
+    except Exception:
+        return
+    if abs(current) < 0.01:
+        mixxx.set(group, "rate", 0.0)
+        return
+    bpm = mixxx.get(group, "bpm") or 100.0
+    period = 60.0 / max(60.0, min(200.0, bpm))
+    for i in range(1, steps + 1):
+        mixxx.set(group, "rate", current * (1.0 - i / steps))
+        time.sleep(period)
+    print(f"  rate settled to native tempo on deck {deck}")
+
+
 def load_deck(
     mixxx: MixxxControl,
     deck: int,
@@ -311,6 +335,7 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                 perform_transition(mixxx, event, port=port)
                 # restore EQ/filter after land
                 apply_moves(mixxx, from_deck, to_deck, ["eq_restore", "filter_reset"])
+                settle_rate(mixxx, to_deck)
                 if pending_preload and pending_preload.get("deck") == from_deck:
                     print(f"  preload next into freed deck {from_deck}")
                     load_deck(

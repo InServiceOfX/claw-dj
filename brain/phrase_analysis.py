@@ -91,6 +91,7 @@ def choose_phrase(
     bpm: float,
     phrase_beats: int = 16,
     max_cue_seconds: float = 90.0,
+    duration_seconds: float | None = None,
 ) -> dict:
     """Choose an energetic phrase start, preferring a clear rise and earlier cue."""
     if not beat_energy:
@@ -113,14 +114,29 @@ def choose_phrase(
         candidates.append((score, index, cue, level, rise))
     if not candidates:
         return {"beat_index": 0, "cue_seconds": max(0.0, first_beat_seconds), "confidence": 0.0}
-    score, index, cue, level, rise = max(candidates)
+
+    def as_dict(candidate: tuple) -> dict:
+        score, index, cue, level, rise = candidate
+        return {
+            "beat_index": index,
+            "cue_seconds": round(cue, 4),
+            "confidence": round(min(1.0, 0.7 * level + 0.3 * rise), 3),
+            "energy": round(level, 3),
+            "energy_rise": round(rise, 3),
+            "score": round(score, 3),
+        }
+
+    # Two entry flavors: "intro" = the track's opening region (soft build,
+    # interesting occasionally), "body" = a high-energy phrase past the intro
+    # (chorus / first verse — where the amplitude jumps). The plan builder
+    # picks between them per slot for variety.
+    body_floor = max(30.0, 0.15 * (duration_seconds or 0.0))
+    intro_pool = [c for c in candidates if c[2] <= 25.0]
+    body_pool = [c for c in candidates if c[2] >= body_floor]
     return {
-        "beat_index": index,
-        "cue_seconds": round(cue, 4),
-        "confidence": round(min(1.0, 0.7 * level + 0.3 * rise), 3),
-        "energy": round(level, 3),
-        "energy_rise": round(rise, 3),
-        "score": round(score, 3),
+        **as_dict(max(candidates)),
+        "intro": as_dict(max(intro_pool)) if intro_pool else None,
+        "body": as_dict(max(body_pool)) if body_pool else None,
     }
 
 
@@ -188,7 +204,10 @@ def analyze_track(row, *, max_seconds: float = 120.0, analysis_rate: int = 11025
         energies,
         first_beat_seconds=first_beat_seconds,
         bpm=bpm,
-        max_cue_seconds=min(90.0, float(row[2]) * 0.55),
+        # Cap at 55% of the track so every entry leaves runway; no 90s cap —
+        # a chorus at 1:40 is a legitimate showcase entry point.
+        max_cue_seconds=float(row[2]) * 0.55,
+        duration_seconds=float(row[2]),
     )
     return {
         "track_id": row[0],

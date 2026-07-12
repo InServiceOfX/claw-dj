@@ -131,6 +131,19 @@ def bpm_compatibility(a: float | None, b: float | None) -> tuple[float, str | No
     return 0.15, f"bpm far ({a:.1f}↔{b:.1f})"
 
 
+def tempo_step(a: float | None, b: float | None) -> float | None:
+    """Effective tempo ratio incoming/outgoing after the closest half/double
+    alignment. > 1 means the set speeds up at this transition."""
+    if not a or not b or a <= 0 or b <= 0:
+        return None
+    best = None
+    for factor in (1.0, 2.0, 0.5):
+        ratio = (b * factor) / a
+        if best is None or abs(ratio - 1.0) < abs(best - 1.0):
+            best = ratio
+    return best
+
+
 def key_compatibility(a: str | None, b: str | None) -> tuple[float, str | None]:
     ka, kb = parse_key(a), parse_key(b)
     if not ka or not kb:
@@ -245,26 +258,47 @@ def greedy_mix_order(
     *,
     start: Track | None = None,
     lineage: set[tuple[str, str]] | None = None,
+    max_consecutive_slowdowns: int = 2,
 ) -> list[Track]:
-    """Nearest-neighbor tour maximizing successive mix scores."""
+    """Nearest-neighbor tour maximizing successive mix scores.
+
+    Keeps dancefloor energy up: transitions into an equal-or-slightly-faster
+    tempo get a bonus, slowing down is tolerated at most
+    `max_consecutive_slowdowns` transitions in a row (DJ note from Ernest:
+    one or two successive slow-downs is fine, more kills the room).
+    """
     if not tracks:
         return []
     remaining = {track.track_id: track for track in tracks}
     current = start if start and start.track_id in remaining else tracks[0]
     order = [current]
     del remaining[current.track_id]
+    slowdown_streak = 0
     while remaining:
         best: Track | None = None
-        best_score = -1.0
+        best_score = -1e9
+        best_slow = False
         for candidate in remaining.values():
             edge = pair_score(current, candidate, lineage=lineage)
-            if edge.score > best_score:
-                best_score = edge.score
+            step = tempo_step(current.bpm, candidate.bpm)
+            adjusted = edge.score
+            slow = step is not None and step < 0.98
+            if step is not None:
+                if 1.0 <= step <= 1.06:
+                    adjusted += 0.05  # energy up: ideal
+                elif slow:
+                    adjusted -= 0.03
+                    if slowdown_streak >= max_consecutive_slowdowns:
+                        adjusted -= 0.35  # only if nothing better exists
+            if adjusted > best_score:
+                best_score = adjusted
                 best = candidate
+                best_slow = slow
         assert best is not None
         order.append(best)
         del remaining[best.track_id]
         current = best
+        slowdown_streak = slowdown_streak + 1 if best_slow else 0
     return order
 
 
