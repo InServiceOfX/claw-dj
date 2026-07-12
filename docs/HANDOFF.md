@@ -601,6 +601,22 @@ that find new music rebuild `new_music_agent.json` automatically. Next
 stage to build: post-finalize "Create the mix" button — flavor presets
 (e.g. DJ showcase) + free-text mix description feeding build_mix_plan.
 
+### Mix profiles (2026-07-12, `brain/mix_profiles.py`)
+
+Architecture decision (Ernest asked "should run_mix_plan be very
+configurable?"): **configure the plan BUILDER, keep the plan format and
+runner deliberately boring.** The plan stays a declarative event list;
+every feel knob lives in a `MixProfile` (ride-phrase pattern, transition
+scale, flourish density, intro-entry rate) behind named presets:
+`dj-showcase` (default; today's tuned values), `club-set`, `warm-up`.
+`build_mix_plan --profile <name> --mix-brief "<free text>"` — the brief
+maps deterministically onto overrides (keyword pass; agent-backed mapper
+is a drop-in later), every adjustment is named in the plan's `profile`
+provenance block. Gotcha fixed: negation keywords ("no tricks") must be
+checked exclusively before positives ("tricks"). Only knobs validated by
+real runs get added — grow one at a time. The "Create the mix" UI button
+should be preset buttons + a text box calling exactly this CLI.
+
 ### Post-finalize enrichment (2026-07-12, `brain/enrich_set.py`)
 
 Runs over the finalized playlist only, check-before-fetch at every step,
