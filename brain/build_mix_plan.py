@@ -483,6 +483,7 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
         "cue_sources": cue_sources,
         "tracks": [
             {
+                "track_id": t.get("track_id"),
                 "artist": t.get("artist"),
                 "title": t.get("title"),
                 "bpm": t.get("bpm"),

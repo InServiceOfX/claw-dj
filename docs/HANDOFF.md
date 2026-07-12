@@ -602,19 +602,23 @@ re-enabled; **Finalize for Mixxx** = the lock-in step before analysis.
 analyzed/unselected/non-excluded tracks against the current set. Scans
 that find new music rebuild `new_music_agent.json` automatically.
 
-**"Create the mix" is in the playlist editor UI (2026-07-12).** Lives at
-the **bottom of the same page** (after the library/set workspace + notice).
-**Finalize for Mixxx** scrolls/highlights that panel. Profile presets
-(`dj-showcase` / `club-set` / `warm-up`) + free-text mix description +
-**order engine** (`nemoclaw` default / `h-agent` / `none` = feel-only)
-→ background `compose_mix_plan` (editor uses **all** analyzed tracks in
-the finalized playlist; CLI still defaults to 8) → dry-run summary
-(track/event/segment counts, technique histogram, cue sources, **order
-notes**, full transition list) → **Start mix** gated behind
-`window.confirm` *and* `POST {"confirm": true}` (server refuses without
-it), with a Mixxx control-API ping on port 9995 before dispatch. Live
-performance runs `hands.run_mix_plan.run_plan` in a daemon thread.
-Endpoints: GET `/api/mix`, POST `/api/mix/build`, POST `/api/mix/start`.
+**"Create the mix" is page 2 of the playlist editor (2026-07-12).** Hash
+routes: `#curate` (crate / enabled set) and `#mix` (create the mix).
+**Finalize for Mixxx** writes `playlist.json` and **navigates to `#mix`**,
+which always reloads the finalized snapshot (track list + BPM/key status).
+A **stale-plan banner** appears when the dry-run no longer matches the
+finalized analyzed set (e.g. you added Many Man); Start mix is disabled
+until rebuild. Tracks missing BPM/key show in red and are skipped by the
+plan builder until Mixxx-analyzed (sync crate afterward).
+
+**Suggest blends** always returns a `message` (set already blends well /
+weak links / unanalyzed in set / no candidates) and the UI scrolls to the
+brain picks panel so results aren't silent.
+
+Profile presets + free-text brief + order engine → `compose_mix_plan` →
+dry-run → **Start mix** (double confirm + Mixxx ping). Endpoints: GET
+`/api/mix` (includes `finalized`, `plan_stale`), POST `/api/mix/build`,
+POST `/api/mix/start`.
 
 **Order briefs are real now (not just feel keywords).** Example that used
 to be ignored: *"mix Parce Que Tu Crois next to What's The Difference in

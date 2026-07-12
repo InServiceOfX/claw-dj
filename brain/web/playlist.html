@@ -64,10 +64,22 @@
     .mix-actions { margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     button.danger { background:var(--red); border-color:var(--red); color:white; }
     button:disabled { opacity:0.55; cursor:not-allowed; }
-    .mix-panel { margin-top:18px; scroll-margin-top:16px; }
+    .mix-panel { scroll-margin-top:16px; }
     .mix-panel.flash { box-shadow:0 0 0 2px var(--green); transition:box-shadow 0.4s; }
     .mix-form { display:grid; grid-template-columns:minmax(240px,1fr) 170px auto; gap:8px; margin-top:10px; align-items:start; }
     .order-notes { margin:8px 0 0; padding:0; list-style:disc inside; color:var(--muted); font-size:13px; }
+    .nav { display:flex; gap:8px; align-items:center; }
+    .nav button { background:transparent; color:#d0d0ca; border-color:#444; min-height:32px; }
+    .nav button.active { background:#2a2a2a; color:#78d7ac; border-color:#78d7ac; }
+    .page[hidden] { display:none !important; }
+    .finalized-box { margin-top:12px; border:1px solid var(--line); background:#fafaf7; }
+    .finalized-head { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; border-bottom:1px solid var(--line); align-items:center; }
+    .finalized-rows { max-height:280px; overflow:auto; }
+    .finalized-row { display:grid; grid-template-columns:minmax(0,1fr) 64px 46px; gap:8px; padding:6px 12px; border-bottom:1px solid #ecece8; font-size:13px; }
+    .warn { color:var(--red); }
+    .banner { margin-top:10px; padding:10px 12px; border:1px solid #e0c36a; background:#fff8e1; color:#5c4a12; border-radius:4px; }
+    .banner[hidden] { display:none; }
+    .picks-anchor { scroll-margin-top:12px; }
     @media (max-width:850px) { .brain-form, .mix-form { grid-template-columns:1fr; } }
     @media (max-width:850px) {
       header { align-items:flex-start; padding:12px 14px; }
@@ -81,87 +93,119 @@
   </style>
 </head>
 <body>
-  <header><div class="brand"><h1><span>claw</span>-dj playlist</h1></div><div class="summary" id="summary">Loading crate...</div></header>
+  <header>
+    <div class="brand"><h1><span>claw</span>-dj playlist</h1></div>
+    <div class="nav" role="navigation" aria-label="Pages">
+      <button type="button" id="nav-curate" class="active" data-page="curate">1 · Curate set</button>
+      <button type="button" id="nav-mix" data-page="mix">2 · Create the mix</button>
+    </div>
+    <div class="summary" id="summary">Loading crate...</div>
+  </header>
   <main>
-    <div class="ingest">
-      <div><h2>New music</h2><div class="ingest-detail" id="ingest-detail">Checking the library index…</div></div>
-      <button id="scan">Check for new music</button>
-    </div>
-    <div class="brain">
-      <h2>Ask the DJ brain</h2>
-      <div class="ingest-detail">Describe the set you want; an agent picks candidates from the new music. You review before anything is added.</div>
-      <div class="brain-form">
-        <input id="brief" type="text" placeholder="e.g. recognizable 90s/2000s hits that mix with the current showcase" aria-label="Brief for the agent">
-        <select id="engine" aria-label="Agent engine">
-          <option value="both">Both engines</option>
-          <option value="nemoclaw">NemoClaw · Nemotron</option>
-          <option value="h-agent">H Company · Holo</option>
-        </select>
-        <input id="pick-count" type="number" min="3" max="50" value="20" aria-label="How many picks">
-        <button id="ask" class="primary">Ask</button>
+    <div class="page" id="page-curate">
+      <div class="ingest">
+        <div><h2>New music</h2><div class="ingest-detail" id="ingest-detail">Checking the library index…</div></div>
+        <button id="scan">Check for new music</button>
       </div>
-      <div class="brain-detail" id="brain-detail"></div>
-      <div class="picks" id="picks" hidden></div>
-      <div class="picks-actions" id="picks-actions" hidden>
-        <button id="apply-picks" class="primary">Add checked to set</button>
-        <button id="clear-picks">Dismiss</button>
+      <div class="brain picks-anchor" id="brain-panel">
+        <h2>Ask the DJ brain</h2>
+        <div class="ingest-detail">Describe the set you want; an agent picks candidates from the new music. You review before anything is added. <strong>Suggest blends</strong> also lands results here.</div>
+        <div class="brain-form">
+          <input id="brief" type="text" placeholder="e.g. recognizable 90s/2000s hits that mix with the current showcase" aria-label="Brief for the agent">
+          <select id="engine" aria-label="Agent engine">
+            <option value="both">Both engines</option>
+            <option value="nemoclaw">NemoClaw · Nemotron</option>
+            <option value="h-agent">H Company · Holo</option>
+          </select>
+          <input id="pick-count" type="number" min="3" max="50" value="20" aria-label="How many picks">
+          <button id="ask" class="primary">Ask</button>
+        </div>
+        <div class="brain-detail" id="brain-detail"></div>
+        <div class="picks" id="picks" hidden></div>
+        <div class="picks-actions" id="picks-actions" hidden>
+          <button id="apply-picks" class="primary">Add checked to set</button>
+          <button id="clear-picks">Dismiss</button>
+        </div>
       </div>
-    </div>
-    <div class="toolbar">
-      <input id="search" type="search" placeholder="Search title, artist, or path" aria-label="Search tracks">
-      <select id="artist" aria-label="Filter by artist"><option value="">All artists</option></select>
-      <div class="modes" aria-label="Analysis status">
-        <button class="active" data-analysis="all">All</button><button data-analysis="analyzed">Analyzed</button><button data-analysis="missing">Missing BPM</button>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Search title, artist, or path" aria-label="Search tracks">
+        <select id="artist" aria-label="Filter by artist"><option value="">All artists</option></select>
+        <div class="modes" aria-label="Analysis status">
+          <button class="active" data-analysis="all">All</button><button data-analysis="analyzed">Analyzed</button><button data-analysis="missing">Missing BPM</button>
+        </div>
+        <button id="seed">Add researched hits</button>
+        <button id="mixorder" title="Reorder enabled set by BPM/key/sample lineage — never drops your picks">Order for mixes</button>
+        <button id="suggest" title="Analyzed library tracks that blend with the current set (mix-graph score)">Suggest blends</button>
+        <button id="export" class="primary" title="Lock in the current set, then open Create the mix">Finalize for Mixxx →</button>
       </div>
-      <button id="seed">Add researched hits</button>
-      <button id="mixorder" title="Reorder enabled set by BPM/key/sample lineage — never drops your picks">Order for mixes</button>
-      <button id="suggest" title="Analyzed library tracks that blend with the current set (mix-graph score)">Suggest blends</button>
-      <button id="export" class="primary" title="Lock in the current set: writes the .m3u8 + json Mixxx imports">Finalize for Mixxx</button>
-    </div>
-    <div class="workspace">
-      <section>
-        <div class="section-head"><h2>Library</h2><span class="count" id="library-count"></span></div>
-        <div class="rows" id="library"></div>
-      </section>
-      <section>
-        <div class="section-head"><h2>Enabled set</h2><span class="count" id="set-count"></span></div>
-        <div class="rows" id="selected"></div>
-      </section>
-    </div>
-    <div class="notice" id="notice"></div>
-    <div class="brain mix-panel" id="mix-panel">
-      <h2>Create the mix</h2>
-      <div class="ingest-detail">Post-finalize step: after <strong>Finalize for Mixxx</strong> (and enrichment if needed), choose how the set should feel and describe order wants — e.g. force two songs adjacent, place them in the first half, or mix only a few. An agent turns order asks into constraints; profile presets control ride length / flourishes. Review the dry-run, then Start mix (explicit confirm).</div>
-      <div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div>
-      <div class="mix-form">
-        <input id="mix-brief" type="text" placeholder='e.g. put Parce Que Tu Crois next to What&apos;s The Difference in the first half; smooth, no tricks' aria-label="Free-text mix description">
-        <select id="order-engine" aria-label="Order engine for the brief">
-          <option value="nemoclaw">NemoClaw · order</option>
-          <option value="h-agent">H Company · order</option>
-          <option value="none">Feel only (no reorder)</option>
-        </select>
-        <button id="build-mix" class="primary">Build mix plan</button>
+      <div class="workspace">
+        <section>
+          <div class="section-head"><h2>Library</h2><span class="count" id="library-count"></span></div>
+          <div class="rows" id="library"></div>
+        </section>
+        <section>
+          <div class="section-head"><h2>Enabled set</h2><span class="count" id="set-count"></span></div>
+          <div class="rows" id="selected"></div>
+        </section>
       </div>
-      <div class="brain-detail" id="mix-detail"></div>
-      <div class="mix-summary" id="mix-summary" hidden>
-        <div class="mix-stats" id="mix-stats"></div>
-        <ul class="order-notes" id="order-notes" hidden></ul>
-        <div class="mix-segments" id="mix-segments"></div>
-        <div class="mix-actions">
-          <button id="start-mix" class="danger" disabled title="Plays through Mixxx / AirPlay — requires confirmation">Start mix</button>
-          <span class="ingest-detail" id="mix-live"></span>
+      <div class="notice" id="notice"></div>
+    </div>
+
+    <div class="page" id="page-mix" hidden>
+      <div class="brain mix-panel" id="mix-panel">
+        <h2>Create the mix</h2>
+        <div class="ingest-detail">This page always reloads the <strong>finalized</strong> snapshot from the last <em>Finalize for Mixxx</em>. Tracks without BPM/key (red) need Mixxx analysis before they can enter a live plan. Build a plan, review the dry-run, then Start mix.</div>
+        <div class="finalized-box" id="finalized-box">
+          <div class="finalized-head">
+            <div>
+              <strong>Finalized set</strong>
+              <div class="ingest-detail" id="finalized-detail">Not finalized yet — go back to Curate and press Finalize for Mixxx.</div>
+            </div>
+            <button type="button" id="back-curate">← Back to curate</button>
+          </div>
+          <div class="finalized-rows" id="finalized-rows"></div>
+        </div>
+        <div class="banner" id="plan-stale-banner" hidden>The dry-run plan below is <strong>stale</strong> — it does not match the current finalized set (e.g. you added a track). Rebuild the mix plan.</div>
+        <div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div>
+        <div class="mix-form">
+          <input id="mix-brief" type="text" placeholder='e.g. put Parce Que Tu Crois next to What&apos;s The Difference in the first half; smooth, no tricks' aria-label="Free-text mix description">
+          <select id="order-engine" aria-label="Order engine for the brief">
+            <option value="nemoclaw">NemoClaw · order</option>
+            <option value="h-agent">H Company · order</option>
+            <option value="none">Feel only (no reorder)</option>
+          </select>
+          <button id="build-mix" class="primary">Build mix plan</button>
+        </div>
+        <div class="brain-detail" id="mix-detail"></div>
+        <div class="mix-summary" id="mix-summary" hidden>
+          <div class="mix-stats" id="mix-stats"></div>
+          <ul class="order-notes" id="order-notes" hidden></ul>
+          <div class="mix-segments" id="mix-segments"></div>
+          <div class="mix-actions">
+            <button id="start-mix" class="danger" disabled title="Plays through Mixxx / AirPlay — requires confirmation">Start mix</button>
+            <span class="ingest-detail" id="mix-live"></span>
+          </div>
         </div>
       </div>
     </div>
   </main>
   <script>
-    const state = { analysis:'all', meta:null };
+    const state = { analysis:'all', meta:null, page:'curate' };
     const el = id => document.getElementById(id);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     async function api(path, options) { const response = await fetch(path, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || response.statusText); return data; }
+    function showPage(page) {
+      state.page = page === 'mix' ? 'mix' : 'curate';
+      el('page-curate').hidden = state.page !== 'curate';
+      el('page-mix').hidden = state.page !== 'mix';
+      el('nav-curate').classList.toggle('active', state.page === 'curate');
+      el('nav-mix').classList.toggle('active', state.page === 'mix');
+      if (location.hash !== '#' + state.page) location.hash = state.page;
+      if (state.page === 'mix') pollMix();
+    }
     function row(track) {
       const bpm = track.bpm ? Number(track.bpm).toFixed(1) : '—';
-      return `<label class="track" title="${esc(track.track_id)}"><input type="checkbox" data-id="${esc(track.track_id)}" ${track.enabled?'checked':''}><span><div class="title">${esc(track.title)}</div><div class="artist">${esc(track.artist)}</div></span><span class="bpm ${track.bpm?'':'missing'}">${bpm}</span><span class="key">${esc(track.key || '—')}</span></label>`;
+      return `<label class="track" title="${esc(track.track_id)}"><input type="checkbox" data-id="${esc(track.track_id)}" ${track.enabled?'checked':''}><span><div class="title">${esc(track.title)}</div><div class="artist">${esc(track.artist)}</div></span><span class="bpm ${track.bpm?'':'missing'}">${bpm}</span><span class="key ${track.key?'':'missing'}">${esc(track.key || '—')}</span></label>`;
     }
     async function loadMeta() {
       const currentArtist = el('artist').value;
@@ -203,19 +247,22 @@
     el('library').addEventListener('change',toggle); el('selected').addEventListener('change',toggle);
     el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
-    function focusMixPanel() {
-      const panel = el('mix-panel');
-      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      panel.classList.add('flash');
-      setTimeout(() => panel.classList.remove('flash'), 1600);
-    }
+    el('nav-curate').addEventListener('click', () => showPage('curate'));
+    el('nav-mix').addEventListener('click', () => showPage('mix'));
+    el('back-curate').addEventListener('click', () => showPage('curate'));
+    window.addEventListener('hashchange', () => showPage((location.hash || '#curate').slice(1)));
     el('export').addEventListener('click',async()=>{
       const button=el('export');const original=button.textContent;button.disabled=true;
       try{
         const result=await api('/api/export',{method:'POST'});
-        button.textContent=`✓ Finalized ${result.count} tracks`;
-        el('notice').textContent=`Finalized ${result.count} tracks — ${result.m3u} is ready. Next: enrich if needed (uv run python -m brain.enrich_set), then Create the mix at the bottom of this page.`;
-        focusMixPanel();
+        button.textContent=`✓ Finalized ${result.count}`;
+        const missing = result.missing_bpm_count
+          ? ` ${result.missing_bpm_count} still need BPM/key in Mixxx (shown in red on the mix page).`
+          : '';
+        el('notice').textContent = (result.message || `Finalized ${result.count} tracks.`) + missing + ' Opening Create the mix…';
+        showPage('mix');
+        el('mix-panel').classList.add('flash');
+        setTimeout(() => el('mix-panel').classList.remove('flash'), 1600);
         await pollMix();
       }catch(error){button.textContent='Finalize failed';el('notice').textContent=error.message;}
       setTimeout(()=>{button.textContent=original;button.disabled=false;},4000);
@@ -230,10 +277,15 @@
       const disabled = pick.enabled || !pick.in_library ? 'disabled' : '';
       return `<label class="pick"><input type="checkbox" data-pick="${esc(pick.track_id)}" ${checked} ${disabled}><span><span class="title">${esc(pick.title)}</span> <span class="artist">— ${esc(pick.artist)}</span>${blend}${already}${excluded}${missing}</span></label>`;
     }
-    function renderResults(results) {
+    function renderResults(results, { emptyHtml } = {}) {
       const engines = Object.keys(results || {});
       const total = engines.reduce((n, e) => n + (results[e].picks || []).length, 0);
-      el('picks').hidden = el('picks-actions').hidden = total === 0;
+      el('picks').hidden = false;
+      el('picks-actions').hidden = total === 0;
+      if (total === 0) {
+        el('picks').innerHTML = emptyHtml || '<div class="empty">No picks to show.</div>';
+        return;
+      }
       el('picks').innerHTML = engines.map(engine => {
         const data = results[engine];
         const head = `<div class="pick" style="border-bottom:2px solid var(--line)"><span></span><span><span class="title">${esc(ENGINE_NAMES[engine] || engine)}</span> <span class="artist">— ${(data.picks||[]).length} picks · “${esc(data.brief || '')}”</span></span></div>`;
@@ -267,10 +319,25 @@
     });
     el('clear-picks').addEventListener('click',()=>{el('picks').hidden=el('picks-actions').hidden=true;el('brain-detail').textContent='';});
     el('suggest').addEventListener('click',async()=>{
+      showPage('curate');
       el('brain-detail').textContent='Scoring analyzed library tracks against the current set…';
-      const data=await api('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:20})});
-      renderResults({'mix-graph':data});
-      el('brain-detail').textContent=`Mix-graph scored ${data.candidates_considered} analyzed candidates against your ${state.meta.selected_count}-track set. These respect your removals.`;
+      el('picks').hidden = false;
+      el('picks').innerHTML = '<div class="empty">Scoring…</div>';
+      el('picks-actions').hidden = true;
+      try {
+        const data = await api('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:20})});
+        const msg = data.message || `Scored ${data.candidates_considered} candidates.`;
+        el('brain-detail').textContent = msg;
+        el('notice').textContent = msg;
+        renderResults({'mix-graph': data}, {
+          emptyHtml: `<div class="empty">${esc(msg)}</div>`,
+        });
+        el('brain-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (error) {
+        el('brain-detail').textContent = error.message;
+        el('notice').textContent = error.message;
+        el('picks').innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+      }
     });
     el('scan').addEventListener('click',async()=>{await api('/api/ingest/scan',{method:'POST'});el('notice').textContent='Looking for new or changed music. Existing files will not be reopened.';const poll=setInterval(async()=>{const status=await loadIngest();if(!status.running){clearInterval(poll);await Promise.all([loadMeta(),loadLibrary(),loadSelected()]);el('notice').textContent=status.error?`Scan failed: ${status.error}`:`Found ${status.new_count} new and ${status.changed_count} changed tracks.`}},750)});
 
@@ -291,7 +358,24 @@
         `<button type="button" data-profile="${esc(p.name)}" title="${esc(p.description || '')}" class="${p.name===mixState.profile?'active':''}">${esc(PROFILE_LABELS[p.name] || p.name)}</button>`
       ).join('');
     }
-    function renderMixSummary(summary) {
+    function renderFinalized(finalized) {
+      if (!finalized || !finalized.count) {
+        el('finalized-detail').textContent = 'Not finalized yet — go back to Curate and press Finalize for Mixxx.';
+        el('finalized-rows').innerHTML = '<div class="empty">No finalized playlist on disk.</div>';
+        return;
+      }
+      const miss = finalized.missing_bpm_count || 0;
+      el('finalized-detail').textContent =
+        `${finalized.count} tracks · ${finalized.analyzed_count} with BPM/key` +
+        (miss ? ` · ${miss} missing analysis (red — will be skipped by the plan builder until analyzed)` : ' · ready for plan build');
+      el('finalized-rows').innerHTML = (finalized.tracks || []).map((t, i) => {
+        const bpm = t.bpm ? Number(t.bpm).toFixed(1) : '—';
+        return `<div class="finalized-row"><span><strong>${String(i+1).padStart(2,'0')}.</strong> ${esc(t.artist)} — ${esc(t.title)}</span>` +
+          `<span class="bpm ${t.bpm?'':'missing'}">${bpm}</span>` +
+          `<span class="key ${t.key?'':'missing'}">${esc(t.key || '—')}</span></div>`;
+      }).join('');
+    }
+    function renderMixSummary(summary, { stale } = {}) {
       if (!summary) { el('mix-summary').hidden = true; el('start-mix').disabled = true; return; }
       el('mix-summary').hidden = false;
       const profile = summary.profile || {};
@@ -300,7 +384,7 @@
       const cues = Object.entries(summary.cue_sources || {}).map(([k,v]) => `${k}×${v}`).join(' · ') || '—';
       const engine = summary.order_engine || profile.order_engine || 'none';
       el('mix-stats').innerHTML =
-        `<span><strong>${summary.track_count}</strong> tracks</span>` +
+        `<span><strong>${summary.track_count}</strong> tracks in plan</span>` +
         `<span><strong>${summary.event_count}</strong> events</span>` +
         `<span><strong>${summary.segment_count}</strong> transitions</span>` +
         `<span>profile <strong>${esc(profile.name || mixState.profile)}</strong></span>` +
@@ -308,7 +392,8 @@
         `<span>brief tweaks: ${esc(adjustments)}</span>` +
         `<span>${esc(tech)}</span>` +
         `<span>cues: ${esc(cues)}</span>` +
-        `<span>${esc(summary.dry_run_note || 'dry-run ok')}</span>`;
+        `<span>${esc(summary.dry_run_note || 'dry-run ok')}</span>` +
+        (stale ? '<span class="warn">STALE vs finalized set</span>' : '');
       const notes = summary.order_notes || profile.order_notes || [];
       el('order-notes').hidden = notes.length === 0;
       el('order-notes').innerHTML = notes.map(n => `<li>${esc(n)}</li>`).join('');
@@ -327,8 +412,11 @@
       if (data.profile) mixState.profile = data.profile;
       if (data.order_engine) el('order-engine').value = data.order_engine;
       renderPresets(data.profiles);
-      el('build-mix').disabled = Boolean(data.building) || Boolean(data.running);
-      const canStart = Boolean(data.plan_ready || data.summary) && !data.building && !data.running;
+      renderFinalized(data.finalized);
+      el('plan-stale-banner').hidden = !data.plan_stale;
+      el('build-mix').disabled = Boolean(data.building) || Boolean(data.running) || !data.playlist_ready;
+      // Start only when plan is ready AND not stale.
+      const canStart = Boolean(data.plan_ready) && !data.plan_stale && !data.building && !data.running;
       el('start-mix').disabled = !canStart;
       if (data.building) {
         const eng = data.order_engine && data.order_engine !== 'none'
@@ -337,15 +425,20 @@
         el('mix-detail').textContent = `Building mix plan (${PROFILE_LABELS[data.profile] || data.profile || '…'}${data.mix_brief ? ' · “'+data.mix_brief+'”' : ''}${eng})…`;
       } else if (data.error) {
         el('mix-detail').textContent = `Build failed: ${data.error}`;
+      } else if (data.plan_stale && data.summary) {
+        el('mix-detail').textContent = `Finalized set changed since this dry-run (${data.summary.track_count} plan tracks vs ${data.finalized?.analyzed_count ?? '?'} analyzed finalized). Rebuild the mix plan.`;
       } else if (data.summary) {
         const brief = data.mix_brief ? ` · brief “${data.mix_brief}”` : '';
         el('mix-detail').textContent = `Dry-run ready — ${data.summary.track_count} tracks, ${data.summary.event_count} events${brief}. Review order notes + transitions below, then Start mix.`;
       } else if (!data.playlist_ready) {
-        el('mix-detail').textContent = 'Finalize a set for Mixxx first (button above), then build the mix here.';
+        el('mix-detail').textContent = 'Finalize a set on the Curate page first, then build the mix here.';
       } else {
-        el('mix-detail').textContent = 'Pick a profile, describe order wants (optional), choose an order engine, then build.';
+        const miss = data.finalized?.missing_bpm_count || 0;
+        el('mix-detail').textContent = miss
+          ? `Ready to build from ${data.finalized.count} finalized tracks (${miss} without BPM/key will be skipped until analyzed).`
+          : `Ready to build from ${data.finalized.count} finalized tracks. Pick a profile and build.`;
       }
-      renderMixSummary(data.summary);
+      renderMixSummary(data.summary, { stale: data.plan_stale });
       if (data.running) {
         el('mix-live').textContent = data.live_message || 'Live mix running… audio goes through Mixxx (Office HomePod via AirPlay).';
         el('start-mix').disabled = true;
@@ -354,7 +447,7 @@
       } else if (data.live_message) {
         el('mix-live').textContent = data.live_message;
       } else {
-        el('mix-live').textContent = canStart ? 'Mixxx must be running with --control-api-port 9995.' : '';
+        el('mix-live').textContent = canStart ? 'Mixxx must be running with --control-api-port 9995.' : (data.plan_stale ? 'Rebuild required before Start mix.' : '');
       }
       return data;
     }
@@ -423,6 +516,8 @@
       await Promise.all([loadLibrary(),loadSelected()]);
       const brain=await pollBrain();
       if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}
+      const initialPage = (location.hash || '#curate').slice(1);
+      showPage(initialPage === 'mix' ? 'mix' : 'curate');
       const mix=await pollMix();
       if(mix.building || mix.running){
         mixState.pollTimer=setInterval(async()=>{

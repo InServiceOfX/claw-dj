@@ -191,12 +191,44 @@ class PlaylistApp:
         Only Mixxx-analyzed tracks can be scored honestly, so candidates are
         analyzed, unselected, non-excluded library tracks ranked by their best
         transition score against any track in the set.
+
+        Always returns a human-readable `message` so the UI can explain empty
+        results, weak set links, or "set already blends well" cases.
         """
-        from brain.mix_graph import lineage_pairs, load_chroma_pairs, load_lineage, pair_score
+        from brain.mix_graph import (
+            lineage_pairs,
+            load_chroma_pairs,
+            load_lineage,
+            pair_score,
+            transition_report,
+        )
 
         set_tracks = [self.by_id[i] for i in self.selection if i in self.by_id]
         if not set_tracks:
             raise ValueError("enabled set is empty — nothing to blend against")
+
+        unanalyzed = [
+            {"artist": t.artist, "title": t.title, "track_id": t.track_id}
+            for t in set_tracks
+            if not t.bpm
+        ]
+        analyzed_in_set = [t for t in set_tracks if t.bpm]
+        internal_mean = None
+        weak_internal: list[dict] = []
+        if len(analyzed_in_set) >= 2:
+            report = transition_report(analyzed_in_set)
+            if report:
+                internal_mean = round(sum(row["score"] for row in report) / len(report), 3)
+                weak_internal = [
+                    {
+                        "from": row.get("from") or row.get("a"),
+                        "to": row.get("to") or row.get("b"),
+                        "score": row["score"],
+                    }
+                    for row in report
+                    if row["score"] < 0.45
+                ][:5]
+
         candidates = [
             track for track in self.tracks
             if track.bpm and track.track_id not in self.selected
@@ -205,14 +237,18 @@ class PlaylistApp:
         lineage = lineage_pairs(set_tracks + candidates, load_lineage())
         chroma = load_chroma_pairs()
         scored = []
+        anchors = analyzed_in_set or set_tracks
         for candidate in candidates:
             edge, anchor = max(
                 ((pair_score(anchor, candidate, lineage=lineage, chroma=chroma), anchor)
-                 for anchor in set_tracks),
+                 for anchor in anchors),
                 key=lambda row: row[0].score,
             )
             scored.append((edge.score, candidate, anchor, edge.reasons))
         scored.sort(key=lambda row: -row[0])
+        # Only surface reasonably strong external blends by default.
+        strong = [(s, c, a, r) for s, c, a, r in scored if s >= 0.55]
+        shown = strong[:limit] if strong else scored[: min(5, limit)]
         picks = [
             {
                 "id": f"s{i:03d}",
@@ -223,12 +259,55 @@ class PlaylistApp:
                 "blends_with": f"{anchor.artist} — {anchor.title}",
                 "why": list(reasons)[:2],
             }
-            for i, (score, candidate, anchor, reasons) in enumerate(scored[:limit])
+            for i, (score, candidate, anchor, reasons) in enumerate(shown)
         ]
+
+        parts: list[str] = []
+        if unanalyzed:
+            titles = ", ".join(f"{u['artist']} — {u['title']}" for u in unanalyzed[:3])
+            extra = f" (+{len(unanalyzed) - 3} more)" if len(unanalyzed) > 3 else ""
+            parts.append(
+                f"{len(unanalyzed)} track(s) in the set lack BPM/key (e.g. {titles}{extra}) — "
+                "analyze them in Mixxx before trusting blend scores for those slots."
+            )
+        if internal_mean is not None:
+            if internal_mean >= 0.7 and not weak_internal:
+                parts.append(
+                    f"Your current set already blends well (mean consecutive score {internal_mean}). "
+                    "No urgent adds — optional library blends below if you want more options."
+                )
+            elif weak_internal:
+                parts.append(
+                    f"Set mean consecutive score {internal_mean}; {len(weak_internal)} weak link(s) "
+                    "inside the set. Library blends below may shore those up."
+                )
+            else:
+                parts.append(f"Set mean consecutive score {internal_mean}.")
+        if not candidates:
+            parts.append(
+                "No analyzed library tracks left outside the set (and not excluded) to suggest."
+            )
+        elif not picks:
+            parts.append("No external blend candidates scored usefully against this set.")
+        elif strong:
+            parts.append(
+                f"Found {len(strong)} solid library blend(s) (score ≥ 0.55) from "
+                f"{len(candidates)} analyzed candidates — check ones you want, then Add."
+            )
+        else:
+            parts.append(
+                f"No strong external blends (best scores < 0.55). Showing top {len(picks)} weak options; "
+                "the set may already be self-sufficient."
+            )
+
         return {
             "engine": "mix-graph",
             "brief": "analyzed tracks that blend with the current set",
             "candidates_considered": len(candidates),
+            "internal_mean_score": internal_mean,
+            "unanalyzed_in_set": unanalyzed,
+            "weak_internal": weak_internal,
+            "message": " ".join(parts),
             "picks": self._annotate(picks),
         }
 
@@ -348,7 +427,80 @@ class PlaylistApp:
 
     def export(self) -> dict:
         selected = export_playlist(self.tracks, self.selection)
-        return {"count": len(selected), "json": "brain/data/playlist.json", "m3u": "brain/data/playlist.m3u8"}
+        missing = [
+            {"artist": t.artist, "title": t.title, "track_id": t.track_id}
+            for t in selected
+            if not t.bpm
+        ]
+        analyzed = len(selected) - len(missing)
+        # Stale any in-memory dry-run so the mix page reloads from disk + marks plan stale.
+        self.mix_state["summary"] = None
+        message = (
+            f"Finalized {len(selected)} tracks ({analyzed} with BPM/key"
+            + (f", {len(missing)} still need Mixxx analysis" if missing else "")
+            + "). Create the mix uses this snapshot."
+        )
+        return {
+            "count": len(selected),
+            "analyzed_count": analyzed,
+            "missing_bpm_count": len(missing),
+            "missing_bpm": missing,
+            "json": "brain/data/playlist.json",
+            "m3u": "brain/data/playlist.m3u8",
+            "message": message,
+            "finalized": self.finalized_snapshot(),
+        }
+
+    def finalized_snapshot(self) -> dict | None:
+        """What Finalize last wrote — the source of truth for Create the mix."""
+        if not DEFAULT_PLAYLIST_JSON.exists():
+            return None
+        try:
+            rows = json.loads(DEFAULT_PLAYLIST_JSON.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(rows, list):
+            return None
+        missing = [
+            {"artist": r.get("artist"), "title": r.get("title"), "track_id": r.get("track_id")}
+            for r in rows
+            if not r.get("bpm")
+        ]
+        return {
+            "count": len(rows),
+            "analyzed_count": len(rows) - len(missing),
+            "missing_bpm_count": len(missing),
+            "missing_bpm": missing,
+            "tracks": [
+                {
+                    "artist": r.get("artist"),
+                    "title": r.get("title"),
+                    "bpm": r.get("bpm"),
+                    "key": r.get("key"),
+                    "track_id": r.get("track_id"),
+                }
+                for r in rows
+            ],
+            "path": "brain/data/playlist.json",
+        }
+
+    def _plan_stale(self, summary: dict | None, finalized: dict | None) -> bool:
+        if not summary or not finalized:
+            return False
+        plan_ids = {
+            t.get("track_id")
+            for t in (summary.get("tracks") or [])
+            if t.get("track_id")
+        }
+        # Plan only includes analyzed tracks; compare against analyzed finalized ids.
+        final_analyzed = {
+            t.get("track_id")
+            for t in (finalized.get("tracks") or [])
+            if t.get("track_id") and t.get("bpm")
+        }
+        if not plan_ids:
+            return True
+        return plan_ids != final_analyzed or summary.get("track_count") != len(final_analyzed)
 
     def _load_plan_summary(self) -> dict | None:
         if not MIX_PLAN_PATH.exists():
@@ -367,12 +519,17 @@ class PlaylistApp:
                 status["summary"] = self._load_plan_summary()
             except Exception as error:  # surface corrupt plan without crashing the UI
                 status["error"] = status.get("error") or f"could not read existing plan: {error}"
+        finalized = self.finalized_snapshot()
+        status["finalized"] = finalized
         status["profiles"] = [
             {"name": name, "description": profile.description}
             for name, profile in PROFILES.items()
         ]
-        status["plan_ready"] = bool(status.get("summary"))
-        status["playlist_ready"] = DEFAULT_PLAYLIST_JSON.exists()
+        status["plan_ready"] = bool(status.get("summary")) and not self._plan_stale(
+            status.get("summary"), finalized
+        )
+        status["plan_stale"] = self._plan_stale(status.get("summary"), finalized)
+        status["playlist_ready"] = finalized is not None and (finalized.get("count") or 0) >= 2
         return status
 
     def build_mix(
