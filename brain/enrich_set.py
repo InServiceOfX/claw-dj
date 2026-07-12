@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 
@@ -78,9 +79,23 @@ def fill_bpm(missing: list[dict], port: int) -> None:
         check=True,
     )
     # Mixxx flushes analysis to its DB lazily; give it a moment, then sync
-    # (sync updates both the index and crate.json).
+    # (sync updates both the index and crate.json). Some tracks take much
+    # longer — retry once after a longer settle (see HANDOFF Mixxx gotcha).
     time.sleep(5)
     subprocess.run([sys.executable, "-m", "brain.sync_mixxx_analysis"], check=True)
+    from brain.sync_mixxx_analysis import fetch_analyzed
+
+    still = [
+        t for t in missing
+        if not (fetch_analyzed().get(t["track_id"]) or {}).get("bpm")
+    ]
+    if still:
+        print(
+            f"  [bpm/key] {len(still)} still bpm=0 in Mixxx DB after first sync — "
+            "waiting 45s for lazy flush, then re-syncing…"
+        )
+        time.sleep(45)
+        subprocess.run([sys.executable, "-m", "brain.sync_mixxx_analysis"], check=True)
 
 
 def fill_lyrics(db, tracks: list[dict], *, force: bool = False) -> tuple[int, int]:
@@ -196,6 +211,157 @@ def export_phrases(db, track_ids: list[str]) -> int:
     return len(tracks)
 
 
+def enrichment_status(playlist_path: Path = DEFAULT_PLAYLIST_JSON) -> dict:
+    """Gap report for the UI — does not mutate anything."""
+    if not playlist_path.exists():
+        return {"ready": False, "error": "no finalized playlist", "count": 0}
+    tracks = load_set(playlist_path)
+    ids = [t["track_id"] for t in tracks]
+    if not ids:
+        return {"ready": False, "error": "finalized playlist empty", "count": 0}
+    with closing(connect()) as db:
+        gaps = status(db, ids)
+    need = {
+        field: [
+            {"artist": t.get("artist"), "title": t.get("title"), "track_id": t["track_id"]}
+            for t in tracks
+            if not gaps[t["track_id"]][field]
+        ]
+        for field in ("bpm_key", "lyrics", "chroma", "phrases")
+    }
+    complete = sum(1 for g in gaps.values() if all(g.values()))
+    return {
+        "ready": True,
+        "count": len(tracks),
+        "complete": complete,
+        "missing": {k: len(v) for k, v in need.items()},
+        "missing_tracks": need,
+        "message": (
+            f"{complete}/{len(tracks)} fully enriched · "
+            f"missing bpm/key {len(need['bpm_key'])}, lyrics {len(need['lyrics'])}, "
+            f"chroma {len(need['chroma'])}, phrases {len(need['phrases'])}"
+        ),
+    }
+
+
+def run_enrich(
+    *,
+    playlist_path: Path = DEFAULT_PLAYLIST_JSON,
+    port: int = 9995,
+    skip_bpm: bool = False,
+    skip_lyrics: bool = False,
+    skip_chroma: bool = False,
+    skip_phrases: bool = False,
+    force_lyrics: bool = False,
+    progress: Callable[[str], None] | None = None,
+) -> dict:
+    """Run the full enrichment pipeline; returns a structured summary for the UI.
+
+    `progress` is an optional callback(str) for live status lines.
+    """
+    def log(msg: str) -> None:
+        print(msg)
+        if progress:
+            progress(msg)
+
+    if not playlist_path.exists():
+        raise FileNotFoundError(f"missing finalized playlist {playlist_path}")
+    tracks = load_set(playlist_path)
+    ids = [t["track_id"] for t in tracks]
+    if len(ids) < 1:
+        raise ValueError("finalized playlist is empty")
+
+    log(f"finalized set: {len(tracks)} tracks ({playlist_path})")
+    summary: dict = {
+        "track_count": len(tracks),
+        "bpm_analyzed": 0,
+        "lyrics_found": 0,
+        "lyrics_missed": 0,
+        "chroma_stored": 0,
+        "phrases_analyzed": 0,
+        "phrases_exported": 0,
+        "complete": 0,
+        "incomplete": [],
+        "log": [],
+    }
+
+    def note(msg: str) -> None:
+        summary["log"].append(msg)
+        log(msg)
+
+    with closing(connect()) as db:
+        gaps = status(db, ids)
+        need = {
+            field: [t for t in tracks if not gaps[t["track_id"]][field]]
+            for field in ("bpm_key", "lyrics", "chroma", "phrases")
+        }
+        for field, rows in need.items():
+            note(f"missing {field}: {len(rows)}")
+
+        if need["bpm_key"] and not skip_bpm:
+            note(f"[bpm/key] analyzing {len(need['bpm_key'])} tracks via muted Mixxx deck…")
+            fill_bpm(need["bpm_key"], port)
+            summary["bpm_analyzed"] = len(need["bpm_key"])
+            # Re-read playlist rows from disk after crate sync? fill_bpm only
+            # updates index/crate; playlist.json is refreshed by the editor.
+            note("[bpm/key] Mixxx analysis + sync_mixxx_analysis done")
+        elif skip_bpm:
+            note("[bpm/key] skipped")
+
+        lyric_targets = tracks if force_lyrics else need["lyrics"]
+        if lyric_targets and not skip_lyrics:
+            note(f"[lyrics] fetching {len(lyric_targets)} tracks from LRCLIB…")
+            found, missed = fill_lyrics(db, lyric_targets, force=force_lyrics)
+            summary["lyrics_found"] = found
+            summary["lyrics_missed"] = missed
+            note(f"lyrics: {found} found, {missed} not found")
+        elif skip_lyrics:
+            note("[lyrics] skipped")
+
+        if need["chroma"] and not skip_chroma:
+            note(f"[chroma] fingerprinting {len(need['chroma'])} tracks…")
+            stored = fill_chroma(db, need["chroma"])
+            summary["chroma_stored"] = stored
+            note(f"chroma: {stored} fingerprints stored")
+        elif skip_chroma:
+            note("[chroma] skipped")
+        size = rewrite_similarity(db, ids)
+        if size:
+            note(f"chroma_similarity.json rewritten for {size} tracks")
+
+        if not skip_phrases:
+            gaps = status(db, ids)
+            targets = [t for t in tracks if not gaps[t["track_id"]]["phrases"]]
+            if targets:
+                note(f"[phrases] analyzing {len(targets)} tracks…")
+                done = fill_phrases(db, targets)
+                summary["phrases_analyzed"] = done
+                note(f"phrases: {done} analyzed")
+            exported = export_phrases(db, ids)
+            summary["phrases_exported"] = exported
+            note(f"phrase_analysis.json exported for {exported} tracks")
+        else:
+            note("[phrases] skipped")
+
+        gaps = status(db, ids)
+        summary["complete"] = sum(1 for g in gaps.values() if all(g.values()))
+        for tid, g in gaps.items():
+            holes = [k for k, ok in g.items() if not ok]
+            if holes:
+                track = next(t for t in tracks if t["track_id"] == tid)
+                row = {
+                    "artist": track.get("artist"),
+                    "title": track.get("title"),
+                    "track_id": tid,
+                    "missing": holes,
+                }
+                summary["incomplete"].append(row)
+                note(f"incomplete ({', '.join(holes)}): {track.get('artist')} — {track.get('title')}")
+        note(f"enrichment: {summary['complete']}/{len(tracks)} tracks fully enriched")
+
+    return summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--playlist", type=Path, default=DEFAULT_PLAYLIST_JSON)
@@ -208,59 +374,23 @@ def main() -> None:
     parser.add_argument("--force-lyrics", action="store_true")
     args = parser.parse_args()
 
-    tracks = load_set(args.playlist)
-    ids = [t["track_id"] for t in tracks]
-    print(f"finalized set: {len(tracks)} tracks ({args.playlist})")
+    if args.status:
+        report = enrichment_status(args.playlist)
+        print(report.get("message") or report)
+        for field, rows in (report.get("missing_tracks") or {}).items():
+            for row in rows[:20]:
+                print(f"  missing {field}: {row['artist']} — {row['title']}")
+        return
 
-    with closing(connect()) as db:
-        gaps = status(db, ids)
-        need = {
-            field: [t for t in tracks if not gaps[t["track_id"]][field]]
-            for field in ("bpm_key", "lyrics", "chroma", "phrases")
-        }
-        for field, rows in need.items():
-            print(f"  missing {field}: {len(rows)}")
-        if args.status:
-            return
-
-        if need["bpm_key"] and not args.skip_bpm:
-            print(f"\n[bpm/key] analyzing {len(need['bpm_key'])} tracks via muted Mixxx deck…")
-            fill_bpm(need["bpm_key"], args.port)
-
-        lyric_targets = tracks if args.force_lyrics else need["lyrics"]
-        if lyric_targets and not args.skip_lyrics:
-            print(f"\n[lyrics] fetching {len(lyric_targets)} tracks from LRCLIB (cached)…")
-            found, missed = fill_lyrics(db, lyric_targets, force=args.force_lyrics)
-            print(f"  lyrics: {found} found, {missed} not found")
-
-        if need["chroma"] and not args.skip_chroma:
-            print(f"\n[chroma] fingerprinting {len(need['chroma'])} tracks…")
-            stored = fill_chroma(db, need["chroma"])
-            print(f"  chroma: {stored} fingerprints stored")
-        size = rewrite_similarity(db, ids)
-        if size:
-            print(f"  chroma_similarity.json rewritten for {size} tracks")
-
-        if not args.skip_phrases:
-            # bpm step may have created beatgrids for previously-unanalyzed
-            # tracks, so recheck rather than trusting the initial gap list.
-            gaps = status(db, ids)
-            targets = [t for t in tracks if not gaps[t["track_id"]]["phrases"]]
-            if targets:
-                print(f"\n[phrases] analyzing {len(targets)} tracks (ffmpeg energy + beatgrid)…")
-                done = fill_phrases(db, targets)
-                print(f"  phrases: {done} analyzed")
-            exported = export_phrases(db, ids)
-            print(f"  phrase_analysis.json exported for {exported} tracks")
-
-        gaps = status(db, ids)
-        complete = sum(1 for g in gaps.values() if all(g.values()))
-        print(f"\nenrichment: {complete}/{len(tracks)} tracks fully enriched")
-        for tid, g in gaps.items():
-            holes = [k for k, ok in g.items() if not ok]
-            if holes:
-                track = next(t for t in tracks if t["track_id"] == tid)
-                print(f"  incomplete ({', '.join(holes)}): {track['artist']} — {track['title']}")
+    run_enrich(
+        playlist_path=args.playlist,
+        port=args.port,
+        skip_bpm=args.skip_bpm,
+        skip_lyrics=args.skip_lyrics,
+        skip_chroma=args.skip_chroma,
+        skip_phrases=args.skip_phrases,
+        force_lyrics=args.force_lyrics,
+    )
 
 
 if __name__ == "__main__":

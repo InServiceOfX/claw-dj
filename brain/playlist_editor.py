@@ -43,9 +43,11 @@ class PlaylistApp:
                                   "brief": None, "engine": None}
         self.mix_thread: threading.Thread | None = None
         self.mix_run_thread: threading.Thread | None = None
+        self.enrich_thread: threading.Thread | None = None
         self.mix_state: dict = {
             "building": 0,
             "running": 0,
+            "enriching": 0,
             "error": None,
             "profile": None,
             "mix_brief": None,
@@ -53,6 +55,10 @@ class PlaylistApp:
             "summary": None,
             "live_error": None,
             "live_message": None,
+            "enrich_message": None,
+            "enrich_error": None,
+            "enrich_report": None,
+            "enrich_log": [],
         }
         self.reload()
 
@@ -510,6 +516,164 @@ class PlaylistApp:
         plan = json.loads(MIX_PLAN_PATH.read_text())
         return plan_summary(plan, plan_path=MIX_PLAN_PATH)
 
+    def reexport_finalized(self) -> dict:
+        """Rewrite playlist.json from current selection + latest crate bpm/key.
+
+        Call after sync_mixxx_analysis or enrich so Create the mix sees new
+        metadata without requiring another manual Finalize click.
+        """
+        self.reload()
+        if not self.selection:
+            # Fall back to whatever is already on disk (ids may have dropped).
+            if DEFAULT_PLAYLIST_JSON.exists():
+                return self.finalized_snapshot() or {"count": 0}
+            raise ValueError("nothing selected to re-export")
+        selected = export_playlist(self.tracks, self.selection)
+        self.mix_state["summary"] = None  # plan may now be stale relative to new analysis
+        return {
+            "count": len(selected),
+            "analyzed_count": sum(1 for t in selected if t.bpm),
+            "finalized": self.finalized_snapshot(),
+        }
+
+    def sync_from_mixxx(self) -> dict:
+        """Pull BPM/key Mixxx already wrote into its DB → crate + finalized playlist.
+
+        Use after a manual Mixxx Analyze. Note: some tracks report bpm=0 in
+        Mixxx until analysis truly finishes — then use analyze & enrich instead.
+        """
+        from brain.sync_mixxx_analysis import fetch_analyzed, main as sync_main
+
+        before = {t.track_id: t.bpm for t in self.tracks}
+        analyzed = fetch_analyzed()
+        mixxx_rows = sum(1 for hit in analyzed.values() if hit.get("bpm"))
+        sync_main()  # writes library index + crate.json
+
+        result = self.reexport_finalized()
+        newly = []
+        for track in (result.get("finalized") or {}).get("tracks") or []:
+            tid = track.get("track_id")
+            if track.get("bpm") and not before.get(tid):
+                newly.append(f"{track.get('artist')} — {track.get('title')}")
+        still_missing = [
+            f"{t.get('artist')} — {t.get('title')}"
+            for t in (result.get("finalized") or {}).get("tracks") or []
+            if not t.get("bpm")
+        ]
+        message = (
+            f"Synced Mixxx analysis ({mixxx_rows} library rows with bpm>0). "
+            f"Finalized set now {result.get('analyzed_count')}/{result.get('count')} with BPM/key."
+        )
+        if newly:
+            message += f" Newly filled: {', '.join(newly[:5])}."
+        if still_missing:
+            message += (
+                f" Still missing ({len(still_missing)}): {', '.join(still_missing[:3])}"
+                + ("…" if len(still_missing) > 3 else "")
+                + " — Mixxx still has bpm=0 for these; use Analyze & enrich (control API)."
+            )
+        return {
+            **result,
+            "mixxx_analyzed_rows": mixxx_rows,
+            "newly_filled": newly,
+            "still_missing": still_missing,
+            "message": message,
+        }
+
+    def start_enrich(self, *, port: int = 9995) -> dict:
+        """Background: analyze missing bpm/key via Mixxx control API + lyrics/chroma/phrases."""
+        if self.enrich_thread and self.enrich_thread.is_alive():
+            return self.mix_status()
+        if self.mix_thread and self.mix_thread.is_alive():
+            raise ValueError("mix plan is building — wait before enriching")
+        if self.mix_run_thread and self.mix_run_thread.is_alive():
+            raise ValueError("live mix is running — stop before enriching")
+        if not DEFAULT_PLAYLIST_JSON.exists():
+            raise ValueError("no finalized playlist — Finalize for Mixxx first")
+
+        # Ensure playlist.json matches current selection before enriching.
+        if self.selection:
+            export_playlist(self.tracks, self.selection)
+
+        self.mix_state.update(
+            enriching=1,
+            enrich_error=None,
+            enrich_message="Starting enrichment (bpm/key via Mixxx, then lyrics/chroma/phrases)…",
+            enrich_report=None,
+            enrich_log=[],
+        )
+
+        def work() -> None:
+            try:
+                from brain.enrich_set import run_enrich
+                from hands.mixxx_control import MixxxControl, MixxxControlError
+
+                def progress(msg: str) -> None:
+                    log = list(self.mix_state.get("enrich_log") or [])
+                    log.append(msg)
+                    self.mix_state["enrich_log"] = log[-40:]
+                    self.mix_state["enrich_message"] = msg
+
+                # Fail fast if Mixxx control API is down (needed for missing bpm).
+                try:
+                    with MixxxControl(port=port, timeout_s=2.0) as mixxx:
+                        if not mixxx.ping():
+                            raise MixxxControlError("no pong")
+                except Exception as error:
+                    # Still allow lyrics/chroma/phrases if bpm already present;
+                    # only hard-fail when something needs bpm analysis.
+                    from brain.enrich_set import enrichment_status
+
+                    gaps = enrichment_status(DEFAULT_PLAYLIST_JSON)
+                    need_bpm = (gaps.get("missing") or {}).get("bpm_key", 0)
+                    if need_bpm:
+                        raise ValueError(
+                            f"Mixxx control API not reachable on port {port} "
+                            f"({error}); need it to analyze {need_bpm} track(s) "
+                            "missing BPM/key. Launch: open -a Mixxx --args "
+                            "--control-api-port 9995"
+                        ) from error
+                    progress(
+                        f"Mixxx API down ({error}); skipping bpm analysis — "
+                        "filling lyrics/chroma/phrases only."
+                    )
+                    report = run_enrich(
+                        playlist_path=DEFAULT_PLAYLIST_JSON,
+                        port=port,
+                        skip_bpm=True,
+                        progress=progress,
+                    )
+                else:
+                    report = run_enrich(
+                        playlist_path=DEFAULT_PLAYLIST_JSON,
+                        port=port,
+                        progress=progress,
+                    )
+
+                self.reexport_finalized()
+                from brain.enrich_set import enrichment_status
+
+                status = enrichment_status(DEFAULT_PLAYLIST_JSON)
+                self.mix_state.update(
+                    enriching=0,
+                    enrich_error=None,
+                    enrich_report=report,
+                    enrich_message=(
+                        f"Done — {report.get('complete')}/{report.get('track_count')} fully enriched. "
+                        f"{status.get('message', '')}"
+                    ),
+                )
+            except Exception as error:
+                self.mix_state.update(
+                    enriching=0,
+                    enrich_error=str(error),
+                    enrich_message=None,
+                )
+
+        self.enrich_thread = threading.Thread(target=work, daemon=True)
+        self.enrich_thread.start()
+        return self.mix_status()
+
     def mix_status(self) -> dict:
         from brain.mix_profiles import PROFILES
 
@@ -530,6 +694,12 @@ class PlaylistApp:
         )
         status["plan_stale"] = self._plan_stale(status.get("summary"), finalized)
         status["playlist_ready"] = finalized is not None and (finalized.get("count") or 0) >= 2
+        try:
+            from brain.enrich_set import enrichment_status
+
+            status["enrichment"] = enrichment_status(DEFAULT_PLAYLIST_JSON)
+        except Exception as error:
+            status["enrichment"] = {"ready": False, "error": str(error)}
         return status
 
     def build_mix(
@@ -563,9 +733,13 @@ class PlaylistApp:
         if not (mix_brief or "").strip():
             engine = "none"
 
+        if self.enrich_thread and self.enrich_thread.is_alive():
+            raise ValueError("enrichment is still running — wait before building the plan")
+
         self.mix_state = {
             "building": 1,
             "running": 0,
+            "enriching": 0,
             "error": None,
             "profile": profile,
             "mix_brief": mix_brief,
@@ -573,6 +747,10 @@ class PlaylistApp:
             "summary": None,
             "live_error": None,
             "live_message": None,
+            "enrich_message": self.mix_state.get("enrich_message"),
+            "enrich_error": self.mix_state.get("enrich_error"),
+            "enrich_report": self.mix_state.get("enrich_report"),
+            "enrich_log": self.mix_state.get("enrich_log") or [],
         }
 
         def work() -> None:
@@ -750,6 +928,19 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                         app.start_mix(confirm=bool(payload.get("confirm")), port=port),
                         HTTPStatus.ACCEPTED,
                     )
+                    return
+                if self.path == "/api/mix/sync":
+                    self._json(app.sync_from_mixxx())
+                    return
+                if self.path == "/api/mix/enrich":
+                    payload = self._body()
+                    self._json(
+                        app.start_enrich(port=int(payload.get("port", 9995))),
+                        HTTPStatus.ACCEPTED,
+                    )
+                    return
+                if self.path == "/api/mix/refresh":
+                    self._json(app.reexport_finalized())
                     return
             except (KeyError, ValueError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)

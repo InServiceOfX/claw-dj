@@ -106,6 +106,22 @@ class MixEditorTest(unittest.TestCase):
                 self.assertTrue(status3["plan_stale"])
                 self.assertFalse(status3["plan_ready"])
 
+    def test_enrichment_status_reports_gaps(self) -> None:
+        from brain.enrich_set import enrichment_status
+
+        with TemporaryDirectory() as directory:
+            playlist = Path(directory) / "playlist.json"
+            playlist.write_text(json.dumps([
+                {"track_id": "/a.mp3", "artist": "A", "title": "One", "bpm": 100, "key": "Am"},
+                {"track_id": "/b.mp3", "artist": "B", "title": "Two", "bpm": None, "key": None},
+            ]))
+            # Without a real library.sqlite matching these ids, status still runs
+            # and reports missing for unknown rows.
+            report = enrichment_status(playlist)
+            self.assertTrue(report["ready"])
+            self.assertEqual(report["count"], 2)
+            self.assertIn("missing", report)
+
     def test_suggest_blends_always_has_message(self) -> None:
         from brain.library import Track
         from brain.playlist_editor import PlaylistApp

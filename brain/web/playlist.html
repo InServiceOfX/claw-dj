@@ -160,9 +160,16 @@
             <div>
               <strong>Finalized set</strong>
               <div class="ingest-detail" id="finalized-detail">Not finalized yet — go back to Curate and press Finalize for Mixxx.</div>
+              <div class="ingest-detail" id="enrich-status"></div>
             </div>
-            <button type="button" id="back-curate">← Back to curate</button>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end">
+              <button type="button" id="back-curate">← Back to curate</button>
+              <button type="button" id="refresh-finalized" title="Reload crate + rewrite playlist.json from the enabled set">Refresh list</button>
+              <button type="button" id="sync-mixxx" title="Pull BPM/key already in Mixxx's DB into claw-dj">Sync from Mixxx</button>
+              <button type="button" id="enrich-set" class="primary" title="Analyze missing BPM/key via Mixxx control API, then lyrics/chroma/phrases">Analyze &amp; enrich missing</button>
+            </div>
           </div>
+          <div class="brain-detail" id="enrich-detail"></div>
           <div class="finalized-rows" id="finalized-rows"></div>
         </div>
         <div class="banner" id="plan-stale-banner" hidden>The dry-run plan below is <strong>stale</strong> — it does not match the current finalized set (e.g. you added a track). Rebuild the mix plan.</div>
@@ -358,16 +365,24 @@
         `<button type="button" data-profile="${esc(p.name)}" title="${esc(p.description || '')}" class="${p.name===mixState.profile?'active':''}">${esc(PROFILE_LABELS[p.name] || p.name)}</button>`
       ).join('');
     }
-    function renderFinalized(finalized) {
+    function renderFinalized(finalized, enrichment) {
       if (!finalized || !finalized.count) {
         el('finalized-detail').textContent = 'Not finalized yet — go back to Curate and press Finalize for Mixxx.';
+        el('enrich-status').textContent = '';
         el('finalized-rows').innerHTML = '<div class="empty">No finalized playlist on disk.</div>';
         return;
       }
       const miss = finalized.missing_bpm_count || 0;
       el('finalized-detail').textContent =
         `${finalized.count} tracks · ${finalized.analyzed_count} with BPM/key` +
-        (miss ? ` · ${miss} missing analysis (red — will be skipped by the plan builder until analyzed)` : ' · ready for plan build');
+        (miss ? ` · ${miss} missing analysis (red — Analyze & enrich will load them into a muted Mixxx deck)` : ' · BPM/key ready for plan build');
+      if (enrichment && enrichment.ready) {
+        el('enrich-status').textContent = enrichment.message || '';
+      } else if (enrichment && enrichment.error) {
+        el('enrich-status').textContent = `Enrichment status: ${enrichment.error}`;
+      } else {
+        el('enrich-status').textContent = '';
+      }
       el('finalized-rows').innerHTML = (finalized.tracks || []).map((t, i) => {
         const bpm = t.bpm ? Number(t.bpm).toFixed(1) : '—';
         return `<div class="finalized-row"><span><strong>${String(i+1).padStart(2,'0')}.</strong> ${esc(t.artist)} — ${esc(t.title)}</span>` +
@@ -412,12 +427,25 @@
       if (data.profile) mixState.profile = data.profile;
       if (data.order_engine) el('order-engine').value = data.order_engine;
       renderPresets(data.profiles);
-      renderFinalized(data.finalized);
+      renderFinalized(data.finalized, data.enrichment);
       el('plan-stale-banner').hidden = !data.plan_stale;
-      el('build-mix').disabled = Boolean(data.building) || Boolean(data.running) || !data.playlist_ready;
+      const busy = Boolean(data.building) || Boolean(data.running) || Boolean(data.enriching);
+      el('build-mix').disabled = busy || !data.playlist_ready;
+      el('enrich-set').disabled = busy || !data.playlist_ready;
+      el('sync-mixxx').disabled = busy;
+      el('refresh-finalized').disabled = busy;
       // Start only when plan is ready AND not stale.
-      const canStart = Boolean(data.plan_ready) && !data.plan_stale && !data.building && !data.running;
+      const canStart = Boolean(data.plan_ready) && !data.plan_stale && !busy;
       el('start-mix').disabled = !canStart;
+      if (data.enriching) {
+        el('enrich-detail').textContent = data.enrich_message || 'Enriching… (missing BPM uses a muted Mixxx deck; lyrics/chroma/phrases follow)';
+      } else if (data.enrich_error) {
+        el('enrich-detail').textContent = `Enrich failed: ${data.enrich_error}`;
+      } else if (data.enrich_message) {
+        el('enrich-detail').textContent = data.enrich_message;
+      } else {
+        el('enrich-detail').textContent = '';
+      }
       if (data.building) {
         const eng = data.order_engine && data.order_engine !== 'none'
           ? ` · ordering via ${data.order_engine} (can take 1–7 min)`
@@ -435,7 +463,7 @@
       } else {
         const miss = data.finalized?.missing_bpm_count || 0;
         el('mix-detail').textContent = miss
-          ? `Ready to build from ${data.finalized.count} finalized tracks (${miss} without BPM/key will be skipped until analyzed).`
+          ? `Ready to build from ${data.finalized.count} finalized tracks (${miss} without BPM/key will be skipped until you Analyze & enrich).`
           : `Ready to build from ${data.finalized.count} finalized tracks. Pick a profile and build.`;
       }
       renderMixSummary(data.summary, { stale: data.plan_stale });
@@ -451,6 +479,55 @@
       }
       return data;
     }
+    function pollMixUntilIdle() {
+      if (mixState.pollTimer) clearInterval(mixState.pollTimer);
+      mixState.pollTimer = setInterval(async () => {
+        const status = await pollMix();
+        if (!status.building && !status.running && !status.enriching) {
+          clearInterval(mixState.pollTimer);
+          mixState.pollTimer = null;
+        }
+      }, 1500);
+    }
+    el('refresh-finalized').addEventListener('click', async () => {
+      el('enrich-detail').textContent = 'Refreshing finalized list from crate…';
+      try {
+        await api('/api/mix/refresh', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+        await pollMix();
+        el('enrich-detail').textContent = 'Finalized list reloaded from current enabled set + crate metadata.';
+      } catch (error) {
+        el('enrich-detail').textContent = error.message;
+      }
+    });
+    el('sync-mixxx').addEventListener('click', async () => {
+      el('enrich-detail').textContent = 'Pulling BPM/key from Mixxx’s library database…';
+      el('sync-mixxx').disabled = true;
+      try {
+        const result = await api('/api/mix/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+        el('enrich-detail').textContent = result.message || 'Sync complete.';
+        await pollMix();
+      } catch (error) {
+        el('enrich-detail').textContent = error.message;
+      } finally {
+        el('sync-mixxx').disabled = false;
+      }
+    });
+    el('enrich-set').addEventListener('click', async () => {
+      el('enrich-set').disabled = true;
+      el('enrich-detail').textContent = 'Starting Analyze & enrich… Mixxx must be open with --control-api-port 9995.';
+      try {
+        await api('/api/mix/enrich', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ port: 9995 }),
+        });
+        pollMixUntilIdle();
+        await pollMix();
+      } catch (error) {
+        el('enrich-detail').textContent = error.message;
+        el('enrich-set').disabled = false;
+      }
+    });
     el('mix-presets').addEventListener('click', event => {
       const button = event.target.closest('button[data-profile]');
       if (!button) return;
@@ -470,13 +547,7 @@
             order_engine: el('order-engine').value,
           }),
         });
-        if (mixState.pollTimer) clearInterval(mixState.pollTimer);
-        // Agent order turns can take minutes — poll slower when engine is on.
-        const interval = el('order-engine').value === 'none' ? 750 : 2000;
-        mixState.pollTimer = setInterval(async () => {
-          const status = await pollMix();
-          if (!status.building && !status.running) { clearInterval(mixState.pollTimer); mixState.pollTimer = null; }
-        }, interval);
+        pollMixUntilIdle();
         await pollMix();
       } catch (error) {
         el('mix-detail').textContent = error.message;
@@ -499,11 +570,7 @@
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({ confirm: true }),
         });
-        if (mixState.pollTimer) clearInterval(mixState.pollTimer);
-        mixState.pollTimer = setInterval(async () => {
-          const status = await pollMix();
-          if (!status.running && !status.building) { clearInterval(mixState.pollTimer); mixState.pollTimer = null; }
-        }, 2000);
+        pollMixUntilIdle();
         await pollMix();
       } catch (error) {
         el('mix-live').textContent = error.message;
@@ -519,12 +586,7 @@
       const initialPage = (location.hash || '#curate').slice(1);
       showPage(initialPage === 'mix' ? 'mix' : 'curate');
       const mix=await pollMix();
-      if(mix.building || mix.running){
-        mixState.pollTimer=setInterval(async()=>{
-          const status=await pollMix();
-          if(!status.building && !status.running){clearInterval(mixState.pollTimer);mixState.pollTimer=null;}
-        }, mix.running ? 2000 : 750);
-      }
+      if(mix.building || mix.running || mix.enriching) pollMixUntilIdle();
     })().catch(error=>{el('notice').textContent=error.message});
   </script>
 </body>

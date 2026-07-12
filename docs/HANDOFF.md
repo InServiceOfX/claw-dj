@@ -615,6 +615,16 @@ plan builder until Mixxx-analyzed (sync crate afterward).
 weak links / unanalyzed in set / no candidates) and the UI scrolls to the
 brain picks panel so results aren't silent.
 
+**Analyze & enrich from the mix page (2026-07-12):** GUI Mixxx Analyze
+often leaves `library.bpm=0` / empty key (verified on Many Man (Wish
+Death)) and never reaches claw-dj until something writes the crate. The
+mix page now has **Sync from Mixxx** (pull bpm>0 from mixxxdb → index +
+crate + re-export playlist.json), **Analyze & enrich missing** (muted-deck
+control-API analysis via `brain.enrich_set` → lyrics/chroma/phrases, then
+re-export so Build mix plan sees the new BPM/key), and **Refresh list**.
+No Holo/GUI agent required when the patched Mixxx control API is up on
+9995. Endpoints: POST `/api/mix/sync`, `/api/mix/enrich`, `/api/mix/refresh`.
+
 Profile presets + free-text brief + order engine → `compose_mix_plan` →
 dry-run → **Start mix** (double confirm + Mixxx ping). Endpoints: GET
 `/api/mix` (includes `finalized`, `plan_stale`), POST `/api/mix/build`,
