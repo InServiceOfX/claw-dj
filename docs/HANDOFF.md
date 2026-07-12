@@ -589,6 +589,18 @@ agent turns take 1–7 minutes (it's an agent loop, not a raw model); the UI
 polls and survives page reloads mid-call. NemoClaw prereqs: Docker Desktop
 up + `openshell forward start --background 8642 hermes` once per boot.
 
+UI workflow semantics (Ernest, 2026-07-12): Library = every track on the
+drive; Enabled set = the working playlist (user edits are authoritative);
+**unchecking = durable exclusion** (`playlist_exclusions.json`) that seed
+merges, agent picks, hits-mode curation, and suggestions all respect until
+re-enabled; **Finalize for Mixxx** = the lock-in step before analysis.
+"Ask the DJ brain" supports Both engines with per-engine cached results
+(`brain_picks_{engine}.json`); "Suggest blends" deterministically scores
+analyzed/unselected/non-excluded tracks against the current set. Scans
+that find new music rebuild `new_music_agent.json` automatically. Next
+stage to build: post-finalize "Create the mix" button — flavor presets
+(e.g. DJ showcase) + free-text mix description feeding build_mix_plan.
+
 **NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
 Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.
 
