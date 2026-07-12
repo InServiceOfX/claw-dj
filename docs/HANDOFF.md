@@ -558,6 +558,28 @@ This is the input for the NemoClaw / H-agent "pick playlist candidates
 from the new music" conversation; resolve returned ids locally, never let
 the agent touch paths.
 
+**Both agent engines wired and validated live (2026-07-12) —
+`brain/pick_candidates.py`:**
+
+- `--engine nemoclaw`: hermes sandbox (NVIDIA Nemotron 3 Super 120B) via
+  its OpenAI-compatible API. Plumbing: Docker Desktop must be running
+  (gateway silently fails without it — `nemoclaw hermes doctor --fix`
+  repairs once Docker is up), then
+  `openshell forward start --background 8642 hermes`; auth is
+  `nemoclaw hermes gateway-token --quiet` as a Bearer token, model id
+  `hermes-agent`. Note `nemoclaw hermes agent` does NOT work for this
+  sandbox (hermes runtime exposes the API instead).
+- `--engine h-agent`: H Company Agent Platform via `hai_agents`
+  planning-only task (Brain, max_steps=4). Auths fine on this Mac via the
+  `~/.holo/.env` key fallback.
+
+Real run, same 2,695-track view + brief: Nemotron returned 20 picks with
+some junk (a French charity single, G-Unit filler); Holo returned 14
+tighter picks and honored "fewer is fine". Picks land in
+`brain/data/new_music_picks*.json`; `--add-to-selection` merges them into
+the selection for the normal curate → analyze → plan flow. Next slice:
+surface picks + brief input in the playlist editor UI.
+
 **NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
 Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.
 
