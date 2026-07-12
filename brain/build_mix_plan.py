@@ -114,7 +114,12 @@ def build_plan(
     affinity_lookup: dict[tuple[str, str], dict],
     phrase_lookup: dict[str, dict] | None = None,
     phrase_beats: int = 32,
+    profile: "MixProfile | None" = None,
+    provenance: dict | None = None,
 ) -> dict:
+    from brain.mix_profiles import PROFILES
+
+    profile = profile or PROFILES["dj-showcase"]
     selected = tracks[:count]
     if len(selected) < 2:
         raise SystemExit("need at least 2 tracks in the filtered playlist")
@@ -133,9 +138,14 @@ def build_plan(
         # every 4th slot takes the intro instead, when it holds up. (DJ note
         # from Ernest: don't open every track from the top.)
         pick, source = (body, "phrase_body") if body else (None, "mixxx_beatgrid+energy")
+        intro_every = profile.intro_entry_every
         if intro and (
             body is None
-            or (slot % 4 == 2 and intro["score"] >= 0.75 * body["score"])
+            or (
+                intro_every
+                and slot % intro_every == intro_every // 2
+                and intro["score"] >= 0.75 * body["score"]
+            )
         ):
             pick, source = intro, "phrase_intro"
         if pick is None:
@@ -196,10 +206,17 @@ def build_plan(
         aff = affinity_lookup.get(tuple(sorted((outgoing["track_id"], incoming["track_id"]))))
         tech = pick_technique(outgoing, incoming, aff)
 
-        # One intentional flourish per transition slot. Compatibility chooses
-        # the base recipe; position in the set controls how often we show off.
+        # Compatibility chooses the base recipe; the profile controls how
+        # often we show off and how long the landing takes.
+        if profile.transition_scale != 1.0:
+            scaled = tech["transition_beats"] * profile.transition_scale
+            tech["transition_beats"] = max(4, int(round(scaled / 4)) * 4)
         tech["moves"] = [move for move in tech["moves"] if move != "optional_scratch_in"]
-        flourish = ("bass_swap", "scratch_preview", "loop_roll", "transformer_cut")[index % 4]
+        flourish = "bass_swap"
+        if profile.flourish_every and index % profile.flourish_every == 0:
+            flourish = ("bass_swap", "scratch_preview", "loop_roll", "transformer_cut")[
+                (index // profile.flourish_every) % 4
+            ]
         if flourish == "scratch_preview" and tech["score"] >= 0.7:
             tech["moves"].insert(0, "optional_scratch_in")
         elif flourish == "loop_roll":
@@ -217,12 +234,13 @@ def build_plan(
             next_boundary += phrase_beats
 
         # Showcase pacing varies (Ernest, 2026-07-12): not every segment is
-        # one phrase — some key parts get to play out (2-3 phrases, e.g. the
-        # opener), never the whole song. Slot rotation gives the baseline;
-        # a confident phrase pick earns an extra phrase.
-        ride_phrases = (2, 1, 1, 2, 1, 3, 1, 1)[index % 8]
+        # one phrase — some key parts get to play out, never the whole song.
+        # The profile's slot rotation gives the baseline; a confident phrase
+        # pick earns an extra phrase.
+        pattern = profile.ride_phrases_pattern
+        ride_phrases = pattern[index % len(pattern)]
         out_phrase = phrase_lookup.get(outgoing["track_id"]) or {}
-        if ride_phrases == 1 and (out_phrase.get("confidence") or 0.0) >= 0.60:
+        if ride_phrases == 1 and (out_phrase.get("confidence") or 0.0) >= profile.confidence_extra_phrase:
             ride_phrases = 2
         next_boundary += (ride_phrases - 1) * phrase_beats
         ride_beats = max(0, next_boundary - elapsed_in_phrase - 1)
@@ -298,6 +316,7 @@ def build_plan(
         "version": 2,
         "track_count": len(selected),
         "seconds_per_track": seconds_per_track,
+        "profile": provenance or {"name": profile.name},
         "phrase_interval_beats": phrase_beats,
         "tracks": [
             {
@@ -355,14 +374,33 @@ INSTRUMENT_MAP = {
 
 
 def main() -> None:
+    from brain.mix_profiles import PROFILES, apply_brief, profile_provenance
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--playlist", type=Path, default=DEFAULT_PLAYLIST)
     parser.add_argument("--tracks", type=int, default=8, help="how many songs in the continuous mix")
-    parser.add_argument("--seconds-per-track", type=float, default=40.0)
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILES),
+        default="dj-showcase",
+        help="how the set should feel; explicit flags below still win",
+    )
+    parser.add_argument(
+        "--mix-brief",
+        default="",
+        help="free-text mix description mapped onto the profile "
+             "(e.g. 'smooth, longer blends, no tricks')",
+    )
+    parser.add_argument("--seconds-per-track", type=float, default=None)
     parser.add_argument("--phrase-analysis", type=Path, default=DEFAULT_PHRASES)
-    parser.add_argument("--phrase-beats", type=int, default=32, choices=(16, 32, 48, 64))
+    parser.add_argument("--phrase-beats", type=int, default=None, choices=(16, 32, 48, 64))
     parser.add_argument("--out", type=Path, default=DEFAULT_PLAN)
     args = parser.parse_args()
+
+    profile, brief_notes = apply_brief(PROFILES[args.profile], args.mix_brief)
+    print(f"profile: {profile.name} — {profile.description}")
+    for note in brief_notes:
+        print(f"  brief adjustment: {note}")
 
     tracks = json.loads(args.playlist.read_text())
     # Prefer analyzed tracks for a live mix
@@ -373,10 +411,12 @@ def main() -> None:
     plan = build_plan(
         pool,
         count=min(args.tracks, len(pool)),
-        seconds_per_track=args.seconds_per_track,
+        seconds_per_track=args.seconds_per_track if args.seconds_per_track is not None else profile.seconds_per_track,
         affinity_lookup=affinity,
         phrase_lookup=phrases,
-        phrase_beats=args.phrase_beats,
+        phrase_beats=args.phrase_beats if args.phrase_beats is not None else profile.phrase_beats,
+        profile=profile,
+        provenance=profile_provenance(profile, args.mix_brief, brief_notes),
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(plan, indent=2) + "\n")
