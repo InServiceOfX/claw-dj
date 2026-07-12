@@ -1,15 +1,17 @@
-"""Drives Mixxx's own BPM/key analysis for the lineage set through the
-control API: loads each playlist track into a (muted) deck, waits for the
-analyzer to report a BPM, and moves on. Afterwards Mixxx's database holds
-real beatgrids/keys for every track — run brain.sync_mixxx_analysis to merge
-them into the crate cache, then brain.build_lineage_set again to bake them
-into lineage_set.json.
+"""Drives Mixxx's own BPM/key analysis for a playlist through the control
+API: loads each playlist track into a (muted) deck, waits for the analyzer
+to report a BPM, and moves on. Afterwards Mixxx's database holds real
+beatgrids/keys for every track — run brain.sync_mixxx_analysis to merge them
+into the crate cache.
 
 No GUI interaction: needs our patched Mixxx running with
 `--control-api-port 9995`. The analyzing deck is kept silent (volume 0,
 never playing), so this can run while another deck is live.
 
-Usage: uv run python -m brain.analyze_via_mixxx [--deck 4] [--port 9995]
+Usage: uv run python -m brain.analyze_via_mixxx [--deck 4] [--port 9995] \\
+           [--tracks brain/data/preliminary_playlist.json]
+--tracks takes any JSON list of records with a "track_id" absolute path
+(a crate subset, curated playlist, …); default is the lineage set.
 """
 from __future__ import annotations
 
@@ -39,15 +41,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--deck", type=int, default=4, help="deck used for analysis loads")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument(
+        "--tracks",
+        type=Path,
+        default=SET_JSON,
+        help='JSON list of records with a "track_id" path (crate subset, playlist, …)',
+    )
     args = parser.parse_args()
 
-    records = json.loads(SET_JSON.read_text())
+    records = json.loads(args.tracks.read_text())
     group = deck_group(args.deck)
     analyzed = 0
     with MixxxControl(port=args.port, timeout_s=ANALYZE_TIMEOUT_S + 10) as mixxx:
         mixxx.set(group, "volume", 0.0)
         for r in records:
-            print(f"{r['artist']} - {r['title']}")
+            label = f"{r['artist']} - {r['title']}" if "artist" in r else r["track_id"]
+            print(label)
             mixxx.load(args.deck, r["track_id"])
             bpm = wait_for_bpm(mixxx, group, ANALYZE_TIMEOUT_S)
             if bpm is None:

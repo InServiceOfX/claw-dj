@@ -6,6 +6,11 @@ exists for the same absolute path.
 The cache (brain/data/crate.json) is gitignored — a personal media library's
 track listing doesn't belong committed to a public repo.
 
+Files still downloading or mid-copy are excluded: partial-download markers
+(`song.mp3.part` next to `song.mp3`), zero-byte placeholders, and files whose
+mtime is younger than --min-age-seconds. Skipped paths are written to
+brain/data/scan_skipped.json so a later rescan can pick them up.
+
 Usage:
     uv run python -m brain.scan_library /Volumes/USB322FD/Music/RnB \\
         /Volumes/USB322FD/Music/HipHop
@@ -24,44 +29,75 @@ from brain.library import DEFAULT_CRATE_CACHE
 
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".wav", ".aiff"}
 
+# Sibling suffixes download tools leave next to (or instead of) the final
+# file while it is still transferring. Firefox writes a zero-byte final name
+# plus `<name>.part`; qBittorrent uses `.!qB`; aria2 uses `.aria2`.
+INCOMPLETE_MARKER_SUFFIXES = (".part", ".crdownload", ".!qB", ".aria2")
+
+DEFAULT_SKIPPED_REPORT = DEFAULT_CRATE_CACHE.parent / "scan_skipped.json"
+
 
 def _first(tags: dict, key: str) -> str | None:
     values = tags.get(key)
     return values[0] if values else None
 
 
-def scan(root: Path) -> list[dict]:
+def incomplete_reason(path: Path, *, min_age_seconds: float, now: float) -> str | None:
+    """Why this audio file should be treated as still transferring, else None."""
+    for marker in INCOMPLETE_MARKER_SUFFIXES:
+        if path.with_name(path.name + marker).exists():
+            return f"sibling {marker} marker"
+    try:
+        stat = path.stat()
+    except OSError:
+        return "unreadable (stat failed)"
+    if stat.st_size == 0:
+        return "zero-byte placeholder"
+    if min_age_seconds > 0 and now - stat.st_mtime < min_age_seconds:
+        return f"modified {int(now - stat.st_mtime)}s ago (< min age)"
+    return None
+
+
+def scan(
+    root: Path,
+    *,
+    min_age_seconds: float = 300,
+    skipped: list[dict] | None = None,
+) -> list[dict]:
     """Read embedded tags only — typically a few ms per file, no decoding."""
     records = []
+    now = time.time()
     for path in sorted(root.rglob("*")):
         if path.suffix.lower() not in AUDIO_EXTENSIONS or path.name.startswith("._"):
+            continue
+        reason = incomplete_reason(path, min_age_seconds=min_age_seconds, now=now)
+        if reason is not None:
+            if skipped is not None:
+                skipped.append({"track_id": str(path), "reason": reason})
             continue
         try:
             tagged = MutagenFile(path, easy=True)
         except Exception:
             continue
-        if tagged is None:
+        size_bytes = path.stat().st_size
+        duration = getattr(getattr(tagged, "info", None), "length", None)
+        record = {
+            "track_id": str(path),
+            "title": path.stem,
+            "artist": "Unknown Artist",
+            "album": None,
+            "genre": None,
+            "duration_seconds": round(duration, 1) if duration else None,
+            "size_bytes": size_bytes,
+        }
+        if tagged is not None:
             # Untagged audio still counts as available; name falls back to filename.
-            records.append(
-                {
-                    "track_id": str(path),
-                    "title": path.stem,
-                    "artist": "Unknown Artist",
-                    "album": None,
-                    "genre": None,
-                }
-            )
-            continue
-        tags = tagged.tags or {}
-        records.append(
-            {
-                "track_id": str(path),
-                "title": _first(tags, "title") or path.stem,
-                "artist": _first(tags, "artist") or "Unknown Artist",
-                "album": _first(tags, "album"),
-                "genre": _first(tags, "genre"),
-            }
-        )
+            tags = tagged.tags or {}
+            record["title"] = _first(tags, "title") or path.stem
+            record["artist"] = _first(tags, "artist") or "Unknown Artist"
+            record["album"] = _first(tags, "album")
+            record["genre"] = _first(tags, "genre")
+        records.append(record)
     return records
 
 
@@ -76,6 +112,12 @@ def main() -> None:
         action="store_true",
         help="also write brain/data/catalog.json (slim agent-facing index)",
     )
+    parser.add_argument(
+        "--min-age-seconds",
+        type=float,
+        default=300,
+        help="treat files modified more recently than this as still copying (0 disables)",
+    )
     args = parser.parse_args()
 
     previous = {}
@@ -86,10 +128,11 @@ def main() -> None:
 
     started = time.perf_counter()
     records_by_path: dict[str, dict] = {}
+    skipped: list[dict] = []
     for root in args.roots:
         if not root.exists():
             raise SystemExit(f"scan root does not exist: {root}")
-        found = scan(root)
+        found = scan(root, min_age_seconds=args.min_age_seconds, skipped=skipped)
         print(f"  {root}: {len(found)} tracks")
         records_by_path.update({record["track_id"]: record for record in found})
 
@@ -108,6 +151,10 @@ def main() -> None:
     args.out.write_text(json.dumps(records, indent=2))
     elapsed = time.perf_counter() - started
     print(f"scanned {len(records)} tracks -> {args.out} ({elapsed:.1f}s, metadata only)")
+
+    skipped_report = args.out.parent / DEFAULT_SKIPPED_REPORT.name
+    skipped_report.write_text(json.dumps(skipped, indent=2))
+    print(f"skipped {len(skipped)} incomplete/in-transfer files -> {skipped_report}")
 
     if args.catalog:
         from brain.catalog import write_catalog

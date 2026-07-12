@@ -31,6 +31,8 @@ class Track:
     bpm: float | None = None
     key: str | None = None
     energy: Energy = Energy.MEDIUM
+    duration_seconds: float | None = None
+    size_bytes: int | None = None
 
 
 def load_crate(path: Path = DEFAULT_CRATE_CACHE) -> list[Track]:
@@ -47,6 +49,8 @@ def load_crate(path: Path = DEFAULT_CRATE_CACHE) -> list[Track]:
             bpm=r.get("bpm"),
             key=r.get("key"),
             energy=Energy(r.get("energy", Energy.MEDIUM.value)),
+            duration_seconds=r.get("duration_seconds"),
+            size_bytes=r.get("size_bytes"),
         )
         for r in records
     ]

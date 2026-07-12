@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
+import re
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,6 +50,35 @@ def catalog_entry(index: int, track: Track | dict) -> dict:
     }
 
 
+_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
+_NOISE_RE = re.compile(
+    r"\s*[(\[][^)\]]*(feat|ft\.|remaster|explicit|clean|album version|bonus)[^)\]]*[)\]]",
+    re.IGNORECASE,
+)
+
+
+def _normalize(text: str) -> str:
+    return _NORMALIZE_RE.sub(" ", _NOISE_RE.sub("", text).lower()).strip()
+
+
+def find_duplicates(tracks: list[Track] | list[dict]) -> list[dict]:
+    """Same normalized artist+title at different paths (scene rips, reissues)."""
+    groups: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for track in tracks:
+        row = track.__dict__ if isinstance(track, Track) else track
+        key = (
+            _normalize(row.get("artist") or "Unknown Artist"),
+            _normalize(row.get("title") or ""),
+        )
+        if key[1]:
+            groups[key].append(row["track_id"])
+    return [
+        {"artist": artist, "title": title, "track_ids": sorted(paths)}
+        for (artist, title), paths in sorted(groups.items())
+        if len(paths) > 1
+    ]
+
+
 def build_catalog(
     tracks: list[Track] | list[dict],
     *,
@@ -57,6 +87,7 @@ def build_catalog(
     entries = [catalog_entry(i, track) for i, track in enumerate(tracks)]
     artists = Counter(entry["artist"] for entry in entries)
     genres = Counter(entry["genre"] or "unknown" for entry in entries)
+    duplicates = find_duplicates(tracks)
     return {
         "version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -71,6 +102,8 @@ def build_catalog(
         "genres": [
             {"genre": genre, "count": count} for genre, count in genres.most_common(30)
         ],
+        "duplicate_group_count": len(duplicates),
+        "duplicates": duplicates,
         "tracks": entries,
     }
 
