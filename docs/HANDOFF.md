@@ -483,6 +483,7 @@ user-chosen roots (e.g. `/Volumes/USB322FD/Music/RnB` + `.../HipHop`).
 | `brain/playlist_seeds/*.json` | Wikipedia/chart **hit seeds** per folder artist + sample-lineage edges. |
 | `brain/mix_graph.py` | Transition scores: BPM (rate-adjust tolerant), Camelot key, sample lineage, title tokens. **No full-library waveform** (too heavy; use Mixxx beatgrids). |
 | `brain/curate_playlist.py` | Pipeline: keep user selection → match researched hits to crate → mix-order → optional H-agent **reorder only** (never invents deep cuts). Subjective asks (genre/region/era/mood) are **per-playlist input** via `--brief` and `--seed`, not rules — the default brief is neutral (Ernest, 2026-07-12: the earlier West Coast slant was a one-time ask, don't hardcode it). |
+| `brain/playlist_edit.py` | Structured selection edits (`--remove-artist`/`--remove-title`) — the tool surface a NemoClaw/H-agent chat front end calls for asks like "drop the Alicia Keys songs"; re-order afterward with `--mode selection`. **Known gap:** removals aren't sticky — a later `--mode hits` run re-adds seed matches; a persisted exclusion list is the fix. |
 | playlist UI | "Add researched hits" + "Order for mixes" (reorder enabled set; never drops picks). |
 
 **Hackathon demo line:** "Yes — H agents curate researched hits from *your*
