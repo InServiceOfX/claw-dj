@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from mutagen import File as MutagenFile
@@ -58,46 +59,78 @@ def incomplete_reason(path: Path, *, min_age_seconds: float, now: float) -> str 
     return None
 
 
+def _read_record(
+    path: Path, *, min_age_seconds: float, now: float
+) -> tuple[str, dict] | None:
+    reason = incomplete_reason(path, min_age_seconds=min_age_seconds, now=now)
+    if reason is not None:
+        return ("skip", {"track_id": str(path), "reason": reason})
+    try:
+        tagged = MutagenFile(path, easy=True)
+    except Exception:
+        return None
+    size_bytes = path.stat().st_size
+    duration = getattr(getattr(tagged, "info", None), "length", None)
+    record = {
+        "track_id": str(path),
+        "title": path.stem,
+        "artist": "Unknown Artist",
+        "album": None,
+        "genre": None,
+        "duration_seconds": round(duration, 1) if duration else None,
+        "size_bytes": size_bytes,
+    }
+    if tagged is not None:
+        # Untagged audio still counts as available; name falls back to filename.
+        tags = tagged.tags or {}
+        record["title"] = _first(tags, "title") or path.stem
+        record["artist"] = _first(tags, "artist") or "Unknown Artist"
+        record["album"] = _first(tags, "album")
+        record["genre"] = _first(tags, "genre")
+    return ("ok", record)
+
+
 def scan(
     root: Path,
     *,
     min_age_seconds: float = 300,
     skipped: list[dict] | None = None,
+    workers: int = 8,
+    progress_every: int = 500,
 ) -> list[dict]:
-    """Read embedded tags only — typically a few ms per file, no decoding."""
+    """Read embedded tags only — no decoding. Tag reads run on a thread pool:
+    on a contended USB drive the wall time is dominated by per-file I/O waits
+    (observed ~1 s/file serial), and mutagen releases the GIL while blocked,
+    so overlapping reads is what makes 10k+ files tractable."""
+    paths = [
+        path
+        for path in sorted(root.rglob("*"))
+        if path.suffix.lower() in AUDIO_EXTENSIONS and not path.name.startswith("._")
+    ]
     records = []
     now = time.time()
-    for path in sorted(root.rglob("*")):
-        if path.suffix.lower() not in AUDIO_EXTENSIONS or path.name.startswith("._"):
-            continue
-        reason = incomplete_reason(path, min_age_seconds=min_age_seconds, now=now)
-        if reason is not None:
-            if skipped is not None:
-                skipped.append({"track_id": str(path), "reason": reason})
-            continue
-        try:
-            tagged = MutagenFile(path, easy=True)
-        except Exception:
-            continue
-        size_bytes = path.stat().st_size
-        duration = getattr(getattr(tagged, "info", None), "length", None)
-        record = {
-            "track_id": str(path),
-            "title": path.stem,
-            "artist": "Unknown Artist",
-            "album": None,
-            "genre": None,
-            "duration_seconds": round(duration, 1) if duration else None,
-            "size_bytes": size_bytes,
-        }
-        if tagged is not None:
-            # Untagged audio still counts as available; name falls back to filename.
-            tags = tagged.tags or {}
-            record["title"] = _first(tags, "title") or path.stem
-            record["artist"] = _first(tags, "artist") or "Unknown Artist"
-            record["album"] = _first(tags, "album")
-            record["genre"] = _first(tags, "genre")
-        records.append(record)
+    started = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = pool.map(
+            lambda p: _read_record(p, min_age_seconds=min_age_seconds, now=now),
+            paths,
+        )
+        for i, result in enumerate(results, start=1):
+            if progress_every and i % progress_every == 0:
+                rate = i / (time.perf_counter() - started)
+                remaining = (len(paths) - i) / rate if rate else 0
+                print(
+                    f"    {i}/{len(paths)} files ({rate:.0f}/s, ~{remaining:.0f}s left)",
+                    flush=True,
+                )
+            if result is None:
+                continue
+            kind, payload = result
+            if kind == "skip":
+                if skipped is not None:
+                    skipped.append(payload)
+            else:
+                records.append(payload)
     return records
 
 
@@ -118,6 +151,12 @@ def main() -> None:
         default=300,
         help="treat files modified more recently than this as still copying (0 disables)",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="parallel tag-read threads (I/O bound; raise on fast disks)",
+    )
     args = parser.parse_args()
 
     previous = {}
@@ -132,7 +171,12 @@ def main() -> None:
     for root in args.roots:
         if not root.exists():
             raise SystemExit(f"scan root does not exist: {root}")
-        found = scan(root, min_age_seconds=args.min_age_seconds, skipped=skipped)
+        found = scan(
+            root,
+            min_age_seconds=args.min_age_seconds,
+            skipped=skipped,
+            workers=args.workers,
+        )
         print(f"  {root}: {len(found)} tracks")
         records_by_path.update({record["track_id"]: record for record in found})
 

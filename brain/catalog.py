@@ -61,9 +61,17 @@ def _normalize(text: str) -> str:
     return _NORMALIZE_RE.sub(" ", _NOISE_RE.sub("", text).lower()).strip()
 
 
+DUPLICATE_DURATION_TOLERANCE_S = 4.0
+
+
 def find_duplicates(tracks: list[Track] | list[dict]) -> list[dict]:
-    """Same normalized artist+title at different paths (scene rips, reissues)."""
-    groups: dict[tuple[str, str], list[str]] = defaultdict(list)
+    """Same normalized artist+title at different paths (scene rips, reissues).
+
+    Name collisions alone over-report: every album has an "Intro". Within a
+    name group, only tracks whose durations agree (±4 s) count as the same
+    recording; unknown durations are grouped with everything.
+    """
+    groups: dict[tuple[str, str], list[tuple[str, float | None]]] = defaultdict(list)
     for track in tracks:
         row = track.__dict__ if isinstance(track, Track) else track
         key = (
@@ -71,12 +79,31 @@ def find_duplicates(tracks: list[Track] | list[dict]) -> list[dict]:
             _normalize(row.get("title") or ""),
         )
         if key[1]:
-            groups[key].append(row["track_id"])
-    return [
-        {"artist": artist, "title": title, "track_ids": sorted(paths)}
-        for (artist, title), paths in sorted(groups.items())
-        if len(paths) > 1
-    ]
+            groups[key].append((row["track_id"], row.get("duration_seconds")))
+    duplicates = []
+    for (artist, title), entries in sorted(groups.items()):
+        if len(entries) < 2:
+            continue
+        remaining = sorted(entries, key=lambda e: (e[1] is None, e[1] or 0.0))
+        while remaining:
+            seed_path, seed_duration = remaining.pop(0)
+            cluster = [seed_path]
+            rest = []
+            for path, duration in remaining:
+                if (
+                    seed_duration is None
+                    or duration is None
+                    or abs(duration - seed_duration) <= DUPLICATE_DURATION_TOLERANCE_S
+                ):
+                    cluster.append(path)
+                else:
+                    rest.append((path, duration))
+            remaining = rest
+            if len(cluster) > 1:
+                duplicates.append(
+                    {"artist": artist, "title": title, "track_ids": sorted(cluster)}
+                )
+    return duplicates
 
 
 def build_catalog(
