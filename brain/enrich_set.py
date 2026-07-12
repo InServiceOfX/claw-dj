@@ -51,9 +51,20 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
         }
         for table in ("lyrics", "chroma", "phrases")
     }
+    # BPM alone is enough for the mix plan; key is best-effort (control API
+    # may not map, and Mixxx DB flush often lags). Treat bpm IS NOT NULL as ok.
     analyzed = {
         row[0] for row in db.execute(
-            f"SELECT track_id FROM tracks WHERE bpm IS NOT NULL AND key IS NOT NULL "
+            f"SELECT track_id FROM tracks WHERE bpm IS NOT NULL AND bpm > 0 "
+            f"AND track_id IN ({','.join('?' * len(track_ids))})",
+            track_ids,
+        )
+    }
+    # Lyrics row with source not_found still counts as "attempted"; require
+    # non-null lyrics text for the lyrics checkbox.
+    have_lyrics_text = {
+        row[0] for row in db.execute(
+            f"SELECT track_id FROM lyrics WHERE lyrics IS NOT NULL "
             f"AND track_id IN ({','.join('?' * len(track_ids))})",
             track_ids,
         )
@@ -61,7 +72,7 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
     return {
         tid: {
             "bpm_key": tid in analyzed,
-            "lyrics": tid in have["lyrics"],
+            "lyrics": tid in have_lyrics_text,
             "chroma": tid in have["chroma"],
             "phrases": tid in have["phrases"],
         }
@@ -70,32 +81,18 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
 
 
 def fill_bpm(missing: list[dict], port: int) -> None:
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
-        json.dump(missing, handle)
-        tracks_file = handle.name
-    subprocess.run(
-        [sys.executable, "-m", "brain.analyze_via_mixxx", "--tracks", tracks_file,
-         "--port", str(port)],
-        check=True,
-    )
-    # Mixxx flushes analysis to its DB lazily; give it a moment, then sync
-    # (sync updates both the index and crate.json). Some tracks take much
-    # longer — retry once after a longer settle (see HANDOFF Mixxx gotcha).
-    time.sleep(5)
-    subprocess.run([sys.executable, "-m", "brain.sync_mixxx_analysis"], check=True)
-    from brain.sync_mixxx_analysis import fetch_analyzed
+    """Analyze via control API and persist readings into claw-dj immediately.
 
-    still = [
-        t for t in missing
-        if not (fetch_analyzed().get(t["track_id"]) or {}).get("bpm")
-    ]
-    if still:
-        print(
-            f"  [bpm/key] {len(still)} still bpm=0 in Mixxx DB after first sync — "
-            "waiting 45s for lazy flush, then re-syncing…"
-        )
-        time.sleep(45)
-        subprocess.run([sys.executable, "-m", "brain.sync_mixxx_analysis"], check=True)
+    Do not wait solely on Mixxx DB flush — the control API often has bpm
+    while mixxxdb still shows 0 (Many Man / Many Men case, 2026-07-12).
+    """
+    from brain.analyze_via_mixxx import analyze_tracks, apply_analysis
+
+    results = analyze_tracks(missing, port=port)
+    apply_analysis(results)
+    # Best-effort: also pull anything Mixxx *did* flush (keys, older tracks).
+    time.sleep(2)
+    subprocess.run([sys.executable, "-m", "brain.sync_mixxx_analysis"], check=False)
 
 
 def fill_lyrics(db, tracks: list[dict], *, force: bool = False) -> tuple[int, int]:

@@ -2,8 +2,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+from brain.analyze_via_mixxx import key_from_control
 from brain.build_mix_plan import build_plan, compose_mix_plan, pick_technique, plan_summary
-from brain.lyrics import lyric_overlap, tokens
+from brain.lyrics import lyric_overlap, title_search_variants, tokens
 from brain.mix_profiles import PROFILES, apply_brief
 
 
@@ -51,6 +52,11 @@ class MixPlanTest(TestCase):
         # The opener now rides two phrases; varied segment lengths are an
         # intentional part of the current plan defaults.
         self.assertEqual(body["beats"], 63)
+
+    def test_title_search_variants_fix_many_man(self) -> None:
+        variants = title_search_variants("Many Man (Wish Death)")
+        self.assertTrue(any("Many Men" in v for v in variants))
+        self.assertEqual(key_from_control(17.0), "Em")
 
     def test_apply_brief_negation_beats_positive(self) -> None:
         profile, notes = apply_brief(PROFILES["dj-showcase"], "smooth, longer blends, no tricks")

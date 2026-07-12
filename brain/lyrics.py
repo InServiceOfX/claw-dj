@@ -57,6 +57,37 @@ def _http_get_json(url: str, timeout_s: float = 12.0) -> object:
         return json.loads(response.read().decode())
 
 
+def title_search_variants(title: str) -> list[str]:
+    """Titles to try against LRCLIB — original first, then common rip typos.
+
+    Filename/ID3 tags are often wrong (e.g. "Many Man" for "Many Men");
+    the file path stays as-is, only the search string changes.
+    """
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        cleaned = value.strip()
+        if not cleaned:
+            return
+        key = cleaned.casefold()
+        if key not in seen:
+            seen.add(key)
+            variants.append(cleaned)
+
+    add(title)
+    # Strip featuring / parentheticals for broader search.
+    bare = re.sub(r"\s*[\(\[].*?[\)\]]", "", title).strip()
+    bare = re.split(r"\s+feat\.?\s+", bare, flags=re.I)[0].strip()
+    add(bare)
+    # Known rip typo: "Many Man (Wish Death)" → chart title "Many Men …"
+    if re.search(r"\bmany man\b", title, flags=re.I):
+        add(re.sub(r"\bMany Man\b", "Many Men", title, flags=re.I))
+        add(re.sub(r"\bmany man\b", "Many Men", bare, flags=re.I))
+    # Generic singular→plural "Man" after "Many" only (already covered).
+    return variants
+
+
 def fetch_lyrics(artist: str, title: str, *, force: bool = False) -> dict:
     """Return {artist, title, lyrics, source, found} from cache or LRCLIB."""
     LYRICS_DIR.mkdir(parents=True, exist_ok=True)
@@ -65,12 +96,17 @@ def fetch_lyrics(artist: str, title: str, *, force: bool = False) -> dict:
     index = _load_index()
 
     if path.exists() and not force:
-        return json.loads(path.read_text())
+        cached = json.loads(path.read_text())
+        if cached.get("found"):
+            return cached
+        # Retry cached misses when typo variants exist (Many Man → Many Men).
+        variants = title_search_variants(title)
+        has_typo_fix = any(
+            "many men" in v.casefold() and "many man" in title.casefold() for v in variants
+        )
+        if not has_typo_fix:
+            return cached
 
-    # Prefer plain title without featuring clauses for search hit-rate.
-    clean_title = re.sub(r"\s*[\(\[].*?[\)\]]", "", title).strip()
-    clean_title = re.split(r"\s+feat\.?\s+", clean_title, flags=re.I)[0].strip()
-    query = urllib.parse.urlencode({"q": f"{artist} {clean_title}"})
     record = {
         "artist": artist,
         "title": title,
@@ -80,22 +116,28 @@ def fetch_lyrics(artist: str, title: str, *, force: bool = False) -> dict:
         "error": None,
     }
     try:
-        results = _http_get_json(f"{LRCLIB_SEARCH}?{query}")
-        if isinstance(results, list) and results:
+        for variant in title_search_variants(title):
+            query = urllib.parse.urlencode({"q": f"{artist} {variant}"})
+            results = _http_get_json(f"{LRCLIB_SEARCH}?{query}")
+            if not isinstance(results, list) or not results:
+                continue
             best = results[0]
             text = best.get("plainLyrics") or best.get("syncedLyrics")
-            if text:
-                # strip simple timestamps if synced
-                text = re.sub(r"\[\d+:\d+[^\]]*\]", "", text)
-                record.update(
-                    {
-                        "lyrics": text.strip(),
-                        "source": f"lrclib:{best.get('id')}",
-                        "found": True,
-                        "matched_artist": best.get("artistName"),
-                        "matched_title": best.get("trackName"),
-                    }
-                )
+            if not text:
+                continue
+            # strip simple timestamps if synced
+            text = re.sub(r"\[\d+:\d+[^\]]*\]", "", text)
+            record.update(
+                {
+                    "lyrics": text.strip(),
+                    "source": f"lrclib:{best.get('id')}",
+                    "found": True,
+                    "matched_artist": best.get("artistName"),
+                    "matched_title": best.get("trackName"),
+                    "search_title": variant,
+                }
+            )
+            break
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as error:
         record["error"] = str(error)
 

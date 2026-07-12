@@ -625,6 +625,16 @@ re-export so Build mix plan sees the new BPM/key), and **Refresh list**.
 No Holo/GUI agent required when the patched Mixxx control API is up on
 9995. Endpoints: POST `/api/mix/sync`, `/api/mix/enrich`, `/api/mix/refresh`.
 
+**BPM control-API vs Mixxx DB lag (Many Man case, 2026-07-12):** muted-deck
+analysis printed `mixxx bpm: 97.14` but mixxxdb stayed `bpm=0` / no beatgrid
+even after 45s + re-sync — so claw-dj stayed empty. Fix: `analyze_via_mixxx`
+now **returns live API bpm/key** and `apply_analysis` writes them straight
+into `library.sqlite3` + crate (do not wait on Mixxx flush for plan
+eligibility). Phrases still need a Mixxx beatgrid blob (may lag or need a
+later re-enrich). **Lyrics typo:** ID3/filename "Many Man (Wish Death)" is
+wrong chart title; LRCLIB only hits **Many Men** — `lyrics.title_search_variants`
+retries that correction without renaming the file.
+
 Profile presets + free-text brief + order engine → `compose_mix_plan` →
 dry-run → **Start mix** (double confirm + Mixxx ping). Endpoints: GET
 `/api/mix` (includes `finalized`, `plan_stale`), POST `/api/mix/build`,
