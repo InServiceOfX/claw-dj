@@ -1,8 +1,10 @@
+pub mod chroma;
 pub mod command;
 pub mod live;
 pub mod midi;
 pub mod queue;
 
+pub use chroma::{ChromaReport, analyze_paths};
 pub use command::{Deck, JsonCommand, Operation};
 pub use live::{BeatClock, BeatTick, TransitionReport, transition};
 pub use midi::{

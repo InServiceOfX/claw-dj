@@ -7,8 +7,8 @@ use std::{
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use clawdj::{
-    JsonCommand, command::Deck, open_mixxx_database, open_output_port, port_presence_summary,
-    queue_clear, queue_init, queue_set, send_message,
+    JsonCommand, analyze_paths, command::Deck, open_mixxx_database, open_output_port,
+    port_presence_summary, queue_clear, queue_init, queue_set, send_message,
 };
 use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -56,6 +56,16 @@ enum Commands {
         #[arg(long)]
         db_path: Option<PathBuf>,
     },
+    /// Chromagram fingerprints + cosine similarity for a small ordered set.
+    /// Not for full-library scans — decode cost scales with track count.
+    Chroma {
+        /// Write JSON report here (fingerprints + similarity matrix).
+        #[arg(long)]
+        out: PathBuf,
+        /// Audio file paths (mp3/m4a/flac/wav). Prefer ≤16 tracks.
+        #[arg(last = true, required = true)]
+        paths: Vec<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -86,7 +96,29 @@ fn main() -> Result<()> {
         Commands::DemoJuggle => run_demo_juggle(),
         Commands::DemoLoop => run_demo_loop(),
         Commands::Queue { command, db_path } => run_queue(command, db_path),
+        Commands::Chroma { out, paths } => run_chroma(out, paths),
     }
+}
+
+fn run_chroma(out: PathBuf, paths: Vec<PathBuf>) -> Result<()> {
+    if paths.len() > 24 {
+        eprintln!(
+            "warning: {} paths is a lot for chromagram; prefer the filtered ordered set (≤12–16)",
+            paths.len()
+        );
+    }
+    let report = analyze_paths(&paths)?;
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(&report)?;
+    std::fs::write(&out, format!("{json}\n"))?;
+    println!(
+        "chroma: {} tracks -> {} (similarity on diagonal = 1.0)",
+        report.track_count,
+        out.display()
+    );
+    Ok(())
 }
 
 fn run_setup() -> Result<()> {

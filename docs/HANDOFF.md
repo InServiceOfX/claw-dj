@@ -399,13 +399,16 @@ user-chosen roots (e.g. `/Volumes/USB322FD/Music/RnB` + `.../HipHop`).
 | `brain/curate_playlist.py` | Pipeline: keep user selection → match researched hits to crate → mix-order → optional H-agent **reorder only** (never invents deep cuts). |
 | playlist UI | "Add researched hits" + "Order for mixes" (reorder enabled set; never drops picks). |
 
-**Hackathon demo line:** "Yes — H agents curate: they order a researched hit
-pool from *your* library for seamless Mixxx blends (BPM/key/sample story),
-while Hands own beat-accurate execution."
+**Hackathon demo line:** "Yes — H agents curate researched hits from *your*
+library; we enrich with sample lineage + lyrics + chromagram; Hands perform a
+continuous set playing Mixxx like an instrument."
 
-**Waveform policy:** do not decode waveforms across the full crate. Mixxx
-analysis already yields BPM/key/beatgrid for beatmatching. Optional future:
-chromagram / onset fingerprints in Rust on a *small* ordered set only.
+**Waveform policy:** no full-crate waveform decode. Optional Rust chromagram
+on ≤12–16 ordered hits (`clawdj chroma` / `enrich_playlist --chroma`). Mixxx
+owns beatgrids for beatmatch.
+
+**Continuous mix path:** `enrich_playlist` → `build_mix_plan` →
+`hands.run_mix_plan` (control API). Knobs/docs: `docs/MIX_INSTRUMENT.md`.
 
 **NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
 Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.

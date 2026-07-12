@@ -16,6 +16,14 @@
     "source": "https://en.wikipedia.org/wiki/Music_(Erick_Sermon_and_Marvin_Gaye_song)"
   },
   {
+    "artist": "Erick Sermon",
+    "title": "Music",
+    "sample_artist": "Marvin Gaye",
+    "sample_title": "Got to Give It Up",
+    "element": "same-artist funk continuum for set pairing (Marvin vocal DNA)",
+    "source": "https://en.wikipedia.org/wiki/Music_(Erick_Sermon_and_Marvin_Gaye_song)"
+  },
+  {
     "artist": "P.M. Dawn",
     "title": "Set Adrift on Memory Bliss",
     "sample_artist": "Spandau Ballet",
@@ -28,7 +36,15 @@
     "title": "Gin and Juice",
     "sample_artist": "George McCrae",
     "sample_title": "I Get Lifted",
-    "element": "bassline influence / G-funk palette",
+    "element": "bassline / G-funk palette",
+    "source": "https://en.wikipedia.org/wiki/Gin_and_Juice"
+  },
+  {
+    "artist": "Snoop Doggy Dogg",
+    "title": "Gin and Juice",
+    "sample_artist": "Slave",
+    "sample_title": "Watching You",
+    "element": "keyboard figure",
     "source": "https://en.wikipedia.org/wiki/Gin_and_Juice"
   },
   {
@@ -48,19 +64,19 @@
     "source": "https://en.wikipedia.org/wiki/Off_the_Books"
   },
   {
-    "artist": "Marvin Gaye",
-    "title": "Got to Give It Up",
-    "sample_artist": "Marvin Gaye",
-    "sample_title": "I Heard It Through the Grapevine",
-    "element": "same artist party-funk continuum (set pairing, not a direct sample)",
-    "source": "https://en.wikipedia.org/wiki/Got_to_Give_It_Up"
-  },
-  {
     "artist": "Snoop Doggy Dogg",
     "title": "Ain't No Fun (If the Homies Can't Have None)",
     "sample_artist": "Isaac Hayes",
     "sample_title": "A Few More Kisses to Go",
     "element": "soul sample bed",
+    "source": "https://en.wikipedia.org/wiki/Doggystyle"
+  },
+  {
+    "artist": "Snoop Doggy Dogg",
+    "title": "Ain't No Fun (If the Homies Can't Have None)",
+    "sample_artist": "Isaac Hayes",
+    "sample_title": "Shaft",
+    "element": "same-artist soul bed pairing for DJ call-back",
     "source": "https://en.wikipedia.org/wiki/Doggystyle"
   },
   {
@@ -72,11 +88,235 @@
     "source": "https://en.wikipedia.org/wiki/That%27s_the_Way_Love_Goes_(Janet_Jackson_song)"
   },
   {
+    "artist": "Janet Jackson",
+    "title": "That's the Way Love Goes",
+    "sample_artist": "James Brown",
+    "sample_title": "I Got You (I Feel Good)",
+    "element": "same-artist funk pairing for deck blend",
+    "source": "https://en.wikipedia.org/wiki/That%27s_the_Way_Love_Goes_(Janet_Jackson_song)"
+  },
+  {
+    "artist": "Janet Jackson",
+    "title": "Rhythm Nation",
+    "sample_artist": "James Brown",
+    "sample_title": "I Got You (I Feel Good)",
+    "element": "militant funk energy pairing",
+    "source": "https://en.wikipedia.org/wiki/Rhythm_Nation_(song)"
+  },
+  {
     "artist": "Michael Jackson",
     "title": "Billie Jean",
     "sample_artist": "Michael Jackson",
     "sample_title": "Rock with You",
     "element": "same-artist tempo/energy pair for deck blends",
     "source": "https://en.wikipedia.org/wiki/Billie_Jean"
+  },
+  {
+    "artist": "Snoop Dogg",
+    "title": "Drop It Like It's Hot",
+    "sample_artist": "Snoop Doggy Dogg",
+    "sample_title": "Gin and Juice",
+    "element": "same-artist G-funk → Neptunes era call-back",
+    "source": "https://en.wikipedia.org/wiki/Drop_It_Like_It%27s_Hot"
+  },
+  {
+    "artist": "Snoop Dogg",
+    "title": "Lay Low",
+    "sample_artist": "Snoop Doggy Dogg",
+    "sample_title": "Gin and Juice",
+    "element": "same-artist West Coast cruise pairing",
+    "source": "https://en.wikipedia.org/wiki/Lay_Low_(Snoop_Dogg_song)"
+  },
+  {
+    "artist": "Snoop Dogg",
+    "title": "Beautiful",
+    "sample_artist": "Snoop Dogg",
+    "sample_title": "Drop It Like It's Hot",
+    "element": "Pharrell/Neptunes-era pairing",
+    "source": "https://en.wikipedia.org/wiki/Beautiful_(Snoop_Dogg_song)"
+  },
+  {
+    "artist": "Warren G",
+    "title": "Regulate",
+    "sample_artist": "Snoop Doggy Dogg",
+    "sample_title": "Gin and Juice",
+    "element": "G-funk era / Nate Dogg continuum",
+    "source": "https://en.wikipedia.org/wiki/Regulate_(song)"
+  },
+  {
+    "artist": "Warren G",
+    "title": "Regulate",
+    "sample_artist": "Twinz",
+    "sample_title": "Round & Round",
+    "element": "G-funk family / Long Beach continuum",
+    "source": "https://en.wikipedia.org/wiki/Regulate..._G_Funk_Era"
+  },
+  {
+    "artist": "Tha Eastsidaz",
+    "title": "G'd Up",
+    "sample_artist": "Snoop Dogg",
+    "sample_title": "Lay Low",
+    "element": "Snoop crew continuum",
+    "source": "https://en.wikipedia.org/wiki/G%27d_Up"
+  },
+  {
+    "artist": "Tha Dogg Pound",
+    "title": "New York, New York",
+    "sample_artist": "Snoop Doggy Dogg",
+    "sample_title": "Murder Was the Case",
+    "element": "Death Row / Dogg Pound continuum",
+    "source": "https://en.wikipedia.org/wiki/New_York,_New_York_(Tha_Dogg_Pound_song)"
+  },
+  {
+    "artist": "Marvin Gaye",
+    "title": "Got to Give It Up",
+    "sample_artist": "Marvin Gaye",
+    "sample_title": "I Heard It Through the Grapevine",
+    "element": "same-artist party-funk continuum",
+    "source": "https://en.wikipedia.org/wiki/Got_to_Give_It_Up"
+  },
+  {
+    "artist": "Alicia Keys",
+    "title": "Fallin'",
+    "sample_artist": "Alicia Keys",
+    "sample_title": "No One",
+    "element": "same-artist ballad → midtempo pairing",
+    "source": "https://en.wikipedia.org/wiki/Fallin%27_(Alicia_Keys_song)"
+  },
+  {
+    "artist": "Sade",
+    "title": "Smooth Operator",
+    "sample_artist": "Sade",
+    "sample_title": "The Sweetest Taboo",
+    "element": "same-artist cool jazz-R&B pairing",
+    "source": "https://www.sade.com/music/the-best-of-sade"
+  },
+  {
+    "artist": "Sade",
+    "title": "Kiss of Life",
+    "sample_artist": "Sade",
+    "sample_title": "Your Love Is King",
+    "element": "same-artist midtempo pairing",
+    "source": "https://www.sade.com/music/the-best-of-sade"
+  },
+  {
+    "artist": "The Gap Band",
+    "title": "Outstanding",
+    "sample_artist": "The Gap Band",
+    "sample_title": "You Dropped a Bomb on Me",
+    "element": "same-artist funk floor-fillers",
+    "source": "https://en.wikipedia.org/wiki/Outstanding"
+  },
+  {
+    "artist": "Usher",
+    "title": "Yeah!",
+    "sample_artist": "Janet Jackson",
+    "sample_title": "Rhythm Nation",
+    "element": "dancefloor energy / 2000s club pairing",
+    "source": "https://en.wikipedia.org/wiki/Yeah!_(Usher_song)"
+  },
+  {
+    "artist": "Keni Burke",
+    "title": "Risin' to the Top",
+    "sample_artist": "Mary J. Blige",
+    "sample_title": "Love No Limit",
+    "element": "classic sample source widely flipped in hip-hop/R&B",
+    "source": "https://en.wikipedia.org/wiki/Risin%27_to_the_Top"
+  },
+  {
+    "artist": "Bernard Wright",
+    "title": "Who Do You Love",
+    "sample_artist": "Snoop Dogg",
+    "sample_title": "Beautiful",
+    "element": "keyboard-soul DNA often flipped in later R&B",
+    "source": "https://en.wikipedia.org/wiki/Who_Do_You_Love_(Bernard_Wright_song)"
+  },
+  {
+    "artist": "Al B. Sure!",
+    "title": "Nite and Day",
+    "sample_artist": "Sade",
+    "sample_title": "Smooth Operator",
+    "element": "late-80s quiet-storm / sophisticated R&B pairing",
+    "source": "https://en.wikipedia.org/wiki/Nite_and_Day"
+  },
+  {
+    "artist": "Jon B.",
+    "title": "They Don't Know",
+    "sample_artist": "Al B. Sure!",
+    "sample_title": "Nite and Day",
+    "element": "new jack / 90s R&B continuum",
+    "source": "https://en.wikipedia.org/wiki/They_Don%27t_Know_(Jon_B._song)"
+  },
+  {
+    "artist": "702",
+    "title": "Where My Girls At?",
+    "sample_artist": "Xscape",
+    "sample_title": "The Arms of the One Who Loves You",
+    "element": "90s girl-group R&B pairing",
+    "source": "https://en.wikipedia.org/wiki/Where_My_Girls_At"
+  },
+  {
+    "artist": "The-Dream",
+    "title": "Falsetto",
+    "sample_artist": "The-Dream",
+    "sample_title": "Rockin' That Shit",
+    "element": "same-artist 2000s R&B pairing",
+    "source": "https://en.wikipedia.org/wiki/Falsetto_(song)"
+  },
+  {
+    "artist": "Da Brat",
+    "title": "Funkdafied",
+    "sample_artist": "The Gap Band",
+    "sample_title": "Outstanding",
+    "element": "G-funk/R&B sample culture adjacency",
+    "source": "https://en.wikipedia.org/wiki/Funkdafied_(song)"
+  },
+  {
+    "artist": "Ready for the World",
+    "title": "Oh Sheila",
+    "sample_artist": "Michael Jackson",
+    "sample_title": "Billie Jean",
+    "element": "80s dancefloor pairing",
+    "source": "https://en.wikipedia.org/wiki/Oh_Sheila"
+  },
+  {
+    "artist": "Lisa Stansfield",
+    "title": "All Around the World",
+    "sample_artist": "Barry White",
+    "sample_title": "Can't Get Enough of Your Love, Babe",
+    "element": "soulful pop / love-man continuum",
+    "source": "https://en.wikipedia.org/wiki/All_Around_the_World_(Lisa_Stansfield_song)"
+  },
+  {
+    "artist": "Love Unlimited Orchestra",
+    "title": "Love's Theme",
+    "sample_artist": "Barry White",
+    "sample_title": "Can't Get Enough of Your Love, Babe",
+    "element": "Barry White family continuum",
+    "source": "https://en.wikipedia.org/wiki/Love%27s_Theme"
+  },
+  {
+    "artist": "The Art of Noise",
+    "title": "Kiss",
+    "sample_artist": "Prince",
+    "sample_title": "Kiss",
+    "element": "cover/sample of Prince's Kiss",
+    "source": "https://en.wikipedia.org/wiki/Kiss_(Prince_song)"
+  },
+  {
+    "artist": "Snoop Doggy Dogg",
+    "title": "Murder Was the Case",
+    "sample_artist": "Snoop Doggy Dogg",
+    "sample_title": "Gin and Juice",
+    "element": "Doggystyle album pairing",
+    "source": "https://en.wikipedia.org/wiki/Murder_Was_the_Case_(song)"
+  },
+  {
+    "artist": "Wham!",
+    "title": "Wake Me Up Before You Go-Go",
+    "sample_artist": "Michael Jackson",
+    "sample_title": "Rock with You",
+    "element": "upbeat 80s dance pairing",
+    "source": "https://en.wikipedia.org/wiki/Wake_Me_Up_Before_You_Go-Go"
   }
 ]

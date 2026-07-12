@@ -53,9 +53,21 @@ uv run python -m brain.curate_playlist --mode selection --planner h-agent
 # browser picker: enable hits, "Order for mixes", export
 uv run python -m brain.playlist_editor --open
 
+# enrich hit pool (sample lineage + lyrics + optional Rust chromagram)
+uv run python -m brain.enrich_playlist --chroma --chroma-limit 12
+
+# continuous multi-song mix plan → perform in Mixxx
+uv run python -m brain.build_mix_plan --tracks 8
+uv run python -m hands.run_mix_plan --dry-run
+# Mixxx with --control-api-port 9995:
+uv run python -m hands.run_mix_plan
+
 # after Mixxx analyzes newly imported tracks
 uv run python -m brain.sync_mixxx_analysis
 ```
+
+See [`docs/MIX_INSTRUMENT.md`](docs/MIX_INSTRUMENT.md) for Mixxx knobs/buttons
+and transition techniques.
 
 The picker can add the researched R&B/West Coast seed, search and filter all
 scanned tracks, enable or disable individual songs, and export
