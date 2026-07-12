@@ -1,0 +1,82 @@
+[
+  {
+    "artist": "Warren G",
+    "title": "Regulate",
+    "sample_artist": "Michael McDonald",
+    "sample_title": "I Keep Forgettin'",
+    "element": "bass and keyboard groove",
+    "source": "https://en.wikipedia.org/wiki/Regulate_(song)"
+  },
+  {
+    "artist": "Erick Sermon",
+    "title": "Music",
+    "sample_artist": "Marvin Gaye",
+    "sample_title": "T Plays It Cool",
+    "element": "funk instrumental loop",
+    "source": "https://en.wikipedia.org/wiki/Music_(Erick_Sermon_and_Marvin_Gaye_song)"
+  },
+  {
+    "artist": "P.M. Dawn",
+    "title": "Set Adrift on Memory Bliss",
+    "sample_artist": "Spandau Ballet",
+    "sample_title": "True",
+    "element": "melody / harmony sample",
+    "source": "https://en.wikipedia.org/wiki/Set_Adrift_on_Memory_Bliss"
+  },
+  {
+    "artist": "Snoop Doggy Dogg",
+    "title": "Gin and Juice",
+    "sample_artist": "George McCrae",
+    "sample_title": "I Get Lifted",
+    "element": "bassline influence / G-funk palette",
+    "source": "https://en.wikipedia.org/wiki/Gin_and_Juice"
+  },
+  {
+    "artist": "Snoop Dogg",
+    "title": "Beautiful",
+    "sample_artist": "Bobby Vinton",
+    "sample_title": "Mr. Lonely",
+    "element": "interpolated melodic figure",
+    "source": "https://en.wikipedia.org/wiki/Beautiful_(Snoop_Dogg_song)"
+  },
+  {
+    "artist": "The Beatnuts",
+    "title": "Off the Books",
+    "sample_artist": "Les Baxter",
+    "sample_title": "Simba",
+    "element": "orchestral sample",
+    "source": "https://en.wikipedia.org/wiki/Off_the_Books"
+  },
+  {
+    "artist": "Marvin Gaye",
+    "title": "Got to Give It Up",
+    "sample_artist": "Marvin Gaye",
+    "sample_title": "I Heard It Through the Grapevine",
+    "element": "same artist party-funk continuum (set pairing, not a direct sample)",
+    "source": "https://en.wikipedia.org/wiki/Got_to_Give_It_Up"
+  },
+  {
+    "artist": "Snoop Doggy Dogg",
+    "title": "Ain't No Fun (If the Homies Can't Have None)",
+    "sample_artist": "Isaac Hayes",
+    "sample_title": "A Few More Kisses to Go",
+    "element": "soul sample bed",
+    "source": "https://en.wikipedia.org/wiki/Doggystyle"
+  },
+  {
+    "artist": "Janet Jackson",
+    "title": "That's the Way Love Goes",
+    "sample_artist": "James Brown",
+    "sample_title": "Papa Don't Take No Mess",
+    "element": "breakbeat / funk sample DNA",
+    "source": "https://en.wikipedia.org/wiki/That%27s_the_Way_Love_Goes_(Janet_Jackson_song)"
+  },
+  {
+    "artist": "Michael Jackson",
+    "title": "Billie Jean",
+    "sample_artist": "Michael Jackson",
+    "sample_title": "Rock with You",
+    "element": "same-artist tempo/energy pair for deck blends",
+    "source": "https://en.wikipedia.org/wiki/Billie_Jean"
+  }
+]

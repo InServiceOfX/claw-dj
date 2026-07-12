@@ -90,6 +90,32 @@ class PlaylistApp:
             "selected_count": len(self.selection),
         }
 
+    def mix_order(self) -> dict:
+        """Reorder the current enabled set for mixability (BPM/key/lineage).
+
+        Does not drop user picks — only reorders them. Full hit+H-agent curation
+        stays on the CLI (`brain.curate_playlist`) so the UI never silently
+        replaces a good set with deep cuts.
+        """
+        from brain.mix_graph import greedy_mix_order, lineage_pairs, load_lineage, transition_report
+
+        selected_tracks = [self.by_id[track_id] for track_id in self.selection if track_id in self.by_id]
+        if not selected_tracks:
+            return {"count": 0, "mean_score": 0.0, "message": "no enabled tracks to order"}
+        lineage = lineage_pairs(selected_tracks, load_lineage())
+        ordered = greedy_mix_order(selected_tracks, start=selected_tracks[0], lineage=lineage)
+        self.selection = [track.track_id for track in ordered]
+        self.selected = set(self.selection)
+        save_selection(self.selection)
+        report = transition_report(ordered, lineage=lineage)
+        mean = sum(row["score"] for row in report) / len(report) if report else 0.0
+        return {
+            "count": len(ordered),
+            "mean_score": round(mean, 3),
+            "lineage_edges": len(lineage),
+            "message": f"reordered {len(ordered)} user-enabled tracks for mix flow (mean transition {mean:.2f})",
+        }
+
     def export(self) -> dict:
         selected = export_playlist(self.tracks, self.selection)
         return {"count": len(selected), "json": "brain/data/playlist.json", "m3u": "brain/data/playlist.m3u8"}
@@ -136,6 +162,9 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     return
                 if self.path == "/api/seed":
                     self._json(app.add_seed())
+                    return
+                if self.path == "/api/mix-order":
+                    self._json(app.mix_order())
                     return
                 if self.path == "/api/export":
                     self._json(app.export())

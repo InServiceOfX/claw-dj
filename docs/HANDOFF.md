@@ -394,12 +394,18 @@ user-chosen roots (e.g. `/Volumes/USB322FD/Music/RnB` + `.../HipHop`).
 | --- | --- |
 | `brain/scan_library.py` | Multi-root **metadata-only** scan (mutagen tags: title/artist/album/genre). ~few ms/file; no BPM analysis. Optional `--catalog`. |
 | `brain/catalog.py` | Slim agent index (`catalog.json`) + path-stripped `agent_view` for NemoClaw upload. |
-| `brain/curate_playlist.py` | Curate only from crate: `--planner h-agent` (H Company planning-only) or `--planner offline` (resolve NemoClaw/Hermes picks). Brief-ranks a candidate pool so 14k tracks never dump into one prompt. |
+| `brain/playlist_seeds/*.json` | Wikipedia/chart **hit seeds** per folder artist + sample-lineage edges. |
+| `brain/mix_graph.py` | Transition scores: BPM (rate-adjust tolerant), Camelot key, sample lineage, title tokens. **No full-library waveform** (too heavy; use Mixxx beatgrids). |
+| `brain/curate_playlist.py` | Pipeline: keep user selection → match researched hits to crate → mix-order → optional H-agent **reorder only** (never invents deep cuts). |
+| playlist UI | "Add researched hits" + "Order for mixes" (reorder enabled set; never drops picks). |
 
-**NemoClaw on this Mac (status 2026-07-11 ~19:20 PT):** sandbox `hermes` is
-Ready; `nemoclaw hermes doctor` healthy; inference via
-`nvidia/nemotron-3-super-120b-a12b` (nvidia-prod). Interactive `nemoclaw onboard`
-still in progress at the **policies** step (`Connected: no` in global status).
-Not yet on H Company Holo3/vLLM — that path is still `docs/LINUX_PORT.md` §5.
-Host→sandbox flow for curation: scan on host → upload path-stripped catalog →
-agent returns picks JSON → `curate_playlist --planner offline`.
+**Hackathon demo line:** "Yes — H agents curate: they order a researched hit
+pool from *your* library for seamless Mixxx blends (BPM/key/sample story),
+while Hands own beat-accurate execution."
+
+**Waveform policy:** do not decode waveforms across the full crate. Mixxx
+analysis already yields BPM/key/beatgrid for beatmatching. Optional future:
+chromagram / onset fingerprints in Rust on a *small* ordered set only.
+
+**NemoClaw:** sandbox `hermes` Ready on this Mac (NVIDIA Nemotron inference).
+Separate from host Hermes (`~/.hermes`). Holo3-via-vLLM still `LINUX_PORT.md` §5.

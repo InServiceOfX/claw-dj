@@ -40,15 +40,17 @@ agent, then export a Mixxx playlist:
 uv run python -m brain.scan_library \
   /Volumes/USB322FD/Music/RnB /Volumes/USB322FD/Music/HipHop --catalog
 
-# H Company agent picks from the local crate only (planning, no GUI)
-uv run python -m brain.curate_playlist \
-  --brief "late-night West Coast R&B into Snoop-era hip-hop" \
-  --count 12 --planner h-agent
+# researched hits per library artist → mix-ordered (BPM/key/sample lineage)
+# always keeps your current UI selection unless --replace-user
+uv run python -m brain.curate_playlist --mode hits --planner mix-graph
 
-# or: NemoClaw / Hermes fills brain/data/agent_picks.json, then
-uv run python -m brain.curate_playlist --planner offline --from-picks brain/data/agent_picks.json
+# H Company agent reorders that hit pool for blend storytelling (planning only)
+uv run python -m brain.curate_playlist --mode hits --planner h-agent
 
-# browser picker (search / enable / export)
+# reorder only what you already enabled in the picker
+uv run python -m brain.curate_playlist --mode selection --planner h-agent
+
+# browser picker: enable hits, "Order for mixes", export
 uv run python -m brain.playlist_editor --open
 
 # after Mixxx analyzes newly imported tracks

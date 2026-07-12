@@ -13,7 +13,7 @@
     .brand span { color:#78d7ac; }
     .summary { color:#d0d0ca; font-variant-numeric:tabular-nums; }
     main { padding:18px 24px 28px; max-width:1500px; margin:auto; }
-    .toolbar { display:grid; grid-template-columns:minmax(220px,1fr) minmax(180px,260px) auto auto auto; gap:8px; margin-bottom:12px; }
+    .toolbar { display:grid; grid-template-columns:minmax(220px,1fr) minmax(160px,220px) auto auto auto auto; gap:8px; margin-bottom:12px; }
     input,select,button { min-height:38px; border:1px solid var(--line); border-radius:4px; background:white; color:var(--ink); font:inherit; padding:7px 10px; }
     button { cursor:pointer; font-weight:650; }
     button:hover { border-color:#85857f; }
@@ -62,6 +62,7 @@
         <button class="active" data-analysis="all">All</button><button data-analysis="analyzed">Analyzed</button><button data-analysis="missing">Missing BPM</button>
       </div>
       <button id="seed">Add researched hits</button>
+      <button id="mixorder" title="Reorder enabled set by BPM/key/sample lineage — never drops your picks">Order for mixes</button>
       <button id="export" class="primary">Export for Mixxx</button>
     </div>
     <div class="workspace">
@@ -114,6 +115,7 @@
     document.querySelector('.modes').addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;document.querySelectorAll('.modes button').forEach(b=>b.classList.toggle('active',b===button));state.analysis=button.dataset.analysis;loadLibrary()});
     el('library').addEventListener('change',toggle); el('selected').addEventListener('change',toggle);
     el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
+    el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('export').addEventListener('click',async()=>{const result=await api('/api/export',{method:'POST'});el('notice').textContent=`Exported ${result.count} tracks to ${result.m3u} and ${result.json}.`;});
     (async()=>{await loadMeta();await Promise.all([loadLibrary(),loadSelected()])})().catch(error=>{el('notice').textContent=error.message});
   </script>
