@@ -247,6 +247,7 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `brain/analyze_bpm.py` / `brain/analyze_via_mixxx.py` | Provisional librosa BPM analysis and deterministic Mixxx analysis for the lineage set |
 | `brain/playlist_editor.py` | Local browser UI for searching the crate, enabling/disabling tracks, applying the researched R&B/West Coast hit seed, exporting a Mixxx playlist without dropping BPM/key metadata, "Ask the DJ brain", and post-finalize **Create the mix** (profile + brief → plan → confirmed live start) |
 | `brain/mix_profiles.py` | Named mix-feel presets + free-text brief → profile overrides |
+| `brain/mix_order_brief.py` | Free-text order intent → agent constraints → greedy + forced adjacency/regions |
 | `brain/build_mix_plan.py` | Continuous mix plan builder; `compose_mix_plan` / `plan_summary` shared by CLI and editor |
 | `brain/playlist.py` | Playlist selection persistence, normalized seed matching, and JSON/`.m3u8` export logic |
 | `brain/quick_mix.py` | H-agent-optional six-track sample-lineage planner and live Mixxx quick-mix runner |
@@ -601,20 +602,30 @@ re-enabled; **Finalize for Mixxx** = the lock-in step before analysis.
 analyzed/unselected/non-excluded tracks against the current set. Scans
 that find new music rebuild `new_music_agent.json` automatically.
 
-**"Create the mix" is in the playlist editor UI (2026-07-12).** Panel
-under Ask the DJ brain: profile presets (`dj-showcase` / `club-set` /
-`warm-up`) + free-text mix description → background
-`compose_mix_plan` (same path as
-`brain.build_mix_plan --profile … --mix-brief …`; editor default uses
-**all** analyzed tracks in the finalized playlist, CLI still defaults to
-8 for short demos) → dry-run summary (track/event/segment counts,
-technique histogram, cue sources, full transition list) → **Start mix**
-gated behind `window.confirm` *and* `POST {"confirm": true}` (server
-refuses without it), with a Mixxx control-API ping on port 9995 before
-dispatch. Live performance runs `hands.run_mix_plan.run_plan` in a
-daemon thread so the editor keeps polling. Endpoints: GET `/api/mix`,
-POST `/api/mix/build`, POST `/api/mix/start`. Shared helpers:
-`brain.build_mix_plan.compose_mix_plan` + `plan_summary`.
+**"Create the mix" is in the playlist editor UI (2026-07-12).** Lives at
+the **bottom of the same page** (after the library/set workspace + notice).
+**Finalize for Mixxx** scrolls/highlights that panel. Profile presets
+(`dj-showcase` / `club-set` / `warm-up`) + free-text mix description +
+**order engine** (`nemoclaw` default / `h-agent` / `none` = feel-only)
+→ background `compose_mix_plan` (editor uses **all** analyzed tracks in
+the finalized playlist; CLI still defaults to 8) → dry-run summary
+(track/event/segment counts, technique histogram, cue sources, **order
+notes**, full transition list) → **Start mix** gated behind
+`window.confirm` *and* `POST {"confirm": true}` (server refuses without
+it), with a Mixxx control-API ping on port 9995 before dispatch. Live
+performance runs `hands.run_mix_plan.run_plan` in a daemon thread.
+Endpoints: GET `/api/mix`, POST `/api/mix/build`, POST `/api/mix/start`.
+
+**Order briefs are real now (not just feel keywords).** Example that used
+to be ignored: *"mix Parce Que Tu Crois next to What's The Difference in
+the first half"*. Flow: NemoClaw or H-agent returns structured
+**constraints** (adjacent pairs, region windows, optional `use_only`
+subset, optional opener) → local mix-graph greedy tour + forced
+adjacency/region placement (`brain/mix_order_brief.py`) → plan events.
+Agent never invents tracks; unknown ids are dropped. Provenance stores
+`order_engine`, `order_notes`, and the constraint object. Feel keywords
+still go through `mix_profiles.apply_brief` in parallel. Empty brief
+skips the agent. Agent turns can take 1–7 min (same as Ask the DJ brain).
 
 ### Mix profiles (2026-07-12, `brain/mix_profiles.py`)
 
@@ -624,13 +635,13 @@ runner deliberately boring.** The plan stays a declarative event list;
 every feel knob lives in a `MixProfile` (ride-phrase pattern, transition
 scale, flourish density, intro-entry rate) behind named presets:
 `dj-showcase` (default; today's tuned values), `club-set`, `warm-up`.
-`build_mix_plan --profile <name> --mix-brief "<free text>"` — the brief
-maps deterministically onto overrides (keyword pass; agent-backed mapper
-is a drop-in later), every adjustment is named in the plan's `profile`
-provenance block. Gotcha fixed: negation keywords ("no tricks") must be
-checked exclusively before positives ("tricks"). Only knobs validated by
-real runs get added — grow one at a time. The "Create the mix" UI panel
-is preset buttons + a text box calling this exact path.
+`build_mix_plan --profile <name> --mix-brief "<free text>"
+--order-engine nemoclaw|h-agent|none` — the brief maps onto (1) feel
+overrides via keyword pass and (2) order constraints via the chosen
+engine. Every adjustment is named in the plan's `profile` provenance
+block. Gotcha fixed: negation keywords ("no tricks") must be checked
+exclusively before positives ("tricks"). Only knobs validated by real
+runs get added — grow one at a time.
 
 ### Post-finalize enrichment (2026-07-12, `brain/enrich_set.py`)
 

@@ -53,7 +53,6 @@
     .pick input { width:16px; min-height:16px; accent-color:var(--green); }
     .pick .already { color:var(--muted); font-size:12px; }
     .picks-actions { margin-top:10px; display:flex; gap:8px; }
-    .mix-form { display:grid; grid-template-columns:minmax(240px,1fr) auto; gap:8px; margin-top:10px; align-items:start; }
     .mix-presets { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
     .mix-presets button.active { background:#deded8; border-color:#85857f; }
     .mix-summary { margin-top:10px; border-top:1px solid var(--line); padding-top:10px; }
@@ -65,6 +64,10 @@
     .mix-actions { margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     button.danger { background:var(--red); border-color:var(--red); color:white; }
     button:disabled { opacity:0.55; cursor:not-allowed; }
+    .mix-panel { margin-top:18px; scroll-margin-top:16px; }
+    .mix-panel.flash { box-shadow:0 0 0 2px var(--green); transition:box-shadow 0.4s; }
+    .mix-form { display:grid; grid-template-columns:minmax(240px,1fr) 170px auto; gap:8px; margin-top:10px; align-items:start; }
+    .order-notes { margin:8px 0 0; padding:0; list-style:disc inside; color:var(--muted); font-size:13px; }
     @media (max-width:850px) { .brain-form, .mix-form { grid-template-columns:1fr; } }
     @media (max-width:850px) {
       header { align-items:flex-start; padding:12px 14px; }
@@ -104,24 +107,6 @@
         <button id="clear-picks">Dismiss</button>
       </div>
     </div>
-    <div class="brain" id="mix-panel">
-      <h2>Create the mix</h2>
-      <div class="ingest-detail">After Finalize + enrichment, pick how the set should feel and optionally describe it. Builds <code>mix_plan.json</code>, shows a dry-run summary, then starts only after you confirm.</div>
-      <div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div>
-      <div class="mix-form">
-        <input id="mix-brief" type="text" placeholder="e.g. smooth, longer blends, no tricks" aria-label="Free-text mix description">
-        <button id="build-mix" class="primary">Build mix plan</button>
-      </div>
-      <div class="brain-detail" id="mix-detail"></div>
-      <div class="mix-summary" id="mix-summary" hidden>
-        <div class="mix-stats" id="mix-stats"></div>
-        <div class="mix-segments" id="mix-segments"></div>
-        <div class="mix-actions">
-          <button id="start-mix" class="danger" disabled title="Plays through Mixxx / AirPlay — requires confirmation">Start mix</button>
-          <span class="ingest-detail" id="mix-live"></span>
-        </div>
-      </div>
-    </div>
     <div class="toolbar">
       <input id="search" type="search" placeholder="Search title, artist, or path" aria-label="Search tracks">
       <select id="artist" aria-label="Filter by artist"><option value="">All artists</option></select>
@@ -144,6 +129,30 @@
       </section>
     </div>
     <div class="notice" id="notice"></div>
+    <div class="brain mix-panel" id="mix-panel">
+      <h2>Create the mix</h2>
+      <div class="ingest-detail">Post-finalize step: after <strong>Finalize for Mixxx</strong> (and enrichment if needed), choose how the set should feel and describe order wants — e.g. force two songs adjacent, place them in the first half, or mix only a few. An agent turns order asks into constraints; profile presets control ride length / flourishes. Review the dry-run, then Start mix (explicit confirm).</div>
+      <div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div>
+      <div class="mix-form">
+        <input id="mix-brief" type="text" placeholder='e.g. put Parce Que Tu Crois next to What&apos;s The Difference in the first half; smooth, no tricks' aria-label="Free-text mix description">
+        <select id="order-engine" aria-label="Order engine for the brief">
+          <option value="nemoclaw">NemoClaw · order</option>
+          <option value="h-agent">H Company · order</option>
+          <option value="none">Feel only (no reorder)</option>
+        </select>
+        <button id="build-mix" class="primary">Build mix plan</button>
+      </div>
+      <div class="brain-detail" id="mix-detail"></div>
+      <div class="mix-summary" id="mix-summary" hidden>
+        <div class="mix-stats" id="mix-stats"></div>
+        <ul class="order-notes" id="order-notes" hidden></ul>
+        <div class="mix-segments" id="mix-segments"></div>
+        <div class="mix-actions">
+          <button id="start-mix" class="danger" disabled title="Plays through Mixxx / AirPlay — requires confirmation">Start mix</button>
+          <span class="ingest-detail" id="mix-live"></span>
+        </div>
+      </div>
+    </div>
   </main>
   <script>
     const state = { analysis:'all', meta:null };
@@ -194,12 +203,20 @@
     el('library').addEventListener('change',toggle); el('selected').addEventListener('change',toggle);
     el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
+    function focusMixPanel() {
+      const panel = el('mix-panel');
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      panel.classList.add('flash');
+      setTimeout(() => panel.classList.remove('flash'), 1600);
+    }
     el('export').addEventListener('click',async()=>{
       const button=el('export');const original=button.textContent;button.disabled=true;
       try{
         const result=await api('/api/export',{method:'POST'});
         button.textContent=`✓ Finalized ${result.count} tracks`;
-        el('notice').textContent=`Finalized ${result.count} tracks — ${result.m3u} is ready. Next: uv run python -m brain.enrich_set (if needed), then use Create the mix below.`;
+        el('notice').textContent=`Finalized ${result.count} tracks — ${result.m3u} is ready. Next: enrich if needed (uv run python -m brain.enrich_set), then Create the mix at the bottom of this page.`;
+        focusMixPanel();
+        await pollMix();
       }catch(error){button.textContent='Finalize failed';el('notice').textContent=error.message;}
       setTimeout(()=>{button.textContent=original;button.disabled=false;},4000);
     });
@@ -281,15 +298,20 @@
       const adjustments = (profile.brief_adjustments || []).join('; ') || 'none';
       const tech = Object.entries(summary.techniques || {}).map(([k,v]) => `${k}×${v}`).join(' · ') || '—';
       const cues = Object.entries(summary.cue_sources || {}).map(([k,v]) => `${k}×${v}`).join(' · ') || '—';
+      const engine = summary.order_engine || profile.order_engine || 'none';
       el('mix-stats').innerHTML =
         `<span><strong>${summary.track_count}</strong> tracks</span>` +
         `<span><strong>${summary.event_count}</strong> events</span>` +
         `<span><strong>${summary.segment_count}</strong> transitions</span>` +
         `<span>profile <strong>${esc(profile.name || mixState.profile)}</strong></span>` +
+        `<span>order engine <strong>${esc(engine)}</strong></span>` +
         `<span>brief tweaks: ${esc(adjustments)}</span>` +
         `<span>${esc(tech)}</span>` +
         `<span>cues: ${esc(cues)}</span>` +
         `<span>${esc(summary.dry_run_note || 'dry-run ok')}</span>`;
+      const notes = summary.order_notes || profile.order_notes || [];
+      el('order-notes').hidden = notes.length === 0;
+      el('order-notes').innerHTML = notes.map(n => `<li>${esc(n)}</li>`).join('');
       const segments = summary.segments || [];
       el('mix-segments').innerHTML = segments.length
         ? segments.map(seg =>
@@ -303,21 +325,25 @@
     async function pollMix() {
       const data = await api('/api/mix');
       if (data.profile) mixState.profile = data.profile;
+      if (data.order_engine) el('order-engine').value = data.order_engine;
       renderPresets(data.profiles);
       el('build-mix').disabled = Boolean(data.building) || Boolean(data.running);
       const canStart = Boolean(data.plan_ready || data.summary) && !data.building && !data.running;
       el('start-mix').disabled = !canStart;
       if (data.building) {
-        el('mix-detail').textContent = `Building mix plan (${PROFILE_LABELS[data.profile] || data.profile || '…'}${data.mix_brief ? ' · “'+data.mix_brief+'”' : ''})…`;
+        const eng = data.order_engine && data.order_engine !== 'none'
+          ? ` · ordering via ${data.order_engine} (can take 1–7 min)`
+          : '';
+        el('mix-detail').textContent = `Building mix plan (${PROFILE_LABELS[data.profile] || data.profile || '…'}${data.mix_brief ? ' · “'+data.mix_brief+'”' : ''}${eng})…`;
       } else if (data.error) {
         el('mix-detail').textContent = `Build failed: ${data.error}`;
       } else if (data.summary) {
         const brief = data.mix_brief ? ` · brief “${data.mix_brief}”` : '';
-        el('mix-detail').textContent = `Dry-run ready — ${data.summary.track_count} tracks, ${data.summary.event_count} events${brief}. Review below, then Start mix.`;
+        el('mix-detail').textContent = `Dry-run ready — ${data.summary.track_count} tracks, ${data.summary.event_count} events${brief}. Review order notes + transitions below, then Start mix.`;
       } else if (!data.playlist_ready) {
-        el('mix-detail').textContent = 'Finalize a set for Mixxx first, then build the mix here.';
+        el('mix-detail').textContent = 'Finalize a set for Mixxx first (button above), then build the mix here.';
       } else {
-        el('mix-detail').textContent = 'Pick a profile (and optional description), then build the plan from the finalized playlist.';
+        el('mix-detail').textContent = 'Pick a profile, describe order wants (optional), choose an order engine, then build.';
       }
       renderMixSummary(data.summary);
       if (data.running) {
@@ -345,13 +371,19 @@
         await api('/api/mix/build', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ profile: mixState.profile, mix_brief: el('mix-brief').value.trim() }),
+          body: JSON.stringify({
+            profile: mixState.profile,
+            mix_brief: el('mix-brief').value.trim(),
+            order_engine: el('order-engine').value,
+          }),
         });
         if (mixState.pollTimer) clearInterval(mixState.pollTimer);
+        // Agent order turns can take minutes — poll slower when engine is on.
+        const interval = el('order-engine').value === 'none' ? 750 : 2000;
         mixState.pollTimer = setInterval(async () => {
           const status = await pollMix();
           if (!status.building && !status.running) { clearInterval(mixState.pollTimer); mixState.pollTimer = null; }
-        }, 750);
+        }, interval);
         await pollMix();
       } catch (error) {
         el('mix-detail').textContent = error.message;

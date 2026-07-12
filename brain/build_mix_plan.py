@@ -378,11 +378,13 @@ def compose_mix_plan(
     playlist: Path = DEFAULT_PLAYLIST,
     profile_name: str = "dj-showcase",
     mix_brief: str = "",
+    order_engine: str = "none",
     tracks: int | None = None,
     seconds_per_track: float | None = None,
     phrase_analysis: Path = DEFAULT_PHRASES,
     phrase_beats: int | None = None,
     out: Path = DEFAULT_PLAN,
+    ask=None,
 ) -> dict:
     """Build a mix plan from the finalized playlist and write it to disk.
 
@@ -390,6 +392,11 @@ def compose_mix_plan(
     `python -m brain.build_mix_plan` stay in lockstep. `tracks=None` means
     "use every analyzed song in the playlist" (the editor default); the CLI
     still defaults to 8 for short demos.
+
+    `order_engine`: when the brief asks for specific pairings / placement /
+    a short subset, use `nemoclaw` or `h-agent` to turn that into order
+    constraints (see `brain.mix_order_brief`). `none` keeps playlist order
+    and only maps feel keywords onto the profile.
     """
     from brain.mix_profiles import PROFILES, apply_brief, profile_provenance
 
@@ -406,7 +413,33 @@ def compose_mix_plan(
     pool = analyzed if len(analyzed) >= 2 else rows
     if len(pool) < 2:
         raise ValueError("need at least 2 tracks with BPM in the finalized playlist")
+
+    order_notes: list[str] = []
+    order_constraints: dict | None = None
+    if mix_brief.strip() and order_engine not in (None, "", "none", "off", "profile-only"):
+        from brain.mix_order_brief import order_from_brief
+
+        pool, order_notes, order_constraints = order_from_brief(
+            pool, mix_brief, engine=order_engine, ask=ask
+        )
+
     count = len(pool) if tracks is None else min(tracks, len(pool))
+    # When the agent narrowed to a short showcase, don't re-inflate with tracks.
+    if order_constraints and order_constraints.get("use_only"):
+        count = len(pool)
+    provenance = profile_provenance(profile, mix_brief, brief_notes)
+    provenance["order_engine"] = order_engine
+    provenance["order_notes"] = order_notes
+    if order_constraints is not None:
+        # Keep provenance path-free / short-id only.
+        provenance["order_constraints"] = {
+            "use_only": order_constraints.get("use_only"),
+            "opener_id": order_constraints.get("opener_id"),
+            "adjacent": [list(p) for p in order_constraints.get("adjacent") or []],
+            "adjacent_ordered": order_constraints.get("adjacent_ordered"),
+            "regions": order_constraints.get("regions"),
+            "notes": order_constraints.get("notes"),
+        }
     plan = build_plan(
         pool,
         count=count,
@@ -415,7 +448,7 @@ def compose_mix_plan(
         phrase_lookup=load_phrase_lookup(phrase_analysis),
         phrase_beats=phrase_beats if phrase_beats is not None else profile.phrase_beats,
         profile=profile,
-        provenance=profile_provenance(profile, mix_brief, brief_notes),
+        provenance=provenance,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(plan, indent=2) + "\n")
@@ -434,6 +467,7 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
     for track in plan.get("tracks") or []:
         source = track.get("cue_source") or "unknown"
         cue_sources[source] = cue_sources.get(source, 0) + 1
+    profile = plan.get("profile") or {}
     return {
         "plan_path": str(plan_path) if plan_path else None,
         "version": plan.get("version"),
@@ -442,7 +476,9 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
         "segment_count": len(segments),
         "seconds_per_track": plan.get("seconds_per_track"),
         "phrase_interval_beats": plan.get("phrase_interval_beats"),
-        "profile": plan.get("profile"),
+        "profile": profile,
+        "order_engine": profile.get("order_engine"),
+        "order_notes": profile.get("order_notes") or [],
         "techniques": techniques,
         "cue_sources": cue_sources,
         "tracks": [
@@ -476,8 +512,16 @@ def main() -> None:
     parser.add_argument(
         "--mix-brief",
         default="",
-        help="free-text mix description mapped onto the profile "
-             "(e.g. 'smooth, longer blends, no tricks')",
+        help="free-text mix description: feel keywords AND/OR order asks "
+             "(e.g. 'smooth; put Parce Que Tu Crois next to What's The Difference "
+             "in the first half')",
+    )
+    parser.add_argument(
+        "--order-engine",
+        choices=("none", "nemoclaw", "h-agent"),
+        default="none",
+        help="when the brief asks for pairings/placement/subset, resolve order "
+             "via NemoClaw or H-agent (default: none = playlist order + feel only)",
     )
     parser.add_argument("--seconds-per-track", type=float, default=None)
     parser.add_argument("--phrase-analysis", type=Path, default=DEFAULT_PHRASES)
@@ -489,6 +533,7 @@ def main() -> None:
         playlist=args.playlist,
         profile_name=args.profile,
         mix_brief=args.mix_brief,
+        order_engine=args.order_engine,
         tracks=args.tracks,
         seconds_per_track=args.seconds_per_track,
         phrase_analysis=args.phrase_analysis,
@@ -499,6 +544,8 @@ def main() -> None:
     print(f"profile: {profile.get('name')} — {(profile.get('values') or {}).get('description', '')}")
     for note in profile.get("brief_adjustments") or []:
         print(f"  brief adjustment: {note}")
+    for note in profile.get("order_notes") or []:
+        print(f"  order: {note}")
     print(f"mix plan: {plan['track_count']} tracks -> {args.out}")
     for seg in plan["segments"]:
         print(

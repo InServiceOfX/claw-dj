@@ -49,6 +49,7 @@ class PlaylistApp:
             "error": None,
             "profile": None,
             "mix_brief": None,
+            "order_engine": None,
             "summary": None,
             "live_error": None,
             "live_message": None,
@@ -374,15 +375,25 @@ class PlaylistApp:
         status["playlist_ready"] = DEFAULT_PLAYLIST_JSON.exists()
         return status
 
-    def build_mix(self, profile: str, mix_brief: str, tracks: int | None = None) -> dict:
+    def build_mix(
+        self,
+        profile: str,
+        mix_brief: str,
+        tracks: int | None = None,
+        order_engine: str = "nemoclaw",
+    ) -> dict:
         """Build a mix plan in the background (profile + free-text brief).
 
-        Mirrors `uv run python -m brain.build_mix_plan --profile … --mix-brief …`.
+        Mirrors `brain.build_mix_plan --profile … --mix-brief … --order-engine …`.
+        When the brief mentions pairings / placement / a short subset and
+        order_engine is nemoclaw or h-agent, the agent shapes the order first.
         """
         from brain.mix_profiles import PROFILES
 
         if profile not in PROFILES:
             raise ValueError(f"unknown profile {profile!r}; choose from {sorted(PROFILES)}")
+        if order_engine not in ("none", "nemoclaw", "h-agent"):
+            raise ValueError(f"unknown order engine {order_engine!r}")
         if self.mix_thread and self.mix_thread.is_alive():
             return self.mix_status()
         if self.mix_run_thread and self.mix_run_thread.is_alive():
@@ -390,12 +401,18 @@ class PlaylistApp:
         if not DEFAULT_PLAYLIST_JSON.exists():
             raise ValueError("no finalized playlist yet — click Finalize for Mixxx first")
 
+        # Feel-only briefs don't need a slow agent call.
+        engine = order_engine
+        if not (mix_brief or "").strip():
+            engine = "none"
+
         self.mix_state = {
             "building": 1,
             "running": 0,
             "error": None,
             "profile": profile,
             "mix_brief": mix_brief,
+            "order_engine": engine,
             "summary": None,
             "live_error": None,
             "live_message": None,
@@ -409,6 +426,7 @@ class PlaylistApp:
                     playlist=DEFAULT_PLAYLIST_JSON,
                     profile_name=profile,
                     mix_brief=mix_brief or "",
+                    order_engine=engine,
                     tracks=tracks,
                     out=MIX_PLAN_PATH,
                 )
@@ -419,6 +437,7 @@ class PlaylistApp:
                     summary=summary,
                     profile=profile,
                     mix_brief=mix_brief,
+                    order_engine=engine,
                 )
             except Exception as error:  # surfaced in the local UI
                 self.mix_state.update(building=0, error=str(error), summary=None)
@@ -562,6 +581,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                             str(payload.get("profile", "dj-showcase")),
                             str(payload.get("mix_brief", "")),
                             int(tracks) if tracks is not None else None,
+                            str(payload.get("order_engine", "nemoclaw")),
                         ),
                         HTTPStatus.ACCEPTED,
                     )
