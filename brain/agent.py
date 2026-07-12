@@ -37,17 +37,24 @@ DEFAULT_MAX_TIME_S = 180.0
 # Same key/file `hai login` writes to (~/.config/hai/.env). Read directly
 # instead of the hai-agents CLI's own credential helper, which lives in an
 # internal module (hai_agents_common) not exposed by the `desktop` extra.
+# On macOS, `holo login` may be the only completed login; it writes
+# ~/.holo/.env (Models API). Prefer Agent Platform key when both exist.
 _HAI_ENV_PATH = (
     Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
     / "hai"
     / ".env"
 )
+_HOLO_ENV_PATH = Path.home() / ".holo" / ".env"
 
 
 def _resolve_api_key() -> str | None:
     if key := os.environ.get("HAI_API_KEY"):
         return key
-    return dotenv_values(_HAI_ENV_PATH).get("HAI_API_KEY")
+    for path in (_HAI_ENV_PATH, _HOLO_ENV_PATH):
+        if path.exists():
+            if key := dotenv_values(path).get("HAI_API_KEY"):
+                return key
+    return None
 
 
 class Brain:
