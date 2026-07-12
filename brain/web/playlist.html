@@ -78,6 +78,7 @@
       <div class="brain-form">
         <input id="brief" type="text" placeholder="e.g. recognizable 90s/2000s hits that mix with the current showcase" aria-label="Brief for the agent">
         <select id="engine" aria-label="Agent engine">
+          <option value="both">Both engines</option>
           <option value="nemoclaw">NemoClaw · Nemotron</option>
           <option value="h-agent">H Company · Holo</option>
         </select>
@@ -99,7 +100,8 @@
       </div>
       <button id="seed">Add researched hits</button>
       <button id="mixorder" title="Reorder enabled set by BPM/key/sample lineage — never drops your picks">Order for mixes</button>
-      <button id="export" class="primary">Export for Mixxx</button>
+      <button id="suggest" title="Analyzed library tracks that blend with the current set (mix-graph score)">Suggest blends</button>
+      <button id="export" class="primary" title="Lock in the current set: writes the .m3u8 + json Mixxx imports">Finalize for Mixxx</button>
     </div>
     <div class="workspace">
       <section>
@@ -162,24 +164,34 @@
     el('library').addEventListener('change',toggle); el('selected').addEventListener('change',toggle);
     el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
-    el('export').addEventListener('click',async()=>{const result=await api('/api/export',{method:'POST'});el('notice').textContent=`Exported ${result.count} tracks to ${result.m3u} and ${result.json}.`;});
-    function renderPicks(data) {
-      const picks = data.picks || [];
-      el('picks').hidden = el('picks-actions').hidden = picks.length === 0;
-      el('picks').innerHTML = picks.map(pick => {
-        const already = pick.enabled ? ' <span class="already">already in set</span>' : '';
-        const missing = pick.in_library ? '' : ' <span class="already">not in crate</span>';
-        const checked = pick.enabled || !pick.in_library ? '' : 'checked';
-        const disabled = pick.enabled || !pick.in_library ? 'disabled' : '';
-        return `<label class="pick"><input type="checkbox" data-pick="${esc(pick.track_id)}" ${checked} ${disabled}><span><span class="title">${esc(pick.title)}</span> <span class="artist">— ${esc(pick.artist)}</span>${already}${missing}</span></label>`;
+    el('export').addEventListener('click',async()=>{const result=await api('/api/export',{method:'POST'});el('notice').textContent=`Finalized ${result.count} tracks — ${result.m3u} is ready to import into Mixxx (right-click Playlists → Import Playlist). Next: analyze in Mixxx, then build the mix.`;});
+    const ENGINE_NAMES = {'nemoclaw':'NemoClaw · Nemotron','h-agent':'H Company · Holo','mix-graph':'Mix-graph (deterministic)','both':'both engines'};
+    function pickRow(pick) {
+      const already = pick.enabled ? ' <span class="already">already in set</span>' : '';
+      const excluded = pick.excluded ? ' <span class="already">you removed this earlier</span>' : '';
+      const missing = pick.in_library ? '' : ' <span class="already">not in crate</span>';
+      const blend = pick.blends_with ? ` <span class="already">↔ ${esc(pick.blends_with)} (${pick.score})</span>` : '';
+      const checked = pick.enabled || !pick.in_library || pick.excluded ? '' : 'checked';
+      const disabled = pick.enabled || !pick.in_library ? 'disabled' : '';
+      return `<label class="pick"><input type="checkbox" data-pick="${esc(pick.track_id)}" ${checked} ${disabled}><span><span class="title">${esc(pick.title)}</span> <span class="artist">— ${esc(pick.artist)}</span>${blend}${already}${excluded}${missing}</span></label>`;
+    }
+    function renderResults(results) {
+      const engines = Object.keys(results || {});
+      const total = engines.reduce((n, e) => n + (results[e].picks || []).length, 0);
+      el('picks').hidden = el('picks-actions').hidden = total === 0;
+      el('picks').innerHTML = engines.map(engine => {
+        const data = results[engine];
+        const head = `<div class="pick" style="border-bottom:2px solid var(--line)"><span></span><span><span class="title">${esc(ENGINE_NAMES[engine] || engine)}</span> <span class="artist">— ${(data.picks||[]).length} picks · “${esc(data.brief || '')}”</span></span></div>`;
+        return head + (data.picks || []).map(pickRow).join('');
       }).join('');
-      el('brain-detail').textContent = `${data.engine === 'h-agent' ? 'H Company Holo' : 'NemoClaw Nemotron'} returned ${picks.length} candidates for: “${data.brief}”. Uncheck any you don't want.`;
     }
     async function pollBrain() {
       const data = await api('/api/brain');
-      if (data.running) { el('brain-detail').textContent = `Asking ${data.engine === 'h-agent' ? 'H Company Holo' : 'NemoClaw Nemotron'}… (this takes a minute or two)`; return data; }
-      if (data.error) { el('brain-detail').textContent = `Agent call failed: ${data.error}`; el('ask').disabled = false; return data; }
-      if (data.picks) { renderPicks(data); el('ask').disabled = false; }
+      if (data.running) { el('brain-detail').textContent = `Asking ${ENGINE_NAMES[data.engine] || data.engine}… (each agent turn takes 1–7 minutes)`; return data; }
+      const total = Object.values(data.results || {}).reduce((n, d) => n + (d.picks || []).length, 0);
+      el('brain-detail').textContent = data.error ? `Agent call failed: ${data.error}` : (total ? 'Latest agent results below (cached across restarts). Uncheck anything you don\'t want, then add.' : '');
+      renderResults(data.results);
+      el('ask').disabled = false;
       return data;
     }
     el('ask').addEventListener('click',async()=>{
@@ -199,8 +211,14 @@
       await Promise.all([loadMeta(),loadLibrary(),loadSelected()]);
     });
     el('clear-picks').addEventListener('click',()=>{el('picks').hidden=el('picks-actions').hidden=true;el('brain-detail').textContent='';});
+    el('suggest').addEventListener('click',async()=>{
+      el('brain-detail').textContent='Scoring analyzed library tracks against the current set…';
+      const data=await api('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:20})});
+      renderResults({'mix-graph':data});
+      el('brain-detail').textContent=`Mix-graph scored ${data.candidates_considered} analyzed candidates against your ${state.meta.selected_count}-track set. These respect your removals.`;
+    });
     el('scan').addEventListener('click',async()=>{await api('/api/ingest/scan',{method:'POST'});el('notice').textContent='Looking for new or changed music. Existing files will not be reopened.';const poll=setInterval(async()=>{const status=await loadIngest();if(!status.running){clearInterval(poll);await Promise.all([loadMeta(),loadLibrary(),loadSelected()]);el('notice').textContent=status.error?`Scan failed: ${status.error}`:`Found ${status.new_count} new and ${status.changed_count} changed tracks.`}},750)});
-    (async()=>{await Promise.all([loadMeta(),loadIngest()]);await Promise.all([loadLibrary(),loadSelected()]);const brain=await api('/api/brain');if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}else if(brain.picks)renderPicks(brain);})().catch(error=>{el('notice').textContent=error.message});
+    (async()=>{await Promise.all([loadMeta(),loadIngest()]);await Promise.all([loadLibrary(),loadSelected()]);const brain=await pollBrain();if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}})().catch(error=>{el('notice').textContent=error.message});
   </script>
 </body>
 </html>

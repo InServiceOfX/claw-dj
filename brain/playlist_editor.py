@@ -15,7 +15,19 @@ from urllib.parse import parse_qs, urlparse
 
 from brain.library import Track, load_crate
 from brain.library_index import configured_roots, scan_status
-from brain.playlist import export_playlist, load_seed, load_selection, match_seed, save_selection, track_record
+from brain.playlist import (
+    DATA_DIR,
+    export_playlist,
+    load_exclusions,
+    load_seed,
+    load_selection,
+    match_seed,
+    save_exclusions,
+    save_selection,
+    track_record,
+)
+
+BRAIN_CACHE = {engine: DATA_DIR / f"brain_picks_{engine}.json" for engine in ("nemoclaw", "h-agent")}
 
 WEB_ROOT = Path(__file__).parent / "web"
 
@@ -34,6 +46,7 @@ class PlaylistApp:
         self.by_id = {track.track_id: track for track in self.tracks}
         self.selection = [track_id for track_id in load_selection() if track_id in self.by_id]
         self.selected = set(self.selection)
+        self.excluded = set(load_exclusions())
 
     def ingest_status(self) -> dict:
         status = scan_status()
@@ -57,11 +70,13 @@ class PlaylistApp:
                 from brain.library_index import export_records
                 from brain.scan_library import incremental_scan
 
-                incremental_scan(roots)
+                summary = incremental_scan(roots)
                 records = export_records()
                 from brain.library import DEFAULT_CRATE_CACHE
                 DEFAULT_CRATE_CACHE.write_text(json.dumps(records, indent=2))
                 write_catalog(records, roots=[str(root) for root in roots])
+                if summary.get("new"):
+                    self._refresh_new_music_view()
                 self.reload()
             except Exception as error:  # surfaced in the local UI
                 self.scan_error = str(error)
@@ -70,39 +85,137 @@ class PlaylistApp:
         self.scan_thread.start()
         return {**self.ingest_status(), "running": 1}
 
+    def _refresh_new_music_view(self) -> None:
+        """Rebuild the agent-facing new-music view from the newest scan batch,
+        so 'Ask the DJ brain' always reasons over what the last scan found."""
+        from contextlib import closing
+
+        from brain.library_index import connect
+
+        with closing(connect()) as db:
+            started = db.execute("SELECT started_at FROM scan_state WHERE id=1").fetchone()[0]
+            rows = [dict(r) for r in db.execute(
+                "SELECT track_id, artist, title, album, genre, duration_seconds "
+                "FROM tracks WHERE available=1 AND first_seen_at >= ? "
+                "ORDER BY artist, title", (started,),
+            )]
+        if not rows:
+            return
+        view = {
+            "note": "Newest scan batch (metadata only; no bpm/key yet). "
+                    "Pick playlist candidates from these ids only.",
+            "track_count": len(rows),
+            "tracks": [
+                {"id": f"n{i:04d}", "artist": r["artist"], "title": r["title"],
+                 "album": r["album"], "genre": r["genre"],
+                 "duration_seconds": r["duration_seconds"]}
+                for i, r in enumerate(rows)
+            ],
+        }
+        (DATA_DIR / "new_music_agent.json").write_text(json.dumps(view, indent=1) + "\n")
+        (DATA_DIR / "new_music_ids.json").write_text(
+            json.dumps({r["track_id"]: f"n{i:04d}" for i, r in enumerate(rows)}, indent=1) + "\n"
+        )
+
+    def _annotate(self, picks: list[dict]) -> list[dict]:
+        return [
+            {**pick, "in_library": pick["track_id"] in self.by_id,
+             "enabled": pick["track_id"] in self.selected,
+             "excluded": pick["track_id"] in self.excluded}
+            for pick in picks
+        ]
+
     def brain_status(self) -> dict:
         status = dict(self.brain_state)
-        if status["picks"] is not None:
-            status["picks"] = [
-                {**pick, "in_library": pick["track_id"] in self.by_id,
-                 "enabled": pick["track_id"] in self.selected}
-                for pick in status["picks"]
-            ]
+        results = dict(status.get("results") or {})
+        # Fall back to each engine's last cached run so results survive
+        # editor restarts and show even when nothing ran this session.
+        for engine, cache in BRAIN_CACHE.items():
+            if engine not in results and cache.exists():
+                results[engine] = json.loads(cache.read_text())
+        status["results"] = {
+            engine: {**data, "picks": self._annotate(data.get("picks") or [])}
+            for engine, data in results.items()
+        }
         return status
 
     def ask_brain(self, brief: str, engine: str, count: int) -> dict:
-        """Run one agent candidate-picking call in the background."""
-        if engine not in ("nemoclaw", "h-agent"):
-            raise ValueError(f"unknown engine {engine!r}")
+        """Run agent candidate-picking (one engine or both) in the background."""
+        engines = ("nemoclaw", "h-agent") if engine == "both" else (engine,)
+        for name in engines:
+            if name not in BRAIN_CACHE:
+                raise ValueError(f"unknown engine {name!r}")
         if not brief.strip():
             raise ValueError("brief is empty — say what kind of set you want")
         if self.brain_thread and self.brain_thread.is_alive():
             return self.brain_status()
-        self.brain_state = {"running": 1, "error": None, "picks": None,
+        self.brain_state = {"running": 1, "error": None, "results": {},
                             "brief": brief, "engine": engine}
 
         def work() -> None:
-            try:
-                from brain.pick_candidates import run_pick
+            errors = []
+            for name in engines:
+                try:
+                    from brain.pick_candidates import run_pick
 
-                picks = run_pick(engine=engine, brief=brief, count=count)
-                self.brain_state.update(running=0, picks=picks)
-            except Exception as error:  # surfaced in the local UI
-                self.brain_state.update(running=0, error=str(error))
+                    picks = run_pick(engine=name, brief=brief, count=count)
+                    result = {"brief": brief, "engine": name, "picks": picks}
+                    self.brain_state["results"][name] = result
+                    BRAIN_CACHE[name].write_text(json.dumps(result, indent=1) + "\n")
+                except Exception as error:  # surfaced in the local UI
+                    errors.append(f"{name}: {error}")
+            self.brain_state.update(running=0, error="; ".join(errors) or None)
 
         self.brain_thread = threading.Thread(target=work, daemon=True)
         self.brain_thread.start()
         return self.brain_status()
+
+    def suggest_blends(self, limit: int = 20) -> dict:
+        """Deterministic mix-graph picks that blend with the CURRENT edited set.
+
+        Only Mixxx-analyzed tracks can be scored honestly, so candidates are
+        analyzed, unselected, non-excluded library tracks ranked by their best
+        transition score against any track in the set.
+        """
+        from brain.mix_graph import lineage_pairs, load_chroma_pairs, load_lineage, pair_score
+
+        set_tracks = [self.by_id[i] for i in self.selection if i in self.by_id]
+        if not set_tracks:
+            raise ValueError("enabled set is empty — nothing to blend against")
+        candidates = [
+            track for track in self.tracks
+            if track.bpm and track.track_id not in self.selected
+            and track.track_id not in self.excluded
+        ]
+        lineage = lineage_pairs(set_tracks + candidates, load_lineage())
+        chroma = load_chroma_pairs()
+        scored = []
+        for candidate in candidates:
+            edge, anchor = max(
+                ((pair_score(anchor, candidate, lineage=lineage, chroma=chroma), anchor)
+                 for anchor in set_tracks),
+                key=lambda row: row[0].score,
+            )
+            scored.append((edge.score, candidate, anchor, edge.reasons))
+        scored.sort(key=lambda row: -row[0])
+        picks = [
+            {
+                "id": f"s{i:03d}",
+                "artist": candidate.artist,
+                "title": candidate.title,
+                "track_id": candidate.track_id,
+                "score": round(score, 2),
+                "blends_with": f"{anchor.artist} — {anchor.title}",
+                "why": list(reasons)[:2],
+            }
+            for i, (score, candidate, anchor, reasons) in enumerate(scored[:limit])
+        ]
+        return {
+            "engine": "mix-graph",
+            "brief": "analyzed tracks that blend with the current set",
+            "candidates_considered": len(candidates),
+            "picks": self._annotate(picks),
+        }
 
     def apply_picks(self, track_ids: list[str]) -> dict:
         added = 0
@@ -115,7 +228,9 @@ class PlaylistApp:
                 self.selection.append(track_id)
                 self.selected.add(track_id)
                 added += 1
+            self.excluded.discard(track_id)
         save_selection(self.selection)
+        save_exclusions(sorted(self.excluded))
         return {"added": added, "unknown": unknown, "selected_count": len(self.selection)}
 
     def metadata(self) -> dict:
@@ -161,17 +276,25 @@ class PlaylistApp:
     def set_enabled(self, track_id: str, enabled: bool) -> None:
         if track_id not in self.by_id:
             raise KeyError(track_id)
-        if enabled and track_id not in self.selected:
-            self.selection.append(track_id)
-            self.selected.add(track_id)
-        elif not enabled and track_id in self.selected:
+        if enabled:
+            if track_id not in self.selected:
+                self.selection.append(track_id)
+                self.selected.add(track_id)
+            self.excluded.discard(track_id)
+        elif track_id in self.selected:
             self.selection.remove(track_id)
             self.selected.remove(track_id)
+            # An explicit removal is a durable opinion: nothing (seed merge,
+            # agent picks, blend suggestions) re-adds it until re-enabled.
+            self.excluded.add(track_id)
         save_selection(self.selection)
+        save_exclusions(sorted(self.excluded))
 
     def add_seed(self) -> dict:
         matches = match_seed(self.tracks, load_seed())
         for match in matches:
+            if match.track and match.track.track_id in self.excluded:
+                continue
             if match.track and match.track.track_id not in self.selected:
                 self.selection.append(match.track.track_id)
                 self.selected.add(match.track.track_id)
@@ -284,6 +407,10 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                 if self.path == "/api/brain/apply":
                     payload = self._body()
                     self._json(app.apply_picks(list(payload.get("track_ids", []))))
+                    return
+                if self.path == "/api/suggest":
+                    payload = self._body()
+                    self._json(app.suggest_blends(int(payload.get("limit", 20))))
                     return
             except (KeyError, ValueError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)

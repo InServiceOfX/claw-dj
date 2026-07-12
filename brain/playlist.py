@@ -14,6 +14,7 @@ DEFAULT_SELECTION = DATA_DIR / "playlist_selection.json"
 DEFAULT_PLAYLIST_JSON = DATA_DIR / "playlist.json"
 DEFAULT_PLAYLIST_M3U = DATA_DIR / "playlist.m3u8"
 DEFAULT_SEED = Path(__file__).parent / "playlist_seeds" / "rnb_west_coast_hits.json"
+DEFAULT_EXCLUSIONS = DATA_DIR / "playlist_exclusions.json"
 
 
 def normalize(value: str) -> str:
@@ -72,6 +73,23 @@ def load_selection(path: Path = DEFAULT_SELECTION) -> list[str]:
         return []
     payload = json.loads(path.read_text())
     return payload["track_ids"] if isinstance(payload, dict) else payload
+
+
+def load_exclusions(path: Path = DEFAULT_EXCLUSIONS) -> list[str]:
+    """Tracks the user explicitly removed — nothing re-adds these silently.
+
+    Re-enabling a track (UI checkbox, agent pick apply) lifts the exclusion;
+    only an explicit user action moves a track either way.
+    """
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text())
+    return payload["track_ids"] if isinstance(payload, dict) else payload
+
+
+def save_exclusions(track_ids: list[str], path: Path = DEFAULT_EXCLUSIONS) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"track_ids": list(dict.fromkeys(track_ids))}, indent=2) + "\n")
 
 
 def save_selection(track_ids: list[str], path: Path = DEFAULT_SELECTION) -> None:

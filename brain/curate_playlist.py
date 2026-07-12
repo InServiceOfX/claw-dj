@@ -315,6 +315,12 @@ def main() -> None:
         hits = match_hits(crate, args.seed)
         unmatched = len(all_hit_seeds(args.seed)) - len(hits)
         print(f"mode=hits: matched {len(hits)} researched hits ({unmatched} seed rows unmatched)")
+        from brain.playlist import load_exclusions
+
+        excluded = set(load_exclusions())
+        if excluded:
+            hits = [t for t in hits if t.track_id not in excluded]
+            print(f"respecting {len(excluded)} user exclusions")
         pool = hits if args.replace_user else merge_keep_user(hits, user_ids, crate)
         print(f"pool after merging user selection: {len(pool)} tracks "
               f"(user kept {sum(1 for t in pool if t.track_id in set(user_ids))})")
