@@ -1,0 +1,97 @@
+# PROGRESS — current state & next steps (for any agent harness)
+
+> For Claude Code, Codex, Grok build, or any other AI agent continuing this
+> work. Deep context lives in `docs/HANDOFF.md` (read it first); control
+> reference in `docs/MIXXX_CONTROL_SURFACE.md`. Keep BOTH this checklist and
+> HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
+> commit to `master`; feature branches only; Ernest merges.
+
+## How to run everything (quick reference)
+
+```bash
+# Mixxx (patched 2.7 fork, default app) with the control API:
+open -a Mixxx --args --control-api-port 9995
+
+# Playlist editor UI (scan / ask-the-DJ-brain / suggest / finalize):
+uv run python -m brain.playlist_editor --open
+
+# Post-finalize enrichment (bpm/key, lyrics, chroma, phrases, lyric timelines):
+uv run python -m brain.enrich_set            # --status to just report
+
+# Order + plan + perform:
+uv run python -m brain.curate_playlist --mode selection --planner mix-graph
+uv run python -m brain.build_mix_plan --tracks N --profile dj-showcase --mix-brief "..."
+uv run python -m hands.run_mix_plan          # --dry-run first
+
+# Verse tour (one song, two decks, chorus skipped):
+uv run python -m brain.build_verse_tour --track "21 Questions"
+uv run python -m hands.run_mix_plan --plan brain/data/verse_tour_plan.json
+
+# Rust gestures (build: cd core-rust && cargo build --release -p clawdj-cli):
+core-rust/target/release/clawdj ctl get '[Master]' crossfader
+core-rust/target/release/clawdj gesture brake --deck 1
+core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
+
+# Tests: uv run python -m unittest discover -s tests   (+ cargo test/clippy/fmt in core-rust)
+```
+
+## Done (post-hackathon arc, 2026-07-13)
+
+- [x] Hackathon: **finalist** (no top-3/NVIDIA). Focus now: transitions & mix quality.
+- [x] **Synced-lyric timelines** — `brain/lyric_timeline.py`: LRC parsing,
+      chorus-by-repetition, verse onsets snapped to beatgrid bars; SQLite
+      `lyric_timelines`; wired into `enrich_set`. 17/24 coverage on current set.
+- [x] **Verse tour** — `brain/build_verse_tour.py`: same song on decks 1+2,
+      on-beat hard cuts verse→verse, choruses skipped. Live-validated (21 Questions).
+- [x] **Control-surface research** — `docs/MIXXX_CONTROL_SURFACE.md`: the
+      control API reaches ANY Mixxx control; curated catalog + 10-move vocabulary.
+- [x] **Rust control layer** — `core-rust/clawdj/src/control_api.rs` (TCP
+      JSON-lines client + BeatWaiter) and `gesture.rs`: brake, spinback,
+      kill_swap, kill_restore, censor, stutter, fade. CLI: `clawdj ctl …`,
+      `clawdj gesture …`. All live-validated against running Mixxx except
+      spinback/fade (validated by construction; audible test pending).
+
+## Next steps (roughly in order of value)
+
+1. **Wire Rust gestures into the plan runner** — `hands/run_mix_plan.py`
+   shells out to `clawdj gesture …` for moves the plan names (new optional
+   moves: `brake_out`, `spinback_out`, `censor_fill`, `stutter_fill`,
+   `kill_swap`). Techniques/profiles decide when; keep plan schema additive.
+2. **Echo-out exit** — blocked on loading the Echo effect into a slot
+   deterministically (effect_selector cycles; no load-by-name ControlObject
+   found yet). Investigate `[EffectRack1_EffectUnitN_EffectM],effect_selector`
+   semantics or a one-time manual load + config note.
+3. **New-vocabulary integration into `pick_technique`** — e.g. key-clash
+   pairs get `pitch_adjust` key_blend instead of a score toll;
+   `beatsync_phase` fired one beat before every hard cut (verse tour).
+4. **Transition preview rendering** — ffmpeg-stitch each planned transition
+   into a ~30s snippet for offline audition (`brain/preview_transitions.py`).
+   The tightest iteration loop on mix quality; no Mixxx needed.
+5. **whisperX fallback for unsynced lyrics** — 7/24 tracks lack synced
+   lyrics; forced alignment against the plain lyrics fills the gap offline.
+6. **Generic OpenAI-compatible engine** in `brain/pick_candidates.py` —
+   covers xAI (Ernest has a key), local Ollama/LM Studio, and hermes with one
+   client + base-URL/model config. NemoClaw/H engines stay while credits last.
+7. **Typed Rust control namespace** — codegen `controls.rs` from
+   MIXXX_CONTROL_SURFACE.md so the board is compile-time-checked.
+8. **"Create the mix" UI panel** — preset buttons (dj-showcase/club-set/
+   warm-up) + free-text mix brief in the playlist editor, calling
+   `build_mix_plan --profile … --mix-brief …`; dry-run summary + confirmed
+   "Start mix". Follow the existing "Ask the DJ brain" panel pattern.
+9. **Cross-machine identity** — relative-path track ids + per-machine roots
+   (Linux mounts differ; macOS↔macOS already works — see HANDOFF). Optionally
+   keep a `library.sqlite3` copy on the USB itself.
+10. **Grid repair from enrichment** — auto-fire `beats_set_halve/double`
+    when detected BPM is 2x/0.5x its genre-neighborhood median.
+
+## Known gotchas (short list; details in HANDOFF)
+
+- Mixxx persists deck-analysis (bpm/beatgrid) to its DB **minutes** late;
+  clean quit doesn't force it. Re-check later or Analyze via GUI.
+- AirPlay routes die silently when idle ("zombie route") — re-pick the
+  HomePod in Control Center + relaunch Mixxx before any real run.
+- `hai_agents` auths via `~/.holo/.env` on this Mac; NemoClaw needs Docker
+  Desktop + `openshell forward start --background 8642 hermes`.
+- Verse cuts must NOT beatsync (phase-pull fights the lyric cue).
+- LRCLIB lyric cache entries predating 2026-07-13 lack `synced_lyrics`;
+  timeline builder force-refetches those once.

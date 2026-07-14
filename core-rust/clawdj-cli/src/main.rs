@@ -66,6 +66,91 @@ enum Commands {
         #[arg(last = true, required = true)]
         paths: Vec<PathBuf>,
     },
+    /// Read/write any Mixxx control over the TCP control API (port 9995).
+    Ctl {
+        #[command(subcommand)]
+        command: CtlCommands,
+        #[arg(long, default_value_t = clawdj::control_api::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Beat-accurate DJ gestures over the control API (see
+    /// docs/MIXXX_CONTROL_SURFACE.md for the vocabulary).
+    Gesture {
+        #[command(subcommand)]
+        command: GestureCommands,
+        #[arg(long, default_value_t = clawdj::control_api::DEFAULT_PORT)]
+        port: u16,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum CtlCommands {
+    Get {
+        group: String,
+        key: String,
+    },
+    Set {
+        group: String,
+        key: String,
+        value: f64,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum GestureCommands {
+    /// Turntable brake to a stop.
+    Brake {
+        #[arg(long)]
+        deck: u8,
+        #[arg(long, default_value_t = 1.2)]
+        seconds: f64,
+    },
+    /// Throw the platter backwards, then stop.
+    Spinback {
+        #[arg(long)]
+        deck: u8,
+        #[arg(long, default_value_t = 1.6)]
+        seconds: f64,
+        #[arg(long, default_value_t = 4.0)]
+        intensity: f64,
+    },
+    /// Beat-anchored EQ kill-switch bass swap between two decks.
+    KillSwap {
+        #[arg(long)]
+        from: u8,
+        #[arg(long)]
+        to: u8,
+    },
+    /// Restore all EQ kill switches on a deck.
+    KillRestore {
+        #[arg(long)]
+        deck: u8,
+    },
+    /// Slip-reverse (censor) for N beats, snapping back on grid.
+    Censor {
+        #[arg(long)]
+        deck: u8,
+        #[arg(long, default_value_t = 2)]
+        beats: u32,
+    },
+    /// Beat-anchored slip loop-roll stutter fill.
+    Stutter {
+        #[arg(long)]
+        deck: u8,
+        #[arg(long, default_value_t = 4)]
+        rolls: u32,
+        #[arg(long, default_value_t = 0.5)]
+        size: f64,
+    },
+    /// Smoothstep crossfade over N beats of the outgoing deck's live tempo.
+    Fade {
+        #[arg(long)]
+        from: u8,
+        #[arg(long)]
+        to: u8,
+        #[arg(long, default_value_t = 16)]
+        beats: u32,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -97,6 +182,8 @@ fn main() -> Result<()> {
         Commands::DemoLoop => run_demo_loop(),
         Commands::Queue { command, db_path } => run_queue(command, db_path),
         Commands::Chroma { out, paths } => run_chroma(out, paths),
+        Commands::Ctl { command, port } => run_ctl(command, port),
+        Commands::Gesture { command, port } => run_gesture(command, port),
     }
 }
 
@@ -385,4 +472,42 @@ fn init_tracing() {
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(tracing_subscriber::fmt::layer())
         .init();
+}
+
+fn run_ctl(command: CtlCommands, port: u16) -> Result<()> {
+    let mut api = clawdj::control_api::ControlApi::connect(port)?;
+    match command {
+        CtlCommands::Get { group, key } => {
+            println!("{}", api.get(&group, &key)?);
+        }
+        CtlCommands::Set { group, key, value } => {
+            api.set(&group, &key, value)?;
+            println!("ok");
+        }
+    }
+    Ok(())
+}
+
+fn run_gesture(command: GestureCommands, port: u16) -> Result<()> {
+    use clawdj::gesture;
+    let mut api = clawdj::control_api::ControlApi::connect(port)?;
+    match command {
+        GestureCommands::Brake { deck, seconds } => gesture::brake(&mut api, deck, seconds)?,
+        GestureCommands::Spinback {
+            deck,
+            seconds,
+            intensity,
+        } => gesture::spinback(&mut api, deck, seconds, intensity)?,
+        GestureCommands::KillSwap { from, to } => gesture::kill_swap(&mut api, from, to, port)?,
+        GestureCommands::KillRestore { deck } => gesture::kill_restore(&mut api, deck)?,
+        GestureCommands::Censor { deck, beats } => gesture::censor(&mut api, deck, beats, port)?,
+        GestureCommands::Stutter { deck, rolls, size } => {
+            gesture::stutter(&mut api, deck, rolls, size, port)?
+        }
+        GestureCommands::Fade { from, to, beats } => {
+            gesture::fade(&mut api, from, to, beats, port)?
+        }
+    }
+    println!("gesture done");
+    Ok(())
 }

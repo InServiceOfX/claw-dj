@@ -13,12 +13,8 @@ use anyhow::{Context, Result, bail};
 use realfft::RealFftPlanner;
 use serde::Serialize;
 use symphonia::core::{
-    audio::SampleBuffer,
-    codecs::DecoderOptions,
-    formats::FormatOptions,
-    io::MediaSourceStream,
-    meta::MetadataOptions,
-    probe::Hint,
+    audio::SampleBuffer, codecs::DecoderOptions, formats::FormatOptions, io::MediaSourceStream,
+    meta::MetadataOptions, probe::Hint,
 };
 
 const TARGET_SR: u32 = 11_025;
@@ -97,8 +93,7 @@ fn fingerprint_file(path: &Path) -> Result<Vec<f32>> {
             .enumerate()
             .map(|(i, sample)| {
                 // Hann window
-                let w = 0.5
-                    - 0.5 * (std::f32::consts::TAU * i as f32 / (FRAME as f32 - 1.0)).cos();
+                let w = 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / (FRAME as f32 - 1.0)).cos();
                 sample * w
             })
             .collect();

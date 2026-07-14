@@ -1,10 +1,10 @@
 # CLAUDE.md — claw-dj
 
-Before doing anything else in this repo, read `docs/HANDOFF.md` — it links
-to `docs/HACKATHON.md` (event context: dates, rules, links, submission
-requirements) and `docs/ARCHITECTURE.md` (system design: the brain/hands
-split and why). HANDOFF.md has the current build status, what's in
-progress, and prioritized next steps.
+Before doing anything else in this repo, read `PROGRESS.md` (current
+state, run commands, prioritized next steps — kept agent-agnostic for any
+harness) and `docs/HANDOFF.md` — the deep context: it links to
+`docs/HACKATHON.md` (event context) and `docs/ARCHITECTURE.md` (system
+design: the brain/hands split and why). Keep both updated as you work.
 
 Keep `docs/HANDOFF.md` updated as work progresses — especially "known gaps
 / next steps" and "what's built so far" — so it stays accurate for the next

@@ -1,5 +1,7 @@
 pub mod chroma;
 pub mod command;
+pub mod control_api;
+pub mod gesture;
 pub mod live;
 pub mod midi;
 pub mod queue;
