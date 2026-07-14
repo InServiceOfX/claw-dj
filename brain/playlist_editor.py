@@ -481,6 +481,7 @@ class PlaylistApp:
                 {
                     "artist": r.get("artist"),
                     "title": r.get("title"),
+                    "album": r.get("album"),
                     "bpm": r.get("bpm"),
                     "key": r.get("key"),
                     "track_id": r.get("track_id"),

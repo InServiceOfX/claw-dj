@@ -37,6 +37,8 @@
     .title,.artist { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
     .title { font-weight:650; }
     .artist { color:var(--muted); font-size:13px; }
+    .track-type { display:inline-block; margin-left:5px; padding:0 5px; border-radius:3px; background:#eeeae0; color:#654d16; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.02em; }
+    .track-type.vocals { background:#e8eef8; color:#274d7c; }
     .bpm,.key { text-align:right; font-variant-numeric:tabular-nums; }
     .missing { color:var(--red); }
     .empty { padding:30px 18px; color:var(--muted); text-align:center; }
@@ -203,6 +205,12 @@
     const state = { analysis:'all', meta:null, page:'curate' };
     const el = id => document.getElementById(id);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    function inferredTrackType(track) {
+      const evidence = `${track.title || ''} ${track.album || ''} ${track.track_id || ''}`.toLowerCase();
+      if (/\b(a\s*cappella|acapella|vocals?\s+only)\b/.test(evidence)) return {label:'vocals only', css:'vocals'};
+      if (/\b(instrumentals?\s+only|instrumental\s+(version|mix)|instrumental)\b/.test(evidence)) return {label:'instrumental version', css:''};
+      return null;
+    }
     async function api(path, options) { const response = await fetch(path, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || response.statusText); return data; }
     function showPage(page) {
       state.page = page === 'mix' ? 'mix' : 'curate';
@@ -215,7 +223,10 @@
     }
     function row(track) {
       const bpm = track.bpm ? Number(track.bpm).toFixed(1) : '—';
-      return `<label class="track" title="${esc(track.track_id)}"><input type="checkbox" data-id="${esc(track.track_id)}" ${track.enabled?'checked':''}><span><div class="title">${esc(track.title)}</div><div class="artist">${esc(track.artist)}</div></span><span class="bpm ${track.bpm?'':'missing'}">${bpm}</span><span class="key ${track.key?'':'missing'}">${esc(track.key || '—')}</span></label>`;
+      const kind = inferredTrackType(track);
+      const badge = kind ? `<span class="track-type ${kind.css}">${esc(kind.label)}</span>` : '';
+      const album = track.album ? ` · ${esc(track.album)}` : '';
+      return `<label class="track" title="${esc(track.track_id)}"><input type="checkbox" data-id="${esc(track.track_id)}" ${track.enabled?'checked':''}><span><div class="title">${esc(track.title)}${badge}</div><div class="artist">${esc(track.artist)}${album}</div></span><span class="bpm ${track.bpm?'':'missing'}">${bpm}</span><span class="key ${track.key?'':'missing'}">${esc(track.key || '—')}</span></label>`;
     }
     async function loadMeta() {
       const currentArtist = el('artist').value;
@@ -388,7 +399,10 @@
       }
       el('finalized-rows').innerHTML = (finalized.tracks || []).map((t, i) => {
         const bpm = t.bpm ? Number(t.bpm).toFixed(1) : '—';
-        return `<div class="finalized-row"><span><strong>${String(i+1).padStart(2,'0')}.</strong> ${esc(t.artist)} — ${esc(t.title)}</span>` +
+        const kind = inferredTrackType(t);
+        const badge = kind ? ` <span class="track-type ${kind.css}">${esc(kind.label)}</span>` : '';
+        const album = t.album ? ` <span class="artist">· ${esc(t.album)}</span>` : '';
+        return `<div class="finalized-row"><span><strong>${String(i+1).padStart(2,'0')}.</strong> ${esc(t.artist)} — ${esc(t.title)}${badge}${album}</span>` +
           `<span class="bpm ${t.bpm?'':'missing'}">${bpm}</span>` +
           `<span class="key ${t.key?'':'missing'}">${esc(t.key || '—')}</span></div>`;
       }).join('');
