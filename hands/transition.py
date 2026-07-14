@@ -42,7 +42,11 @@ def smoothstep(x: float) -> float:
 def wait_for_next_beat(port: int, group: str, timeout_s: float = 10.0) -> None:
     """Block until the group's next beat_active rising edge (own connection,
     since pushed events would interleave with request replies otherwise)."""
-    with MixxxControl(port=port, timeout_s=timeout_s) as events_conn:
+    # A healthy beat_active stream produces an edge in well under two seconds
+    # for the tempos we mix. Fail over quickly instead of adding a ten-second
+    # hole to the set when the subscription itself is stale.
+    event_timeout_s = min(timeout_s, 3.0)
+    with MixxxControl(port=port, timeout_s=event_timeout_s) as events_conn:
         events_conn.subscribe(group, "beat_active")
         deadline = time.monotonic() + timeout_s
         try:
@@ -53,14 +57,38 @@ def wait_for_next_beat(port: int, group: str, timeout_s: float = 10.0) -> None:
                     break
         except TimeoutError:
             pass
-    raise TimeoutError(f"no beat from {group} within {timeout_s}s")
+    # Some dynamically loaded decks keep playing while Mixxx's control-API
+    # subscription drops beat_active notifications. Do not kill a live set
+    # for a missing push event: use the deck's analyzed BPM as a bounded
+    # fallback anchor. The next transition can still land within one beat.
+    with MixxxControl(port=port, timeout_s=2.0) as mixxx:
+        bpm = mixxx.get(group, "bpm")
+        playing = mixxx.get(group, "play") >= 0.5
+    if bpm > 0 and playing:
+        period = 60.0 / bpm
+        print(f"  (no beat_active edge from {group}; timing fallback at {bpm:.2f} BPM)")
+        time.sleep(period)
+        return
+    raise TimeoutError(f"no beat from {group} within {timeout_s}s (deck is not playing)")
 
 
 def wait_for_beats(port: int, group: str, beats: int, timeout_s: float = 90.0) -> None:
     """Count beat_active rising edges on a dedicated event connection."""
     if beats <= 0:
         return
-    with MixxxControl(port=port, timeout_s=timeout_s) as events_conn:
+    with MixxxControl(port=port, timeout_s=2.0) as mixxx:
+        bpm = mixxx.get(group, "bpm")
+        playing = mixxx.get(group, "play") >= 0.5
+    if bpm <= 0 or not playing:
+        raise TimeoutError(f"cannot wait for beats from {group}: deck is not playing at a valid BPM")
+
+    period = 60.0 / bpm
+    # Four missing beats are enough to decide the subscription is unhealthy;
+    # the old 90-second timeout made a dropped notification stream sound like
+    # the DJ simply stopped. Preserve total musical time with a BPM fallback.
+    event_timeout_s = min(timeout_s, max(2.0, 4.0 * period))
+    started = time.monotonic()
+    with MixxxControl(port=port, timeout_s=event_timeout_s) as events_conn:
         events_conn.subscribe(group, "beat_active")
         count = 0
         previous = 0.0
@@ -77,7 +105,13 @@ def wait_for_beats(port: int, group: str, beats: int, timeout_s: float = 90.0) -
                     break
         except TimeoutError:
             pass
-    raise TimeoutError(f"received fewer than {beats} beats from {group} within {timeout_s}s")
+    elapsed = time.monotonic() - started
+    remaining = max(0.0, beats * period - elapsed)
+    print(
+        f"  (beat_active stream stopped after {count}/{beats} beats; "
+        f"timing remaining {remaining:.1f}s at {bpm:.2f} BPM)"
+    )
+    time.sleep(remaining)
 
 
 def transition(

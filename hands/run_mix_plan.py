@@ -137,33 +137,154 @@ def settle_rate(mixxx: MixxxControl, deck: int, steps: int = 8) -> None:
     print(f"  rate settled to native tempo on deck {deck}")
 
 
+def set_bpm_target(mixxx: MixxxControl, deck: int, target_bpm: float) -> None:
+    """Set a deliberate bridge tempo and verify the perceived BPM.
+
+    ``rate`` is orientation-dependent in Mixxx skins/configurations, so try
+    both slider directions and retain the one whose BPM readback is closest.
+    The widened range is local to this deck and keylock remains enabled.
+    """
+    if target_bpm <= 0:
+        raise ValueError(f"invalid BPM target {target_bpm}")
+    group = deck_group(deck)
+    cue_position = mixxx.get(group, "playposition")
+    mixxx.set(group, "rate", 0.0)
+    native_bpm = _wait_for(mixxx, group, "bpm", lambda value: value > 0, 2.0)
+    delta = target_bpm / native_bpm - 1.0
+    if abs(delta) < 0.002:
+        return
+    rate_range = max(0.08, min(1.0, abs(delta) * 1.25))
+    mixxx.set(group, "rateRange", rate_range)
+    magnitude = min(1.0, abs(delta) / rate_range)
+    candidates: list[tuple[float, float]] = []
+    for slider in (magnitude, -magnitude):
+        mixxx.set(group, "rate", slider)
+        time.sleep(0.1)
+        candidates.append((abs(mixxx.get(group, "bpm") - target_bpm), slider))
+    _, best_slider = min(candidates)
+    mixxx.set(group, "rate", best_slider)
+    actual_bpm = _wait_for(
+        mixxx,
+        group,
+        "bpm",
+        lambda value: abs(value - target_bpm) <= max(0.5, target_bpm * 0.01),
+        2.0,
+    )
+    # Changing the rate range can make a newly loaded, stopped deck report a
+    # transient position near zero. Reassert and verify the planned cue after
+    # the tempo control has settled so tempo shaping cannot undo cue shaping.
+    mixxx.set(group, "playposition", cue_position)
+    _wait_for(
+        mixxx,
+        group,
+        "playposition",
+        lambda value: abs(value - cue_position) <= 0.002,
+        2.0,
+    )
+    print(
+        f"  deck {deck} bridge tempo: {native_bpm:.2f} -> "
+        f"{actual_bpm:.2f} BPM (target {target_bpm:.2f})"
+    )
+
+
+def cue_deck(
+    mixxx: MixxxControl,
+    deck: int,
+    *,
+    cue_fraction: float = 0.1,
+    cue_seconds: float | None = None,
+    duration: float | None = None,
+) -> tuple[float, str]:
+    """Seek a stopped deck and verify Mixxx accepted the requested cue."""
+    group = deck_group(deck)
+    duration = duration or _wait_for(
+        mixxx, group, "duration", lambda value: value > 0, LOAD_TIMEOUT_S
+    )
+    position = cue_seconds / duration if cue_seconds is not None else cue_fraction
+    position = min(0.95, max(0.0, position))
+    mixxx.set(group, "playposition", position)
+    actual_position = _wait_for(
+        mixxx,
+        group,
+        "playposition",
+        lambda value: abs(value - position) <= max(0.002, 1.0 / duration),
+        3.0,
+    )
+    actual_seconds = actual_position * duration
+    cue_label = (
+        f"{cue_seconds:.2f}s verified at {actual_seconds:.2f}s"
+        if cue_seconds is not None
+        else f"{position:.1%} verified at {actual_position:.1%}"
+    )
+    return actual_position, cue_label
+
+
 def load_deck(
     mixxx: MixxxControl,
     deck: int,
     path: str,
     cue_fraction: float = 0.1,
     cue_seconds: float | None = None,
+    expected_bpm: float | None = None,
 ) -> None:
     group = deck_group(deck)
     mixxx.set(group, "play", 0)
+    # A freed deck can still carry the previous track's deliberate tempo or
+    # key bridge. BPM is a *rate-adjusted* Mixxx readback, so neutralize those
+    # controls before loading and before using BPM as the new-track identity
+    # barrier. Otherwise a valid new track can wait forever for its native BPM.
+    mixxx.set(group, "rate", 0.0)
+    mixxx.set(group, "pitch_adjust", 0.0)
     try:
         mixxx.set(group, "eject", 1)
         _wait_for(mixxx, group, "track_loaded", lambda v: v < 0.5, 5.0)
     except TimeoutError:
         pass
     mixxx.load(deck, path)
+    mixxx.set(group, "rate", 0.0)
+    mixxx.set(group, "pitch_adjust", 0.0)
     _wait_for(mixxx, group, "track_loaded", lambda v: v >= 0.5, LOAD_TIMEOUT_S)
+    # track_loaded may remain true across a replacement. Waiting only for a
+    # positive BPM/duration can therefore accept the previous track's stale
+    # values and cue the wrong file. The plan knows the intended analyzed BPM,
+    # so use it as the load-identity barrier before touching playposition.
+    tolerance = max(0.35, (expected_bpm or 0.0) * 0.01)
+    bpm = _wait_for(
+        mixxx,
+        group,
+        "bpm",
+        lambda v: v > 0 and (
+            expected_bpm is None or abs(v - expected_bpm) <= tolerance
+        ),
+        LOAD_TIMEOUT_S,
+    )
     duration = _wait_for(mixxx, group, "duration", lambda v: v > 0, LOAD_TIMEOUT_S)
-    _wait_for(mixxx, group, "bpm", lambda v: v > 0, LOAD_TIMEOUT_S)
-    position = cue_seconds / duration if cue_seconds is not None else cue_fraction
-    mixxx.set(group, "playposition", min(0.95, max(0.0, position)))
+    _, cue_label = cue_deck(
+        mixxx,
+        deck,
+        cue_fraction=cue_fraction,
+        cue_seconds=cue_seconds,
+        duration=duration,
+    )
     mixxx.set(group, "volume", 1.0)
     mixxx.set(group, "keylock", 1)
     mixxx.set(group, "quantize", 1)
     mixxx.set(group, "rate", 0.0)
     mixxx.set(group, "pitch_adjust", 0.0)
-    cue_label = f"{cue_seconds:.2f}s" if cue_seconds is not None else f"{position:.1%}"
-    print(f"[load] deck {deck}: {Path(path).name}  ({duration:.0f}s, cue {cue_label})")
+    print(
+        f"[load] deck {deck}: {Path(path).name}  "
+        f"({duration:.0f}s, {bpm:.2f} BPM, cue {cue_label})"
+    )
+
+
+def ensure_deck_playing(mixxx: MixxxControl, deck: int) -> None:
+    """Recover a live deck whose play control was lost during a preload."""
+    group = deck_group(deck)
+    if mixxx.get(group, "play") >= 0.5:
+        return
+    print(f"  (deck {deck} was stopped unexpectedly; resuming at its current cue)")
+    mixxx.set(group, "play", 1)
+    _wait_for(mixxx, group, "play", lambda value: value >= 0.5, 3.0)
 
 
 def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[str]) -> None:
@@ -305,6 +426,40 @@ def echo_out_exit(mixxx: MixxxControl, deck: int) -> None:
 _echo_missing_noted = False
 
 
+def perform_opener_effect(mixxx: MixxxControl, event: dict, *, port: int) -> None:
+    """Tease the opener, echo/fade it out, rewind, and arm a clean first drop."""
+    deck = int(event["deck"])
+    group = deck_group(deck)
+    style = str(event.get("style") or "echo_tease_drop")
+    cue_position = mixxx.get(group, "playposition")
+    mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+    mixxx.set(group, "volume", 1.0)
+    mixxx.set(group, "play", 1)
+    tease_beats = max(1, int(event.get("tease_beats", 4)))
+    print(f"  {style}: teasing {event.get('track')} for {tease_beats} beats")
+    wait_for_beats(port, group, tease_beats, timeout_s=15.0)
+    if style == "echo_tease_drop" and echo_ready(mixxx):
+        echo_out_exit(mixxx, deck)
+    else:
+        # Portable fallback when the reserved Echo slot is not loaded.
+        for step in range(10, -1, -1):
+            mixxx.set(group, "volume", step / 10.0)
+            time.sleep(0.04)
+    mixxx.set(group, "play", 0)
+    mixxx.set(group, "rate", 0.0)
+    mixxx.set(group, "pitch_adjust", 0.0)
+    mixxx.set(group, "playposition", cue_position)
+    _wait_for(
+        mixxx,
+        group,
+        "playposition",
+        lambda value: abs(value - cue_position) <= 0.002,
+        2.0,
+    )
+    mixxx.set(group, "volume", 1.0)
+    print("  opener rewound; clean drop armed")
+
+
 def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     """Execute one beat-anchored transition with continuous instrument curves."""
     from_deck = int(event["from_deck"])
@@ -320,6 +475,9 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     # Hard cuts are rare by design — only explicit hard_cut move or the
     # extreme-tempo half_time_or_cut technique (key_clash is now a blend).
     hard = technique in {"key_clash_cut", "half_time_or_cut"} or "hard_cut" in moves
+
+    if event.get("incoming_bpm_target") is not None:
+        set_bpm_target(mixxx, to_deck, float(event["incoming_bpm_target"]))
 
     key_shift = 0.0
     if "key_blend" in moves:
@@ -413,6 +571,20 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     if key_shift:
         mixxx.set(in_g, "pitch_adjust", 0.0)
     mixxx.set(out_g, "play", 0)
+    if event.get("landing_seconds") is not None:
+        duration = mixxx.get(in_g, "duration")
+        actual_landing = mixxx.get(in_g, "playposition") * duration
+        expected_landing = float(event["landing_seconds"])
+        tolerance = float(event.get("landing_tolerance_seconds", 1.0))
+        if abs(actual_landing - expected_landing) > tolerance:
+            raise RuntimeError(
+                f"verse landing missed: expected {expected_landing:.3f}s, "
+                f"Mixxx reports {actual_landing:.3f}s"
+            )
+        print(
+            f"  verse landing verified at {actual_landing:.3f}s "
+            f"(target {expected_landing:.3f}s)"
+        )
     print(f"  {beats}-beat landing -> deck {to_deck}")
 
 
@@ -428,6 +600,11 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
         print(f"dry-run: {len(events)} events (no Mixxx connection)")
         return
 
+    expected_bpms = {
+        track.get("track_id"): track.get("bpm")
+        for track in (plan.get("tracks") or [])
+        if track.get("track_id")
+    }
     with MixxxControl(port=port, timeout_s=LOAD_TIMEOUT_S + 5) as mixxx:
         pending_preload: dict | None = None
         for i, event in enumerate(events, 1):
@@ -435,6 +612,16 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
             print(f"\n[{i}/{len(events)}] {op}")
             if op == "reset_instrument":
                 reset_instrument(mixxx)
+            elif op == "opener_effect":
+                perform_opener_effect(mixxx, event, port=port)
+            elif op == "recue":
+                _, cue_label = cue_deck(
+                    mixxx,
+                    int(event["deck"]),
+                    cue_fraction=float(event.get("cue_fraction", 0.1)),
+                    cue_seconds=event.get("cue_seconds"),
+                )
+                print(f"  deck {event['deck']} re-cued: {cue_label}")
             elif op == "load":
                 load_deck(
                     mixxx,
@@ -442,6 +629,7 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                     event["track_id"],
                     event.get("cue_fraction", 0.1),
                     event.get("cue_seconds"),
+                    expected_bpms.get(event["track_id"]),
                 )
             elif op == "start":
                 deck = event["deck"]
@@ -456,6 +644,7 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                 else:
                     print(f"  riding {event.get('track')} for {seconds:.0f}s")
                 print(f"  hints: {event.get('instrument_hints')}")
+                ensure_deck_playing(mixxx, int(event["deck"]))
                 if beats is not None:
                     # timeout scales with the ride: full verses (verse tour) can outlast
                     # the old fixed 90s at slower tempos
@@ -485,7 +674,13 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                 perform_transition(mixxx, event, port=port)
                 # restore EQ/filter after land
                 apply_moves(mixxx, from_deck, to_deck, ["eq_restore", "filter_reset"])
-                settle_rate(mixxx, to_deck)
+                if event.get("incoming_bpm_target") is not None:
+                    print(
+                        f"  holding deck {to_deck} at bridge tempo "
+                        f"{float(event['incoming_bpm_target']):.2f} BPM"
+                    )
+                else:
+                    settle_rate(mixxx, to_deck)
                 if pending_preload and pending_preload.get("deck") == from_deck:
                     print(f"  preload next into freed deck {from_deck}")
                     load_deck(
@@ -494,13 +689,25 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                         pending_preload["track_id"],
                         pending_preload.get("cue_fraction", 0.1),
                         pending_preload.get("cue_seconds"),
+                        expected_bpms.get(pending_preload["track_id"]),
                     )
                     pending_preload = None
             elif op == "finale":
                 beats = event.get("beats")
                 seconds = float(event.get("seconds", 30))
-                if beats:
+                if event.get("play_to_end"):
+                    deck = int(event["deck"])
+                    group = deck_group(deck)
+                    print(f"  finale {event.get('track')} (play to end)")
+                    ensure_deck_playing(mixxx, deck)
+                    deadline = time.monotonic() + seconds + 30.0
+                    while time.monotonic() < deadline:
+                        if mixxx.get(group, "play") < 0.5 or mixxx.get(group, "playposition") >= 0.999:
+                            break
+                        time.sleep(0.25)
+                elif beats:
                     print(f"  finale {event.get('track')} ({beats} beats)")
+                    ensure_deck_playing(mixxx, int(event["deck"]))
                     # timeout scales with the ride: full verses (verse tour) can outlast
                     # the old fixed 90s at slower tempos
                     wait_for_beats(port, deck_group(int(event["deck"])), int(beats),

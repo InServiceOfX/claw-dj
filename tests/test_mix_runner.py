@@ -1,7 +1,7 @@
 from unittest import TestCase
 from unittest.mock import patch
 
-from hands.run_mix_plan import perform_transition
+from hands.run_mix_plan import perform_transition, set_bpm_target
 
 
 class FakeMixxx:
@@ -21,6 +21,25 @@ class FakeMixxx:
 
 
 class MixRunnerTests(TestCase):
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_bpm_target_uses_rate_readback(self, _sleep) -> None:
+        class RateMixxx(FakeMixxx):
+            def __init__(self) -> None:
+                super().__init__()
+                self.values[("[Channel2]", "rate")] = 0.0
+                self.values[("[Channel2]", "rateRange")] = 0.08
+
+            def get(self, group: str, key: str) -> float:
+                if (group, key) == ("[Channel2]", "bpm"):
+                    rate = self.values[(group, "rate")]
+                    rate_range = self.values[(group, "rateRange")]
+                    return 124.5 * (1.0 + rate * rate_range)
+                return super().get(group, key)
+
+        mixxx = RateMixxx()
+        set_bpm_target(mixxx, 2, 100.0)
+        self.assertAlmostEqual(mixxx.get("[Channel2]", "bpm"), 100.0, delta=0.5)
+
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")
     @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 2.0])
