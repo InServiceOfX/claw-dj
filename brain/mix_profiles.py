@@ -32,6 +32,8 @@ class MixProfile:
     transition_scale: float = 1.0
     # Showcase flourish rotation applies every Nth transition (1 = all, 0 = never).
     flourish_every: int = 1
+    # First N transitions prioritize longer beat-matched blends and suppress tricks.
+    smooth_opening_transitions: int = 0
 
 
 PROFILES: dict[str, MixProfile] = {
@@ -85,7 +87,13 @@ def apply_brief(profile: MixProfile, brief: str) -> tuple[MixProfile, list[str]]
     def has(*words: str) -> bool:
         return any(re.search(rf"\b{re.escape(word)}", text) for word in words)
 
-    if has("longer", "long blend", "smooth", "breathe", "let it play", "let the", "relaxed"):
+    smooth_opening = has(
+        "smooth opening", "smooth first", "opening blends", "opening transitions"
+    )
+    if (
+        has("longer", "long blend", "breathe", "let it play", "let the", "relaxed")
+        or (has("smooth") and not smooth_opening)
+    ):
         profile = replace(
             profile,
             transition_scale=profile.transition_scale * 1.5,
@@ -109,6 +117,9 @@ def apply_brief(profile: MixProfile, brief: str) -> tuple[MixProfile, list[str]]
     if has("intro", "from the top", "full songs"):
         profile = replace(profile, intro_entry_every=2)
         notes.append("more intro entries (from the top)")
+    if smooth_opening:
+        profile = replace(profile, smooth_opening_transitions=7)
+        notes.append("first 7 transitions use longer trick-free beat-matched blends")
     return profile, notes
 
 

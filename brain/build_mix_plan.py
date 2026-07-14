@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+from contextlib import closing
 from pathlib import Path
 
 from brain.mix_graph import bpm_compatibility, key_compatibility, parse_key
@@ -94,6 +96,42 @@ def load_phrase_lookup(path: Path = DEFAULT_PHRASES) -> dict[str, dict]:
     payload = json.loads(path.read_text())
     rows = payload.get("tracks", payload if isinstance(payload, list) else [])
     return {row["track_id"]: row for row in rows}
+
+
+def load_dj_notes_lookup() -> dict[str, str]:
+    """Persistent human track knowledge; automated enrichment never edits it."""
+    from brain.library_index import connect
+
+    with closing(connect()) as db:
+        return {
+            row["track_id"]: row["dj_notes"] or ""
+            for row in db.execute("SELECT track_id, dj_notes FROM tracks WHERE dj_notes != ''")
+        }
+
+
+def track_directives(track: dict) -> dict:
+    """Parse small machine-readable hints embedded in natural DJ notes."""
+    notes = str(track.get("dj_notes") or "")
+
+    def number(name: str) -> float | None:
+        match = re.search(rf"\b{re.escape(name)}\s*=\s*(\d+(?:\.\d+)?)", notes, re.I)
+        return float(match.group(1)) if match else None
+
+    def word(name: str) -> str | None:
+        match = re.search(rf"\b{re.escape(name)}\s*=\s*([a-z_]+)", notes, re.I)
+        return match.group(1).casefold() if match else None
+
+    return {
+        "cue_seconds": number("cue_seconds"),
+        "ride_phrases": int(value) if (value := number("ride_phrases")) is not None else None,
+        "ride_beats": int(value) if (value := number("ride_beats")) is not None else None,
+        "play_bpm": number("play_bpm"),
+        "entry_style": word("entry_style"),
+        "opener_style": word("opener_style"),
+        "landing_seconds": number("landing_seconds"),
+        "landing_beats": int(value) if (value := number("landing_beats")) is not None else None,
+        "full_track": bool(re.search(r"\bfull_track\b", notes, re.I)),
+    }
 
 
 def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
@@ -232,6 +270,35 @@ def build_plan(
     events: list[dict] = []
 
     def cue_fields(track: dict, fallback_fraction: float, slot: int = 0) -> dict:
+        directive = track_directives(track)
+        if directive["cue_seconds"] is not None:
+            return {
+                "cue_seconds": directive["cue_seconds"],
+                "cue_confidence": 1.0,
+                "cue_source": "dj_notes",
+                "dj_notes": track.get("dj_notes") or "",
+            }
+        if (
+            directive["landing_seconds"] is not None
+            and directive["landing_beats"] is not None
+            and track.get("bpm")
+        ):
+            # Incoming audio begins at the start of the overlap. Pre-roll by
+            # exactly the overlap length so the requested lyric lands when
+            # the crossfader reaches the incoming deck.
+            cue_seconds = max(
+                0.0,
+                directive["landing_seconds"]
+                - directive["landing_beats"] * 60.0 / float(track["bpm"]),
+            )
+            return {
+                "cue_seconds": round(cue_seconds, 3),
+                "landing_seconds": directive["landing_seconds"],
+                "landing_beats": directive["landing_beats"],
+                "cue_confidence": 1.0,
+                "cue_source": "dj_notes_landing",
+                "dj_notes": track.get("dj_notes") or "",
+            }
         phrase = phrase_lookup.get(track["track_id"])
         if not phrase:
             return {"cue_fraction": fallback_fraction, "cue_source": "fraction_fallback"}
@@ -289,6 +356,28 @@ def build_plan(
             **cue_fields(selected[1], 0.12, 1),
         }
     )
+    opener_directive = track_directives(selected[0])
+    if opener_directive["opener_style"]:
+        events.append(
+            {
+                "op": "opener_effect",
+                "deck": 1,
+                "style": opener_directive["opener_style"],
+                "tease_beats": 4,
+                "track": f"{selected[0]['artist']} — {selected[0]['title']}",
+                "detail": "Tease the iconic opening, echo it out, rewind, then drop clean.",
+            }
+        )
+        events.append(
+            {
+                "op": "recue",
+                "deck": 2,
+                "track_id": selected[1]["track_id"],
+                "artist": selected[1]["artist"],
+                "title": selected[1]["title"],
+                **cue_fields(selected[1], 0.12, 1),
+            }
+        )
     events.append(
         {
             "op": "start",
@@ -340,6 +429,73 @@ def build_plan(
             tech["moves"].insert(0, flourish)
         tech["showcase_move"] = flourish
 
+        if index < profile.smooth_opening_transitions:
+            tech["transition_beats"] = max(24, tech["transition_beats"])
+            tech["moves"] = [
+                move for move in tech["moves"]
+                if move not in {
+                    "optional_scratch_in", "optional_loop_roll_out",
+                    "optional_transformer_cuts", "stutter_fill", "censor_fill",
+                    "brake_out", "spinback_out", "hard_cut",
+                }
+            ]
+            # The opening must sound continuous even when the ordinary
+            # compatibility recipe would have chosen a dramatic tempo cut.
+            if tech["technique"] == "half_time_or_cut":
+                tech.update(
+                    technique="tempo_gap_blend",
+                    moves=["rate_nudge_in", "sync", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"],
+                )
+            tech["showcase_move"] = "smooth_opening"
+            tech["notes"] += " Opening directive: longer beat-matched blend, no flourish."
+
+        incoming_directive = track_directives(incoming)
+        if incoming_directive["entry_style"] == "beat_drop":
+            tech.update(
+                technique="beat_drop_entry",
+                transition_beats=4,
+                moves=["brake_out", "hard_cut"],
+                showcase_move="beat_drop",
+                notes=(
+                    "Human DJ note: brake/stop the outgoing track, then start "
+                    "the incoming track from its opening as an abrupt beat drop."
+                ),
+            )
+        elif incoming_directive["entry_style"] == "gentle_blend":
+            tech.update(
+                technique="tempo_bridge_blend",
+                transition_beats=max(24, tech["transition_beats"]),
+                moves=[
+                    "sync", "eq_dip_out_mid", "filter_sweep_out",
+                    "crossfade", "filter_reset", "eq_restore",
+                ],
+                showcase_move="gentle_blend",
+                notes=(
+                    "Human DJ note: use a gentle, longer synced blend from "
+                    "the outgoing track's held bridge tempo."
+                ),
+            )
+        elif incoming_directive["entry_style"] == "verse_landing":
+            landing_beats = incoming_directive["landing_beats"] or 24
+            tech.update(
+                technique="verse_landing_blend",
+                transition_beats=landing_beats,
+                landing_seconds=incoming_directive["landing_seconds"],
+                landing_tolerance_seconds=1.0,
+                moves=[
+                    "sync", "eq_dip_out_mid", "filter_sweep_out",
+                    "crossfade", "filter_reset", "eq_restore",
+                ],
+                showcase_move="verse_landing",
+                notes=(
+                    "Human DJ note: pre-roll the incoming track during a "
+                    f"{landing_beats}-beat overlap so the crossfader lands "
+                    f"on its requested verse at {incoming_directive['landing_seconds']:.3f}s."
+                ),
+            )
+        if incoming_directive["play_bpm"] is not None:
+            tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
+
         # Reserve the final beat for perform_transition() to anchor on. After
         # the first fade, the incoming deck has already consumed fade beats of
         # its phrase, so only count the remainder before the next anchor.
@@ -354,11 +510,16 @@ def build_plan(
         # pick earns an extra phrase.
         pattern = profile.ride_phrases_pattern
         ride_phrases = pattern[index % len(pattern)]
+        directive = track_directives(outgoing)
+        if directive["ride_phrases"] is not None:
+            ride_phrases = max(1, min(8, directive["ride_phrases"]))
         out_phrase = phrase_lookup.get(outgoing["track_id"]) or {}
-        if ride_phrases == 1 and (out_phrase.get("confidence") or 0.0) >= profile.confidence_extra_phrase:
+        if directive["ride_phrases"] is None and ride_phrases == 1 and (out_phrase.get("confidence") or 0.0) >= profile.confidence_extra_phrase:
             ride_phrases = 2
         next_boundary += (ride_phrases - 1) * phrase_beats
         ride_beats = max(0, next_boundary - elapsed_in_phrase - 1)
+        if directive["ride_beats"] is not None:
+            ride_beats = max(0, min(512, directive["ride_beats"]))
 
         # Play body of outgoing track
         events.append(
@@ -423,16 +584,29 @@ def build_plan(
         live_deck = in_deck
         previous_fade_beats = tech["transition_beats"]
 
-    events.append(
-        {
-            "op": "finale",
-            "deck": live_deck,
-            "seconds": play_s,
-            "beats": max(16, phrase_beats - previous_fade_beats),
-            "track": f"{selected[-1]['artist']} — {selected[-1]['title']}",
-            "detail": "Ride out the last track; optional loop_roll or EQ kill for ending",
-        }
-    )
+    final_track = selected[-1]
+    final_directive = track_directives(final_track)
+    final_cue = cue_fields(final_track, 0.1, len(selected) - 1)
+    full_seconds = None
+    if final_directive["full_track"] and final_track.get("duration_seconds"):
+        cue_seconds = float(final_cue.get("cue_seconds") or 0.0)
+        full_seconds = max(1.0, float(final_track["duration_seconds"]) - cue_seconds)
+    finale = {
+        "op": "finale",
+        "deck": live_deck,
+        "seconds": full_seconds if full_seconds is not None else play_s,
+        "track": f"{final_track['artist']} — {final_track['title']}",
+        "detail": (
+            "Play the human-requested remainder of the full track"
+            if full_seconds is not None
+            else "Ride out the last track; optional loop_roll or EQ kill for ending"
+        ),
+    }
+    if full_seconds is not None:
+        finale["play_to_end"] = True
+    if full_seconds is None:
+        finale["beats"] = max(16, phrase_beats - previous_fade_beats)
+    events.append(finale)
     events.append({"op": "stop_all"})
 
     return {
@@ -448,6 +622,7 @@ def build_plan(
                 "bpm": t.get("bpm"),
                 "key": t.get("key"),
                 "track_id": t["track_id"],
+                "dj_notes": t.get("dj_notes") or "",
                 **cue_fields(t, 0.1, slot),
             }
             for slot, t in enumerate(selected)
@@ -533,6 +708,9 @@ def compose_mix_plan(
 
     profile, brief_notes = apply_brief(PROFILES[profile_name], mix_brief)
     rows = json.loads(playlist.read_text())
+    dj_notes = load_dj_notes_lookup()
+    for row in rows:
+        row["dj_notes"] = dj_notes.get(row.get("track_id"), row.get("dj_notes") or "")
     analyzed = [t for t in rows if t.get("bpm")]
     pool = analyzed if len(analyzed) >= 2 else rows
     if len(pool) < 2:

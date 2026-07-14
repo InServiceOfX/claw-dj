@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     bpm REAL,
     key TEXT,
     energy TEXT,
+    dj_notes TEXT NOT NULL DEFAULT '',
     first_seen_at REAL NOT NULL,
     last_seen_at REAL NOT NULL,
     available INTEGER NOT NULL DEFAULT 1,
@@ -93,6 +94,10 @@ def connect(path: Path = DEFAULT_INDEX) -> sqlite3.Connection:
     db = sqlite3.connect(path, timeout=30)
     db.row_factory = sqlite3.Row
     db.executescript(SCHEMA)
+    # Additive migration for indexes created before human DJ annotations.
+    columns = {row[1] for row in db.execute("PRAGMA table_info(tracks)")}
+    if "dj_notes" not in columns:
+        db.execute("ALTER TABLE tracks ADD COLUMN dj_notes TEXT NOT NULL DEFAULT ''")
     return db
 
 
@@ -119,6 +124,7 @@ def export_records(path: Path = DEFAULT_INDEX) -> list[dict]:
     fields = (
         "track_id", "title", "artist", "album", "genre", "duration_seconds",
         "size_bytes", "bpm", "key", "energy",
+        "dj_notes",
     )
     with closing(connect(path)) as db:
         rows = db.execute(

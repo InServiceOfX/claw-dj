@@ -9,6 +9,7 @@ from brain.build_mix_plan import (
     pick_technique,
     pitch_adjust_for_blend,
     plan_summary,
+    track_directives,
 )
 from brain.lyrics import lyric_overlap, title_search_variants, tokens
 from brain.mix_graph import key_compatibility
@@ -107,6 +108,154 @@ class MixPlanTest(TestCase):
         self.assertTrue(any("longer" in note for note in notes))
         # "no tricks" must not also fire the "tricks" positive branch.
         self.assertFalse(any("every transition" in note for note in notes))
+
+    def test_dj_notes_directives_override_cue_and_ride(self) -> None:
+        directives = track_directives(
+            {
+                "dj_notes": (
+                    "Skip the spoken intro. cue_seconds=113.428; "
+                    "ride_phrases=2; full_track"
+                )
+            }
+        )
+        self.assertEqual(directives["cue_seconds"], 113.428)
+        self.assertEqual(directives["ride_phrases"], 2)
+        self.assertIsNone(directives["ride_beats"])
+        self.assertIsNone(directives["play_bpm"])
+        self.assertIsNone(directives["entry_style"])
+        self.assertIsNone(directives["opener_style"])
+        self.assertIsNone(directives["landing_seconds"])
+        self.assertIsNone(directives["landing_beats"])
+        self.assertTrue(directives["full_track"])
+
+    def test_track_entry_directives_override_transition(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/out.mp3",
+                "artist": "Out",
+                "title": "Out",
+                "bpm": 140.0,
+                "key": "Am",
+            },
+            {
+                "track_id": "/music/drop.mp3",
+                "artist": "Drop",
+                "title": "Drop",
+                "bpm": 95.0,
+                "key": "Am",
+                "dj_notes": "cue_seconds=0; entry_style=beat_drop; play_bpm=100",
+            },
+            {
+                "track_id": "/music/blend.mp3",
+                "artist": "Blend",
+                "title": "Blend",
+                "bpm": 92.0,
+                "key": "Am",
+                "dj_notes": "entry_style=gentle_blend",
+            },
+        ]
+        plan = build_plan(
+            tracks,
+            count=3,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+        )
+        transitions = [
+            event for event in plan["events"] if event["op"] == "transition"
+        ]
+        self.assertEqual(transitions[0]["technique"], "beat_drop_entry")
+        self.assertEqual(transitions[0]["moves"], ["brake_out", "hard_cut"])
+        self.assertEqual(transitions[0]["incoming_bpm_target"], 100.0)
+        self.assertEqual(transitions[1]["technique"], "tempo_bridge_blend")
+        self.assertEqual(transitions[1]["showcase_move"], "gentle_blend")
+        self.assertGreaterEqual(transitions[1]["transition_beats"], 24)
+
+    def test_opener_effect_and_verse_landing_cue(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/opener.mp3",
+                "artist": "Opener",
+                "title": "Iconic Intro",
+                "bpm": 93.4,
+                "key": "Bbm",
+                "dj_notes": "cue_seconds=0; opener_style=echo_tease_drop",
+            },
+            {
+                "track_id": "/music/verse.mp3",
+                "artist": "Rapper",
+                "title": "Verse Track",
+                "bpm": 91.3,
+                "key": "Bb",
+                "dj_notes": (
+                    "entry_style=verse_landing; landing_seconds=28.740; "
+                    "landing_beats=24; ride_beats=80"
+                ),
+            },
+        ]
+        plan = build_plan(
+            tracks,
+            count=2,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+        )
+        ops = [event["op"] for event in plan["events"]]
+        self.assertIn("opener_effect", ops)
+        self.assertEqual(ops[ops.index("opener_effect") + 1], "recue")
+        verse = plan["tracks"][1]
+        self.assertEqual(verse["cue_source"], "dj_notes_landing")
+        self.assertAlmostEqual(verse["cue_seconds"], 12.968, places=3)
+        transition = next(
+            event for event in plan["events"] if event["op"] == "transition"
+        )
+        self.assertEqual(transition["technique"], "verse_landing_blend")
+        self.assertEqual(transition["transition_beats"], 24)
+        self.assertEqual(transition["landing_seconds"], 28.74)
+        body = next(event for event in plan["events"] if event["op"] == "play_body")
+        self.assertEqual(body["beats"], 63)
+
+    def test_smooth_opening_brief_builds_long_trick_free_blends(self) -> None:
+        profile, notes = apply_brief(
+            PROFILES["dj-showcase"],
+            "smooth opening transitions",
+        )
+        self.assertEqual(profile.smooth_opening_transitions, 7)
+        self.assertTrue(any("first 7 transitions" in note for note in notes))
+        self.assertFalse(any("longer rides" in note for note in notes))
+
+        tracks = [
+            {
+                "track_id": f"/music/{i}.mp3",
+                "artist": f"Artist{i}",
+                "title": f"Title{i}",
+                "bpm": 88 + i,
+                "key": "Am",
+            }
+            for i in range(9)
+        ]
+        plan = build_plan(
+            tracks,
+            count=len(tracks),
+            seconds_per_track=20.0,
+            affinity_lookup={},
+            profile=profile,
+        )
+        forbidden = {
+            "optional_scratch_in",
+            "optional_loop_roll_out",
+            "optional_transformer_cuts",
+            "stutter_fill",
+            "censor_fill",
+            "brake_out",
+            "spinback_out",
+            "hard_cut",
+        }
+        transitions = [
+            event for event in plan["events"] if event["op"] == "transition"
+        ]
+        for transition in transitions[:7]:
+            self.assertGreaterEqual(transition["transition_beats"], 24)
+            self.assertEqual(transition["showcase_move"], "smooth_opening")
+            self.assertTrue(forbidden.isdisjoint(transition["moves"]))
 
     def test_compose_mix_plan_and_summary(self) -> None:
         tracks = [
