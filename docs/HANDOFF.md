@@ -14,6 +14,20 @@ Written 2026-07-11 mid-hackathon so work can resume on a different machine
 
 Both goals point at the same architecture, so there's one codebase.
 
+**Hackathon outcome (2026-07-13): FINALIST** — no top-3/NVIDIA prize (PVLA
+won). Goal 2 is now the project. NemoClaw/H-agent engines stay while the
+free credits last, but are no longer required. Focus per Ernest:
+**transitions and mix quality** (songs are already chosen). Agreed next
+arc: keep LRCLIB *synced* lyrics (the fetcher strips timestamps today) →
+chorus/verse detection from line repetition, snapped to beatgrids →
+"verse tour" plan technique (same track on both decks, cut verse-to-verse,
+skip choruses; test case: Jay-Z "Watcher 2" — Dre/Jay/Rakim verses back to
+back) → offline transition-preview rendering → generic OpenAI-compatible
+LLM engine (covers xAI + local models + hermes with one client) → Rust
+(core-rust) gesture executor for sub-beat cuts/juggles. Database stays
+SQLite; cross-machine portability = relative-path identity + per-machine
+roots (optionally ship the sqlite file on the USB), not PostgreSQL.
+
 ## Repos
 
 - **`claw-dj`** (this repo) — `git@github.com:InServiceOfX/claw-dj.git`.
