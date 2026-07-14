@@ -130,24 +130,31 @@ can only load by numeric position. That position comes from
 fork) — fixed per build, but not something to hard-code: a different
 machine with LV2/VST backends installed would shift every index.
 
-**Resolution: convention over runtime lookup.** `[EffectRack1_EffectUnit4]`
-is reserved for Echo, loaded **once by hand**: Mixxx GUI → Effects panel →
-Effect Unit 4 → slot 1 → browse → Echo. After that one-time load, every
-control needed is name-stable and requires no further GUI interaction or
-index guessing:
-- `[EffectRack1_EffectUnit4_Effect1],loaded` — readback to confirm it's
+**Resolution: convention over runtime lookup.** One unit+slot is reserved
+for Echo, loaded **once by hand** via the GUI. On this machine that ended
+up being `[EffectRack1_EffectUnit2_Effect3]` — the compact 4-DECKS skin's
+effects strips don't label which unit is which (the "EFFECTS" tab in this
+skin is a visibility toggle for that same row, not a separate labeled
+rack — a dedicated multi-unit view may exist in other skins but not this
+one), so the pragmatic move was matching the code to wherever Echo
+actually landed rather than fighting the GUI for a specific slot number.
+After that one-time load, every control needed is name-stable and
+requires no further GUI interaction or index guessing:
+- `[EffectRack1_EffectUnit2_Effect3],loaded` — readback to confirm it's
   there (code checks this and no-ops with a one-time note if not)
-- `[EffectRack1_EffectUnit4_Effect1],enabled`
-- `[EffectRack1_EffectUnit4],mix` (dry/wet)
-- `[EffectRack1_EffectUnit4],group_[ChannelN]_enable` (route a deck through it)
+- `[EffectRack1_EffectUnit2_Effect3],enabled`
+- `[EffectRack1_EffectUnit2],mix` (dry/wet)
+- `[EffectRack1_EffectUnit2],group_[Channel1]_enable` (route a deck through it)
 
 Implemented in `hands/run_mix_plan.py` (`echo_out_exit`, `echo_ready`,
 `ECHO_UNIT`/`ECHO_SLOT`): ramps mix 0→1 while the outgoing deck's volume
 ramps 1→0 over ~1s, then un-routes the deck so Echo doesn't color whatever
-plays through unit 4 next. Verified: clean no-op when Echo isn't loaded
-(prints the one-time-GUI-step note, doesn't error). **Not yet heard live**
-— needs the manual GUI load first; same pattern would extend to Reverb in
-a second reserved unit (e.g. EffectUnit3) for a wash-out variant.
+plays through the unit next. **Live-fired 2026-07-14** against a real
+playing deck (G'd Up, deck 1): end state confirmed correct via readback
+(volume restored to 1.0, mix reset to 0, routing disabled) — same
+technical-pass/audible-confirmation-pending status as spinback/fade.
+Same pattern would extend to Reverb in a second reserved slot for a
+wash-out variant.
 
 ## Rust: controlling the whole board (`core-rust` plan)
 

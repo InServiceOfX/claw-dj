@@ -249,13 +249,15 @@ def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[s
 # Convention, not a runtime lookup: Mixxx exposes no load-by-name control
 # (EffectSlot's `loaded_effect` only takes a 1-indexed position in the
 # visible-effects list, which isn't stable across machines/plugin sets —
-# see docs/MIXXX_CONTROL_SURFACE.md). So EffectUnit4 is reserved by
-# convention for Echo, loaded ONCE by hand via the Mixxx GUI:
-#   Effects panel -> Effect Unit 4 -> slot 1 -> browse -> Echo.
-# Everything after that load is name-stable (enabled/mix/routing), so no
-# further GUI interaction or index guessing is ever needed.
-ECHO_UNIT = "[EffectRack1_EffectUnit4]"
-ECHO_SLOT = "[EffectRack1_EffectUnit4_Effect1]"
+# see docs/MIXXX_CONTROL_SURFACE.md). So one unit+slot is reserved by
+# convention for Echo, loaded ONCE by hand via the Mixxx GUI. On this
+# machine's skin that ended up being Unit 2 / slot 3 (the compact 4-DECKS
+# effects strips don't label unit numbers, so match whatever's actually
+# loaded rather than fight the GUI for a specific slot). Everything after
+# that load is name-stable (enabled/mix/routing) — no further GUI
+# interaction or index guessing is ever needed.
+ECHO_UNIT = "[EffectRack1_EffectUnit2]"
+ECHO_SLOT = "[EffectRack1_EffectUnit2_Effect3]"
 
 
 def echo_ready(mixxx: MixxxControl) -> bool:
