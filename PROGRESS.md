@@ -95,6 +95,34 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       the second half of the fade. Unknown/unfixable keys retain the old
       filtered masking blend. Loads and instrument reset defensively zero
       stale pitch adjustment. Unit-covered; live audible validation pending.
+- [x] **dj_notes: persistent human DJ knowledge → plan directives, and the
+      showcase mix recorded (2026-07-14, Codex session).** `Track.dj_notes`
+      (new SQLite column, additive migration) holds free-text per-track
+      notes that automated enrichment never touches;
+      `build_mix_plan.track_directives` parses small `key=value` hints out
+      of it — `cue_seconds`/`ride_phrases`/`ride_beats`/`play_bpm` pin exact
+      plan values, `entry_style` (`beat_drop`/`gentle_blend`/`verse_landing`)
+      swaps in a purpose-built transition technique with a verified landing
+      tolerance, `opener_style` adds a tease/echo/rewind/clean-drop opener
+      (new `opener_effect`+`recue` events), `full_track` lets the finale
+      ride the actual remaining runtime. `mix_profiles` gained
+      `smooth_opening_transitions` (brief: "smooth opening transitions" →
+      first N transitions forced into long, trick-free blends). Three
+      runner robustness fixes came out of actually finishing a full live
+      set: `load_deck` now waits for the plan's *expected* BPM as a load
+      identity barrier (a freed deck's stale bpm/position could otherwise
+      pass as the newly loaded track's), `wait_for_beats`/
+      `wait_for_next_beat` fall back to sleeping out the remaining musical
+      time at the deck's analyzed BPM instead of raising when Mixxx's
+      `beat_active` push subscription drops mid-run, and
+      `ensure_deck_playing` recovers a deck that silently lost its play
+      state during a preload. `brain/archive_mix_plan.py` snapshots a
+      known-good plan + playlist + exact runtime source with a git-commit
+      manifest; the archive labeled
+      `successful-full-playback-before-obs-capture` is the exact config in
+      Ernest's recorded showcase video. Playlist editor also now shows
+      album + acapella/instrumental badges (useful for dj_notes picking a
+      specific version deliberately).
 
 ## Next steps (roughly in order of value)
 
