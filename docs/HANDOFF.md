@@ -33,9 +33,30 @@ maps, 7 without synced lyrics on LRCLIB** (fallback plan: whisperX forced
 alignment against the plain lyrics, offline). Quality check — 21 Questions
 decomposed exactly right: 3 choruses ("Girl, it's easy to love me now") at
 32.7/94.6/156.6s, verse onsets at 53.2/115.0s, all bar-snapped with beat
-indices. Next: the **verse-tour plan technique** consuming these segments
-(same track on both decks, cut verse→verse, skip choruses; `verse_starts()`
-helper already exposes the cut-in points).
+indices. **Verse tour is built and live-validated (2026-07-13,
+`brain/build_verse_tour.py`).** Same track loaded on decks 1+2, on-beat
+`hard_cut` slams verse→verse, every chorus skipped, freed deck re-cued to
+the verse after next. Emits the standard plan schema — `hands.run_mix_plan
+--plan brain/data/verse_tour_plan.json` runs it unchanged (only runner
+tweak: `wait_for_beats` timeout now scales with ride length, since full
+verses outlast the old fixed 90s at slow tempos). Live run: 21 Questions,
+3 verses (beats 4/80/176 at 93.1 BPM), both cuts anchored clean, stop_all.
+No `sync` in verse cuts on purpose — beatsync's phase-pull would fight the
+lyric cue; quantize keeps the slam on grid. Jay-Z "Watcher 2" (Ernest's
+target example: Jay/Dre/Rakim verses back to back) is NOT on the drive —
+only Dre's "The Watcher"; when the file lands, it's
+`uv run python -m brain.build_verse_tour --track "Watcher 2"` after
+Mixxx analysis + `brain.lyric_timeline`.
+
+**DB portability Mac→Mac (asked 2026-07-13):** copy
+`brain/data/library.sqlite3` into the other clone's `brain/data/` (keep a
+backup copy on the USB itself so it travels); macOS mounts the stick at
+the same `/Volumes/USB322FD` path so absolute track_ids resolve unchanged
+(check `ls /Volumes` for a name collision → "USB322FD 1" breaks paths).
+Then one incremental scan regenerates crate/catalog in seconds. Mixxx
+beatgrids do NOT travel (they're in that machine's mixxxdb.sqlite) —
+import + analyze the finalized set there once; `enrich_set --status`
+shows exactly what's missing.
 
 **Hackathon outcome (2026-07-13): FINALIST** — no top-3/NVIDIA prize (PVLA
 won). Goal 2 is now the project. NemoClaw/H-agent engines stay while the

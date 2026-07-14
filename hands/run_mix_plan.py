@@ -312,7 +312,10 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                     print(f"  riding {event.get('track')} for {seconds:.0f}s")
                 print(f"  hints: {event.get('instrument_hints')}")
                 if beats is not None:
-                    wait_for_beats(port, deck_group(int(event["deck"])), int(beats))
+                    # timeout scales with the ride: full verses (verse tour) can outlast
+                    # the old fixed 90s at slower tempos
+                    wait_for_beats(port, deck_group(int(event["deck"])), int(beats),
+                                   timeout_s=max(90.0, int(beats) * 1.5))
                 else:
                     time.sleep(seconds)
             elif op == "preload_after_transition":
@@ -353,7 +356,10 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
                 seconds = float(event.get("seconds", 30))
                 if beats:
                     print(f"  finale {event.get('track')} ({beats} beats)")
-                    wait_for_beats(port, deck_group(int(event["deck"])), int(beats))
+                    # timeout scales with the ride: full verses (verse tour) can outlast
+                    # the old fixed 90s at slower tempos
+                    wait_for_beats(port, deck_group(int(event["deck"])), int(beats),
+                                   timeout_s=max(90.0, int(beats) * 1.5))
                 else:
                     print(f"  finale {event.get('track')} ({seconds:.0f}s)")
                     time.sleep(seconds)
