@@ -49,7 +49,7 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
                 track_ids,
             )
         }
-        for table in ("lyrics", "chroma", "phrases")
+        for table in ("lyrics", "chroma", "phrases", "lyric_timelines")
     }
     # BPM alone is enough for the mix plan; key is best-effort (control API
     # may not map, and Mixxx DB flush often lags). Treat bpm IS NOT NULL as ok.
@@ -75,6 +75,9 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
             "lyrics": tid in have_lyrics_text,
             "chroma": tid in have["chroma"],
             "phrases": tid in have["phrases"],
+            # attempted counts: tracks without synced lyrics on LRCLIB get an
+            # empty-timeline row so we don't refetch every run
+            "timeline": tid in have["lyric_timelines"],
         }
         for tid in track_ids
     }
@@ -249,6 +252,7 @@ def run_enrich(
     skip_lyrics: bool = False,
     skip_chroma: bool = False,
     skip_phrases: bool = False,
+    skip_timelines: bool = False,
     force_lyrics: bool = False,
     progress: Callable[[str], None] | None = None,
 ) -> dict:
@@ -290,7 +294,7 @@ def run_enrich(
         gaps = status(db, ids)
         need = {
             field: [t for t in tracks if not gaps[t["track_id"]][field]]
-            for field in ("bpm_key", "lyrics", "chroma", "phrases")
+            for field in ("bpm_key", "lyrics", "chroma", "phrases", "timeline")
         }
         for field, rows in need.items():
             note(f"missing {field}: {len(rows)}")
@@ -340,6 +344,20 @@ def run_enrich(
         else:
             note("[phrases] skipped")
 
+        if not skip_timelines:
+            from brain.lyric_timeline import build_for_tracks
+
+            gaps = status(db, ids)
+            targets = [t for t in tracks if not gaps[t["track_id"]]["timeline"]]
+            if targets:
+                note(f"[timelines] verse/chorus maps for {len(targets)} tracks…")
+                result = build_for_tracks(db, targets)
+                summary["timelines_built"] = result["built"]
+                summary["timelines_no_synced"] = result["no_synced"]
+                note(f"timelines: {result['built']} built, {result['no_synced']} without synced lyrics")
+        else:
+            note("[timelines] skipped")
+
         gaps = status(db, ids)
         summary["complete"] = sum(1 for g in gaps.values() if all(g.values()))
         for tid, g in gaps.items():
@@ -368,6 +386,7 @@ def main() -> None:
     parser.add_argument("--skip-lyrics", action="store_true")
     parser.add_argument("--skip-chroma", action="store_true")
     parser.add_argument("--skip-phrases", action="store_true")
+    parser.add_argument("--skip-timelines", action="store_true")
     parser.add_argument("--force-lyrics", action="store_true")
     args = parser.parse_args()
 
@@ -386,6 +405,7 @@ def main() -> None:
         skip_lyrics=args.skip_lyrics,
         skip_chroma=args.skip_chroma,
         skip_phrases=args.skip_phrases,
+        skip_timelines=args.skip_timelines,
         force_lyrics=args.force_lyrics,
     )
 

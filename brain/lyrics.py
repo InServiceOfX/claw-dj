@@ -111,6 +111,7 @@ def fetch_lyrics(artist: str, title: str, *, force: bool = False) -> dict:
         "artist": artist,
         "title": title,
         "lyrics": None,
+        "synced_lyrics": None,
         "source": None,
         "found": False,
         "error": None,
@@ -130,6 +131,10 @@ def fetch_lyrics(artist: str, title: str, *, force: bool = False) -> dict:
             record.update(
                 {
                     "lyrics": text.strip(),
+                    # Raw LRC with [mm:ss.xx] line timestamps — the foundation
+                    # for verse/chorus cut points (lyric_timeline.py). Kept
+                    # verbatim; only the plain-text copy strips timestamps.
+                    "synced_lyrics": best.get("syncedLyrics"),
                     "source": f"lrclib:{best.get('id')}",
                     "found": True,
                     "matched_artist": best.get("artistName"),

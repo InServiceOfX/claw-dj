@@ -60,6 +60,16 @@ CREATE TABLE IF NOT EXISTS phrases (
     analyzed_at REAL NOT NULL,
     payload TEXT NOT NULL
 );
+-- Synced-lyric timeline: raw LRC plus detected verse/chorus segments with
+-- vocal-start times snapped to the Mixxx beatgrid — the cut points the
+-- verse-tour / lyric-aware transitions build on. See brain/lyric_timeline.py.
+CREATE TABLE IF NOT EXISTS lyric_timelines (
+    track_id TEXT PRIMARY KEY,
+    computed_at REAL NOT NULL,
+    source TEXT NOT NULL,
+    lrc TEXT,
+    segments TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS scan_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     running INTEGER NOT NULL DEFAULT 0,

@@ -14,6 +14,29 @@ Written 2026-07-11 mid-hackathon so work can resume on a different machine
 
 Both goals point at the same architecture, so there's one codebase.
 
+### Synced-lyric timelines (2026-07-13, `brain/lyric_timeline.py`)
+
+First slice of the post-hackathon arc is live. `brain/lyrics.py` now keeps
+LRCLIB's `syncedLyrics` (raw LRC with per-line `[mm:ss.xx]` timestamps —
+it used to strip them). `brain/lyric_timeline.py` parses the LRC, detects
+chorus vs verse by line repetition (choruses recur near-verbatim; ≥3-word
+lines repeating ≥2×), splits segments on ≥12s silent gaps (instrumental
+breaks), and snaps each vocal onset to the nearest beatgrid bar (4 beats)
+via Mixxx's BeatGrid-2.0. Persisted in `lyric_timelines`
+(track_id, lrc, segments JSON); wired into `enrich_set` as the `timeline`
+step (check-before-fetch; no-synced tracks get an empty row so they aren't
+refetched every run). CLI: `uv run python -m brain.lyric_timeline`
+(finalized set) / `--show <path substring>` to print a track's map.
+
+Real coverage on the current 24-track set: **17 with full verse/chorus
+maps, 7 without synced lyrics on LRCLIB** (fallback plan: whisperX forced
+alignment against the plain lyrics, offline). Quality check — 21 Questions
+decomposed exactly right: 3 choruses ("Girl, it's easy to love me now") at
+32.7/94.6/156.6s, verse onsets at 53.2/115.0s, all bar-snapped with beat
+indices. Next: the **verse-tour plan technique** consuming these segments
+(same track on both decks, cut verse→verse, skip choruses; `verse_starts()`
+helper already exposes the cut-in points).
+
 **Hackathon outcome (2026-07-13): FINALIST** — no top-3/NVIDIA prize (PVLA
 won). Goal 2 is now the project. NemoClaw/H-agent engines stay while the
 free credits last, but are no longer required. Focus per Ernest:
