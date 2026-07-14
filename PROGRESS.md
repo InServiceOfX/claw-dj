@@ -63,38 +63,48 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       start); was listed here as todo — corrected per Codex's 2026-07-14
       review.
 
+- [x] **Spinback + Rust fade audibly-adjacent validated (2026-07-14)** —
+      live-ran both against a real playing deck; end states confirmed
+      correct (spinback: deck stopped, scratch2_enable cleaned up to 0;
+      fade: crossfader -1.0→+1.0, deck1 stopped, deck2 landed playing).
+      Human ear confirmation still pending — Ernest, give these a listen
+      next time you're at the board (`clawdj gesture --port 9995 spinback
+      --deck 1` / `fade --from 1 --to 2 --beats 8` with a track loaded and
+      playing on deck 1). `kill_swap` gesture still not a plan move —
+      Python EQ ramps handle bass swaps inside fades today.
+- [x] **Echo-out exit built (2026-07-14)** — `hands/run_mix_plan.py:
+      echo_out_exit`. Root cause of the original blocker: Mixxx has NO
+      load-by-name effect control, only load-by-list-position, which isn't
+      portable across machines/plugin sets. Resolved with a fixed
+      convention instead of runtime lookup — full writeup in
+      `docs/MIXXX_CONTROL_SURFACE.md` § "Loading effects deterministically".
+      **Needs a one-time manual step before it's live**: Mixxx GUI → Effects
+      panel → Effect Unit 4 → slot 1 → browse → load Echo. Until then the
+      move safely no-ops (verified). After that one load, it's permanent —
+      no GUI interaction ever again.
+
 ## Next steps (roughly in order of value)
 
-1. **Audible pass on spinback + Rust fade** — implemented and wired
-   (`spinback_out`) but never heard; 2-minute check with a mini plan.
-   `kill_swap` gesture exists but is not yet a plan move (Python EQ ramps
-   still handle bass swaps inside fades).
-2. **Echo-out exit** — blocked on loading the Echo effect into a slot
-   deterministically (effect_selector cycles; no load-by-name ControlObject
-   found yet). Investigate `[EffectRack1_EffectUnitN_EffectM],effect_selector`
-   semantics or a one-time manual load + config note.
-3. **New-vocabulary integration into `pick_technique`** — e.g. key-clash
+1. **Load Echo into EffectUnit4 (one-time, needs Ernest at the GUI)** —
+   see above; then live-test `echo_out_exit` in a real transition.
+2. **New-vocabulary integration into `pick_technique`** — e.g. key-clash
    pairs get `pitch_adjust` key_blend instead of a score toll;
    `beatsync_phase` fired one beat before every hard cut (verse tour).
-4. **Transition preview rendering** — ffmpeg-stitch each planned transition
+3. **Transition preview rendering** — ffmpeg-stitch each planned transition
    into a ~30s snippet for offline audition (`brain/preview_transitions.py`).
    The tightest iteration loop on mix quality; no Mixxx needed.
-5. **whisperX fallback for unsynced lyrics** — 7/24 tracks lack synced
+4. **whisperX fallback for unsynced lyrics** — 7/24 tracks lack synced
    lyrics; forced alignment against the plain lyrics fills the gap offline.
-6. **Generic OpenAI-compatible engine** in `brain/pick_candidates.py` —
+5. **Generic OpenAI-compatible engine** in `brain/pick_candidates.py` —
    covers xAI (Ernest has a key), local Ollama/LM Studio, and hermes with one
    client + base-URL/model config. NemoClaw/H engines stay while credits last.
-7. **Typed Rust control namespace** — codegen `controls.rs` from
+6. **Typed Rust control namespace** — codegen `controls.rs` from
    MIXXX_CONTROL_SURFACE.md so the board is compile-time-checked.
-8. **"Create the mix" UI panel** — preset buttons (dj-showcase/club-set/
-   warm-up) + free-text mix brief in the playlist editor, calling
-   `build_mix_plan --profile … --mix-brief …`; dry-run summary + confirmed
-   "Start mix". Follow the existing "Ask the DJ brain" panel pattern.
-9. **Cross-machine identity** — relative-path track ids + per-machine roots
+7. **Cross-machine identity** — relative-path track ids + per-machine roots
    (Linux mounts differ; macOS↔macOS already works — see HANDOFF). Optionally
    keep a `library.sqlite3` copy on the USB itself.
-10. **Grid repair from enrichment** — auto-fire `beats_set_halve/double`
-    when detected BPM is 2x/0.5x its genre-neighborhood median.
+8. **Grid repair from enrichment** — auto-fire `beats_set_halve/double`
+   when detected BPM is 2x/0.5x its genre-neighborhood median.
 
 ## Known gotchas (short list; details in HANDOFF)
 

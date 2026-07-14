@@ -241,7 +241,64 @@ def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[s
                 mixxx.set(out_g, "reloop_toggle", 1)
             except Exception:
                 pass
+        elif move == "echo_out_exit":
+            echo_out_exit(mixxx, from_deck)
         # sync / crossfade handled by transition()
+
+
+# Convention, not a runtime lookup: Mixxx exposes no load-by-name control
+# (EffectSlot's `loaded_effect` only takes a 1-indexed position in the
+# visible-effects list, which isn't stable across machines/plugin sets —
+# see docs/MIXXX_CONTROL_SURFACE.md). So EffectUnit4 is reserved by
+# convention for Echo, loaded ONCE by hand via the Mixxx GUI:
+#   Effects panel -> Effect Unit 4 -> slot 1 -> browse -> Echo.
+# Everything after that load is name-stable (enabled/mix/routing), so no
+# further GUI interaction or index guessing is ever needed.
+ECHO_UNIT = "[EffectRack1_EffectUnit4]"
+ECHO_SLOT = "[EffectRack1_EffectUnit4_Effect1]"
+
+
+def echo_ready(mixxx: MixxxControl) -> bool:
+    try:
+        return mixxx.get(ECHO_SLOT, "loaded") > 0.5
+    except Exception:
+        return False
+
+
+def echo_out_exit(mixxx: MixxxControl, deck: int) -> None:
+    """Echo-out: route the outgoing deck through the reserved Echo unit,
+    ring the tail in as its volume drops, then leave the unit routed off
+    (echo naturally decays into the still-playing incoming track).
+
+    No-ops (with a one-time note) if Echo hasn't been loaded into
+    EffectUnit4 yet — see ECHO_UNIT/ECHO_SLOT above.
+    """
+    global _echo_missing_noted
+    if not echo_ready(mixxx):
+        if not _echo_missing_noted:
+            print("  (Echo not loaded into EffectUnit4 slot 1 — echo_out_exit skipped;"
+                  " one-time GUI step, see docs/MIXXX_CONTROL_SURFACE.md)")
+            _echo_missing_noted = True
+        return
+    group = deck_group(deck)
+    route_key = f"group_{group}_enable"
+    mixxx.set(ECHO_SLOT, "enabled", 1)
+    mixxx.set(ECHO_UNIT, route_key, 1)
+    mixxx.set(ECHO_UNIT, "mix", 0.0)
+    steps = 20
+    for i in range(steps + 1):
+        progress = i / steps
+        mixxx.set(ECHO_UNIT, "mix", progress)
+        mixxx.set(group, "volume", 1.0 - progress)
+        time.sleep(0.05)
+    # Deck volume restored on its next load; echo unit unrouted so it
+    # doesn't color whatever plays through EffectUnit4 next.
+    mixxx.set(group, "volume", 1.0)
+    mixxx.set(ECHO_UNIT, route_key, 0)
+    mixxx.set(ECHO_UNIT, "mix", 0.0)
+
+
+_echo_missing_noted = False
 
 
 def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:

@@ -99,7 +99,11 @@ acapella stabs layered over the mix.
 ## New transition vocabulary this unlocks (build order suggestion)
 
 1. **echo_out_exit** — enable Echo on the outgoing deck, cut its volume on
-   the phrase; the tail rings into the incoming track. The classic clean exit.
+   the phrase; the tail rings into the incoming track. The classic clean
+   exit. **Built 2026-07-14** (`hands/run_mix_plan.py: echo_out_exit`) —
+   see "Loading effects deterministically" below for why it's
+   convention-based rather than a runtime lookup, and the one-time setup
+   step required before it's active.
 2. **brake_stop / spinback** — `scratch2` velocity ramps; dramatic verse-cut
    variant and set-ender.
 3. **censor fill** — `reverseroll` for a half-bar before a cut.
@@ -113,6 +117,37 @@ acapella stabs layered over the mix.
 9. **grid repair** — `beats_set_halve/double` driven by enrichment when
    detected BPM is 2x/0.5x the median of its genre neighbors.
 10. **sampler drops** on transition landings.
+
+## Loading effects deterministically (researched 2026-07-14)
+
+There is **no load-by-name control**. `EffectSlot`'s `loaded_effect`
+(`src/effects/effectslot.cpp`) takes a **1-indexed position in the visible
+effects list** — manifest string IDs (`EchoEffect::getId()`) exist
+internally but are never exposed to `ControlObject`, so the control API
+can only load by numeric position. That position comes from
+`BuiltInBackend::BuiltInBackend()` registration order in
+`builtinbackend.cpp` (Echo is the 8th `registerEffect<>()` call as of this
+fork) — fixed per build, but not something to hard-code: a different
+machine with LV2/VST backends installed would shift every index.
+
+**Resolution: convention over runtime lookup.** `[EffectRack1_EffectUnit4]`
+is reserved for Echo, loaded **once by hand**: Mixxx GUI → Effects panel →
+Effect Unit 4 → slot 1 → browse → Echo. After that one-time load, every
+control needed is name-stable and requires no further GUI interaction or
+index guessing:
+- `[EffectRack1_EffectUnit4_Effect1],loaded` — readback to confirm it's
+  there (code checks this and no-ops with a one-time note if not)
+- `[EffectRack1_EffectUnit4_Effect1],enabled`
+- `[EffectRack1_EffectUnit4],mix` (dry/wet)
+- `[EffectRack1_EffectUnit4],group_[ChannelN]_enable` (route a deck through it)
+
+Implemented in `hands/run_mix_plan.py` (`echo_out_exit`, `echo_ready`,
+`ECHO_UNIT`/`ECHO_SLOT`): ramps mix 0→1 while the outgoing deck's volume
+ramps 1→0 over ~1s, then un-routes the deck so Echo doesn't color whatever
+plays through unit 4 next. Verified: clean no-op when Echo isn't loaded
+(prints the one-time-GUI-step note, doesn't error). **Not yet heard live**
+— needs the manual GUI load first; same pattern would extend to Reverb in
+a second reserved unit (e.g. EffectUnit3) for a wash-out variant.
 
 ## Rust: controlling the whole board (`core-rust` plan)
 
