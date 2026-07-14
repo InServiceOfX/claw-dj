@@ -72,26 +72,28 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       --deck 1` / `fade --from 1 --to 2 --beats 8` with a track loaded and
       playing on deck 1). `kill_swap` gesture still not a plan move —
       Python EQ ramps handle bass swaps inside fades today.
-- [x] **Echo-out exit built AND live (2026-07-14)** —
+- [x] **Echo-out exit built AND live AND audibly confirmed (2026-07-14)** —
       `hands/run_mix_plan.py: echo_out_exit`. Root cause of the original
       blocker: Mixxx has NO load-by-name effect control, only
       load-by-list-position, which isn't portable across machines/plugin
       sets. Resolved with a fixed convention instead of runtime lookup —
       full writeup in `docs/MIXXX_CONTROL_SURFACE.md` § "Loading effects
-      deterministically". Echo is now loaded and the gesture live-fired
-      against a real playing deck; end state confirmed correct via
-      readback. **Gotcha for future setup on other machines**: this skin's
-      compact 4-DECKS effects strips don't label which unit is which, and
-      the "EFFECTS" tab toggles that row's visibility rather than opening a
-      separate labeled rack — so match `ECHO_UNIT`/`ECHO_SLOT` in
-      `run_mix_plan.py` to wherever Echo actually lands, don't assume a
-      specific unit number. Currently `EffectUnit2`/slot 3.
+      deterministically". Echo loaded, gesture fired against a real
+      playing deck, **Ernest confirmed by ear** — volume fade + rising
+      echo tail sounded right. **Gotcha for future setup on other
+      machines**: this skin's compact 4-DECKS effects strips don't label
+      which unit is which, and the "EFFECTS" tab toggles that row's
+      visibility rather than opening a separate labeled rack — so match
+      `ECHO_UNIT`/`ECHO_SLOT` in `run_mix_plan.py` to wherever Echo
+      actually lands, don't assume a specific unit number. Currently
+      `EffectUnit2`/slot 3.
 
 ## Next steps (roughly in order of value)
 
-1. **Human audible confirmation for spinback/fade/echo-out** — all three
-   are technically validated (correct end states via readback) but never
-   confirmed by ear. Quick listen next time Ernest is at the board.
+1. **Human audible confirmation for spinback/fade** — echo-out is
+   confirmed (above); spinback and fade are still only technically
+   validated (correct end states via readback), never confirmed by ear.
+   Quick listen next time Ernest is at the board.
 2. **New-vocabulary integration into `pick_technique`** — e.g. key-clash
    pairs get `pitch_adjust` key_blend instead of a score toll;
    `beatsync_phase` fired one beat before every hard cut (verse tour).

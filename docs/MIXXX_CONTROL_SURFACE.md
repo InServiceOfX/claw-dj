@@ -151,10 +151,11 @@ Implemented in `hands/run_mix_plan.py` (`echo_out_exit`, `echo_ready`,
 ramps 1→0 over ~1s, then un-routes the deck so Echo doesn't color whatever
 plays through the unit next. **Live-fired 2026-07-14** against a real
 playing deck (G'd Up, deck 1): end state confirmed correct via readback
-(volume restored to 1.0, mix reset to 0, routing disabled) — same
-technical-pass/audible-confirmation-pending status as spinback/fade.
-Same pattern would extend to Reverb in a second reserved slot for a
-wash-out variant.
+(volume restored to 1.0, mix reset to 0, routing disabled) **and
+confirmed by ear** — Ernest heard the fade + rising echo tail. First
+gesture in this batch to clear both bars (spinback/fade are still
+readback-only). Same pattern would extend to Reverb in a second reserved
+slot for a wash-out variant.
 
 ## Rust: controlling the whole board (`core-rust` plan)
 
