@@ -96,6 +96,7 @@ def reset_instrument(mixxx: MixxxControl) -> None:
         mixxx.set(group, "volume", 1.0)
         mixxx.set(group, "pregain", 1.0)
         mixxx.set(group, "rate", 0.0)
+        mixxx.set(group, "pitch_adjust", 0.0)
         mixxx.set(group, "keylock", 1)
         mixxx.set(group, "quantize", 1)
         mixxx.set(group, "mute", 0)
@@ -160,6 +161,7 @@ def load_deck(
     mixxx.set(group, "keylock", 1)
     mixxx.set(group, "quantize", 1)
     mixxx.set(group, "rate", 0.0)
+    mixxx.set(group, "pitch_adjust", 0.0)
     cue_label = f"{cue_seconds:.2f}s" if cue_seconds is not None else f"{position:.1%}"
     print(f"[load] deck {deck}: {Path(path).name}  ({duration:.0f}s, cue {cue_label})")
 
@@ -272,13 +274,13 @@ def echo_out_exit(mixxx: MixxxControl, deck: int) -> None:
     ring the tail in as its volume drops, then leave the unit routed off
     (echo naturally decays into the still-playing incoming track).
 
-    No-ops (with a one-time note) if Echo hasn't been loaded into
-    EffectUnit4 yet — see ECHO_UNIT/ECHO_SLOT above.
+    No-ops (with a one-time note) if Echo hasn't been loaded into the
+    configured unit/slot — see ECHO_UNIT/ECHO_SLOT above.
     """
     global _echo_missing_noted
     if not echo_ready(mixxx):
         if not _echo_missing_noted:
-            print("  (Echo not loaded into EffectUnit4 slot 1 — echo_out_exit skipped;"
+            print(f"  (Echo not loaded into {ECHO_SLOT} — echo_out_exit skipped;"
                   " one-time GUI step, see docs/MIXXX_CONTROL_SURFACE.md)")
             _echo_missing_noted = True
         return
@@ -294,7 +296,7 @@ def echo_out_exit(mixxx: MixxxControl, deck: int) -> None:
         mixxx.set(group, "volume", 1.0 - progress)
         time.sleep(0.05)
     # Deck volume restored on its next load; echo unit unrouted so it
-    # doesn't color whatever plays through EffectUnit4 next.
+    # doesn't color whatever plays through this effect unit next.
     mixxx.set(group, "volume", 1.0)
     mixxx.set(ECHO_UNIT, route_key, 0)
     mixxx.set(ECHO_UNIT, "mix", 0.0)
@@ -318,6 +320,18 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     # Hard cuts are rare by design — only explicit hard_cut move or the
     # extreme-tempo half_time_or_cut technique (key_clash is now a blend).
     hard = technique in {"key_clash_cut", "half_time_or_cut"} or "hard_cut" in moves
+
+    key_shift = 0.0
+    if "key_blend" in moves:
+        key_shift = float(event.get("pitch_adjust_semitones") or 0.0)
+        if abs(key_shift) > 2.0:
+            raise ValueError(f"unsafe key-blend shift {key_shift:+g}; plan limit is ±2 semitones")
+        if key_shift:
+            mixxx.set(in_g, "pitch_adjust", key_shift)
+            print(
+                f"  key bridge {key_shift:+g} st"
+                f" -> {event.get('pitch_adjust_target', 'compatible key')}"
+            )
 
     # Slip fills on the outgoing deck right before the landing — Rust
     # gestures, beat-anchored internally. Position keeps advancing under
@@ -380,6 +394,12 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
                 mixxx.set(filter_group(from_deck), "super1", 0.5 - 0.4 * curve)
             except Exception:
                 pass
+        if key_shift and progress >= 0.5:
+            # The outgoing deck masks the adjusted key during the first half
+            # of the overlap. As it disappears, glide the incoming deck back
+            # to native so there is no post-landing pitch jump.
+            release = min(1.0, (progress - 0.5) / 0.5)
+            mixxx.set(in_g, "pitch_adjust", key_shift * (1.0 - smoothstep(release)))
         if "optional_transformer_cuts" in moves and progress > 0.72:
             # Four restrained chops near the landing, still ending on target.
             phase = int((progress - 0.72) / 0.07)
@@ -390,6 +410,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         time.sleep(0.02)
 
     mixxx.set("[Master]", "crossfader", end_cf)
+    if key_shift:
+        mixxx.set(in_g, "pitch_adjust", 0.0)
     mixxx.set(out_g, "play", 0)
     print(f"  {beats}-beat landing -> deck {to_deck}")
 

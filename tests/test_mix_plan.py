@@ -3,8 +3,15 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from brain.analyze_via_mixxx import key_from_control
-from brain.build_mix_plan import build_plan, compose_mix_plan, pick_technique, plan_summary
+from brain.build_mix_plan import (
+    build_plan,
+    compose_mix_plan,
+    pick_technique,
+    pitch_adjust_for_blend,
+    plan_summary,
+)
 from brain.lyrics import lyric_overlap, title_search_variants, tokens
+from brain.mix_graph import key_compatibility
 from brain.mix_profiles import PROFILES, apply_brief
 
 
@@ -34,7 +41,11 @@ class MixPlanTest(TestCase):
             {"bpm": 100.5, "key": "F#"},
             {"score": 0.4, "lyric_score": 0.0, "chroma_score": 0.0, "reasons": []},
         )
-        self.assertEqual(tech["technique"], "key_clash_blend")
+        self.assertEqual(tech["technique"], "key_adjusted_blend")
+        self.assertIn("key_blend", tech["moves"])
+        self.assertLessEqual(abs(tech["pitch_adjust_semitones"]), 2)
+        adjusted_score, _ = key_compatibility("C", tech["pitch_adjust_target"])
+        self.assertGreaterEqual(adjusted_score, 0.85)
         self.assertNotIn("hard_cut", tech["moves"])
         self.assertGreaterEqual(tech["transition_beats"], 12)
         # Moderate tempo gap → tempo_gap_blend, not hard cut.
@@ -46,6 +57,17 @@ class MixPlanTest(TestCase):
         self.assertIn(gap["technique"], {"tempo_gap_blend", "half_time_or_cut"})
         if gap["technique"] == "tempo_gap_blend":
             self.assertNotIn("hard_cut", gap["moves"])
+
+    def test_pitch_adjust_uses_smallest_harmonic_bridge(self) -> None:
+        adjustment = pitch_adjust_for_blend("C", "F#")
+        self.assertIsNotNone(adjustment)
+        self.assertEqual(abs(adjustment["semitones"]), 1)
+        self.assertGreaterEqual(adjustment["compatibility"], 0.85)
+        camelot = pitch_adjust_for_blend("8B", "2B")
+        self.assertIsNotNone(camelot)
+        self.assertEqual(abs(camelot["semitones"]), 1)
+        self.assertIsNone(pitch_adjust_for_blend("Am", "Am"))
+        self.assertIsNone(pitch_adjust_for_blend(None, "F#"))
 
     def test_build_plan_has_instrument_map_and_transitions(self) -> None:
         tracks = [

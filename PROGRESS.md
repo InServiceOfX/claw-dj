@@ -87,6 +87,14 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       `ECHO_UNIT`/`ECHO_SLOT` in `run_mix_plan.py` to wherever Echo
       actually lands, don't assume a specific unit number. Currently
       `EffectUnit2`/slot 3.
+- [x] **Key-adjusted blends planned and executed (2026-07-14)** — close-BPM
+      key clashes now become `key_adjusted_blend` when a deterministic
+      ±1–2-semitone bridge reaches the same/relative/Camelot-neighbor key.
+      Plans persist the shift and target key; the runner applies
+      `pitch_adjust` for the overlap and curves it back to native through
+      the second half of the fade. Unknown/unfixable keys retain the old
+      filtered masking blend. Loads and instrument reset defensively zero
+      stale pitch adjustment. Unit-covered; live audible validation pending.
 
 ## Next steps (roughly in order of value)
 
@@ -94,12 +102,14 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
    confirmed (above); spinback and fade are still only technically
    validated (correct end states via readback), never confirmed by ear.
    Quick listen next time Ernest is at the board.
-2. **New-vocabulary integration into `pick_technique`** — e.g. key-clash
-   pairs get `pitch_adjust` key_blend instead of a score toll;
-   `beatsync_phase` fired one beat before every hard cut (verse tour).
-3. **Transition preview rendering** — ffmpeg-stitch each planned transition
+2. **Transition preview rendering** — ffmpeg-stitch each planned transition
    into a ~30s snippet for offline audition (`brain/preview_transitions.py`).
    The tightest iteration loop on mix quality; no Mixxx needed.
+3. **Phase-align hard-cut experiment** — A/B `beatsync_phase` on ordinary
+   hard cuts. Do not silently add it to verse tour: that path was already
+   live-validated with native-tempo, quantized cuts because phase-pull can
+   move a lyric cue. Promote only after an audible test proves the pre-roll
+   and cue semantics.
 4. **whisperX fallback for unsynced lyrics** — 7/24 tracks lack synced
    lyrics; forced alignment against the plain lyrics fills the gap offline.
 5. **Generic OpenAI-compatible engine** in `brain/pick_candidates.py` —

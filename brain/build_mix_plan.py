@@ -18,13 +18,63 @@ import argparse
 import json
 from pathlib import Path
 
-from brain.mix_graph import bpm_compatibility, key_compatibility
+from brain.mix_graph import bpm_compatibility, key_compatibility, parse_key
 
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_PLAYLIST = DATA_DIR / "playlist.json"
 DEFAULT_AFFINITY = DATA_DIR / "mix_affinity.json"
 DEFAULT_PHRASES = DATA_DIR / "phrase_analysis.json"
 DEFAULT_PLAN = DATA_DIR / "mix_plan.json"
+
+_PITCH_CLASS_NAMES = (
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+)
+
+
+def pitch_adjust_for_blend(
+    outgoing_key: str | None,
+    incoming_key: str | None,
+    *,
+    max_semitones: int = 2,
+) -> dict | None:
+    """Find the smallest bounded shift that makes the incoming key friendly.
+
+    Mixxx's ``pitch_adjust`` is expressed in semitones (and supports ±3), but
+    a one- or two-semitone bridge is the most we want to expose as an ordinary
+    blend technique. The mode stays fixed; only the incoming tonic moves.
+    """
+    outgoing = parse_key(outgoing_key)
+    incoming = parse_key(incoming_key)
+    if not outgoing or not incoming:
+        return None
+    current_score, _ = key_compatibility(outgoing_key, incoming_key)
+    if current_score >= 0.85:
+        return None
+
+    number, mode = incoming
+    # Camelot 8A = A minor (pitch class 9), 8B = C major (pitch class 0).
+    base = 9 if mode == "A" else 0
+    pitch_class = (base + 7 * (number - 8)) % 12
+    candidates: list[tuple[int, float, int, str, str | None]] = []
+    for distance in range(1, max_semitones + 1):
+        for semitones in (-distance, distance):
+            target_note = _PITCH_CLASS_NAMES[(pitch_class + semitones) % 12]
+            target_key = f"{target_note}m" if mode == "A" else target_note
+            score, reason = key_compatibility(outgoing_key, target_key)
+            if score >= 0.85:
+                # Prefer the smallest audible shift, then the stronger match.
+                candidates.append((distance, -score, semitones, target_key, reason))
+        if candidates:
+            break
+    if not candidates:
+        return None
+    _, neg_score, semitones, target_key, reason = min(candidates)
+    return {
+        "semitones": semitones,
+        "target_key": target_key,
+        "compatibility": -neg_score,
+        "reason": reason,
+    }
 
 
 def load_affinity_lookup(path: Path = DEFAULT_AFFINITY) -> dict[tuple[str, str], dict]:
@@ -61,6 +111,12 @@ def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
     chroma = float((affinity or {}).get("chroma_score") or 0)
     score = float((affinity or {}).get("score") or (0.45 * bpm_s + 0.35 * key_s))
 
+    key_adjust = (
+        pitch_adjust_for_blend(left.get("key"), right.get("key"))
+        if bpm_s >= 0.9 and key_s < 0.5
+        else None
+    )
+
     # Technique selection — map musical situation → Mixxx knobs/moves.
     # Prefer longer crossfades; only hard_cut when the gap is truly ugly.
     if lineage or lyric > 0.2:
@@ -73,12 +129,25 @@ def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
         beats = 20
         notes = "Near-identical tempo + friendly key — long crossfade with light EQ."
         moves = ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"]
+    elif key_adjust is not None:
+        technique = "key_adjusted_blend"
+        beats = 16
+        shift = key_adjust["semitones"]
+        notes = (
+            f"Tempo works; shift the incoming deck {shift:+d} semitone(s) to "
+            f"{key_adjust['target_key']} for the overlap, then return smoothly "
+            "to its native key as the outgoing deck disappears."
+        )
+        moves = ["key_blend", "sync", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"]
     elif bpm_s >= 0.9 and key_s < 0.5:
-        # Was a short cut — now a filtered blend so the key clash is masked
-        # without slamming the crossfader.
+        # Unknown/unfixable keys retain the masking recipe rather than making
+        # up a pitch adjustment.
         technique = "key_clash_blend"
         beats = 16
-        notes = "Tempo works; key is rough — longer filter-sweep blend to mask the clash (not a hard cut)."
+        notes = (
+            "Tempo works; key is rough — filter-sweep blend masks the clash "
+            "because no safe ±2-semitone bridge was found."
+        )
         moves = ["sync", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"]
     elif bpm_s < 0.35 and not lineage and chroma < 0.55:
         # Rare hard cut: only when tempos are far apart and nothing else backs the pair.
@@ -117,7 +186,7 @@ def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
         moves = ["optional_scratch_in", *moves]
         notes += " Optional scratch-in on the incoming deck before the fade."
 
-    return {
+    result = {
         "technique": technique,
         "transition_beats": beats,
         "score": round(score, 3),
@@ -128,6 +197,17 @@ def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
         "lyric_score": lyric,
         "chroma_score": chroma,
     }
+    if key_adjust is not None and technique == "key_adjusted_blend":
+        result.update(
+            pitch_adjust_semitones=key_adjust["semitones"],
+            pitch_adjust_target=key_adjust["target_key"],
+            pitch_adjust_compatibility=key_adjust["compatibility"],
+        )
+        result["reasons"].append(
+            f"pitch bridge {right.get('key')}→{key_adjust['target_key']} "
+            f"({key_adjust['semitones']:+d} st)"
+        )
+    return result
 
 
 def build_plan(
@@ -330,6 +410,14 @@ def build_plan(
                 "beats": tech["transition_beats"],
                 "score": tech["score"],
                 "showcase_move": tech["showcase_move"],
+                **(
+                    {
+                        "pitch_adjust_semitones": tech["pitch_adjust_semitones"],
+                        "pitch_adjust_target": tech["pitch_adjust_target"],
+                    }
+                    if "pitch_adjust_semitones" in tech
+                    else {}
+                ),
             }
         )
         live_deck = in_deck
@@ -388,6 +476,7 @@ INSTRUMENT_MAP = {
         "rate": "[ChannelN],rate  (-1..1 pitch slider)",
         "rate_temp": "nudge for slip",
         "bpm_read": "[ChannelN],bpm",
+        "key_bridge": "[ChannelN],pitch_adjust  (bounded ±1..2 semitones)",
     },
     "eq_filter": {
         "eq_low": "[EqualizerRack1_[ChannelN]_Effect1],parameter1",
@@ -402,7 +491,7 @@ INSTRUMENT_MAP = {
         "reverse_reverseroll": "[ChannelN],reverseroll",
     },
     "fx_ideas": {
-        "echo_out": "EffectUnit1 on outgoing during last 4 beats of fade",
+        "echo_out": "reserved Echo slot routed to outgoing during exit",
         "flanger_build": "EffectUnit2 wet increase into drop",
     },
 }

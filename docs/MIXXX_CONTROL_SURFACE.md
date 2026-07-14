@@ -111,8 +111,12 @@ acapella stabs layered over the mix.
    fill before a landing.
 5. **kill-switch bass swap** — `button_parameter1` toggles instead of ramps.
 6. **key_blend** — `pitch_adjust` the incoming deck to a compatible key for
-   the blend, release after landing (kills the "key clash" toll).
-7. **phase-align cuts** — `beatsync_phase` one beat before every hard cut.
+   the blend, then curve back to native through the second half of the
+   overlap. **Built 2026-07-14**: `pick_technique` computes the smallest
+   deterministic ±1–2-semitone bridge; `run_mix_plan` applies and restores it.
+7. **phase-align cuts** — `beatsync_phase` before ordinary hard cuts. Still
+   needs an audible pre-roll/cue-semantics experiment; verse tour deliberately
+   remains native-tempo + quantized because phase-pull can move lyric cues.
 8. **curve switching** — sharp `xFaderCurve` for cuts, smooth for blends.
 9. **grid repair** — `beats_set_halve/double` driven by enrichment when
    detected BPM is 2x/0.5x the median of its genre neighbors.

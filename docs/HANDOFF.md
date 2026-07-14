@@ -775,3 +775,24 @@ The generated six-track Mac plan is roughly two minutes: Beautiful -> Fallin'
 points came from Mixxx grids plus local energy scoring. Live autonomous
 execution requires the patched Mixxx control API; port 9995 was not listening
 on the Mac during this implementation, so the plan was dry-run verified there.
+
+## Key-adjusted blends (2026-07-14, `feat/post-hackathon-direction`)
+
+`brain.build_mix_plan.pick_technique` now turns close-BPM key clashes into
+`key_adjusted_blend` when the incoming key can reach a same, relative, or
+Camelot-neighbor key with a bounded ±1–2-semitone move. The plan records
+`pitch_adjust_semitones` and `pitch_adjust_target`; no key metadata means no
+guessed shift and falls back to the filtered `key_clash_blend` recipe.
+
+`hands.run_mix_plan` applies Mixxx `[ChannelN],pitch_adjust` before the
+incoming deck starts, holds it through the first half of the overlap, then
+smoothly returns to native key as the outgoing deck disappears. Instrument
+reset and every deck load zero stale pitch adjustment defensively. Unit tests
+cover planner selection, bounded harmonic targets, runner apply/restore, and
+rejection of shifts beyond the plan's ±2-semitone safety limit. Audible live
+validation is still pending.
+
+Do **not** infer that verse-tour cuts should now use `beatsync_phase`: the tour
+was live-validated without sync because phase-pull can move its lyric-aligned
+cue. Phase-only alignment remains a separate A/B experiment for ordinary hard
+cuts before it becomes planner vocabulary.

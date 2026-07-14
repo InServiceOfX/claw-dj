@@ -29,13 +29,13 @@ uv run python -m hands.run_mix_plan
 | Family | Control (Mixxx) | What it's for |
 | --- | --- | --- |
 | Transport | `play`, cue via `playposition` | Start/stop, drop on phrase |
-| Sync | `beatsync`, `keylock`, `quantize` | Beatmatch + keep pitch when rate moves |
+| Sync/key | `beatsync`, `keylock`, `quantize`, `pitch_adjust` | Beatmatch; bridge rough keys by ±1–2 semitones during overlap |
 | Levels | `volume`, `pregain`, `[Master] crossfader` | Blend decks / bus gain |
 | Tempo | `rate` | Match BPM (±~8% comfortable); scratch-like wiggles |
 | EQ | EqualizerRack `parameter1/2/3` (low/mid/high) | Kill bass on outgoing, carve space |
 | Filter | QuickEffect `super1` | High-pass sweep to hide key clashes |
 | Phrase | `beatjump_*`, `beatloop_*_toggle` | Skip to hook, loop-roll fills |
-| FX (manual/extend) | EffectUnit wet/dry | Echo-out, flanger builds |
+| FX | EffectUnit wet/dry | Convention-based echo-out; flanger/reverb builds remain extensions |
 
 MIDI mapping (`hands/mixxx_mapping/`) already exposes play/cue/sync, crossfader,
 volume, rate, and EQ for decks 1–2. The control API used by `run_mix_plan` can
@@ -48,8 +48,9 @@ touch any control the engine exposes — useful for filter, loops, and load.
 | `smooth_blend` | Close BPM + friendly key | sync, mid scoop, 16-beat crossfade |
 | `sample_callback_blend` | Sample lineage or lyric hook overlap | longer fade, EQ keep shared bed |
 | `chroma_matched_blend` | High chromagram similarity | longer EQ blend even if keys differ |
-| `key_clash_cut` | Tempo OK, key rough | filter sweep + short cut |
-| `half_time_or_cut` | Tempo far apart | rate nudge / hard cut / loop roll |
+| `key_adjusted_blend` | Tempo close, key rough but safely bridgeable | incoming `pitch_adjust` ±1–2 st during overlap, filtered fade, smooth native-key return |
+| `key_clash_blend` | Tempo close, key unknown or not safely bridgeable | filter sweep masks the overlap; no invented pitch shift |
+| `half_time_or_cut` | Tempo far apart | Rust brake exit; anchored hard-cut fallback without the binary |
 | `standard_blend` | Default | sync + mid dip + crossfade |
 
 Optional **scratch-in** (rate oscillation) is attached when affinity is high —
@@ -70,8 +71,9 @@ energy level and energy rise. The waveform does not become a second beatgrid.
 At runtime, `hands.run_mix_plan` counts Mixxx `beat_active` events. Each new
 track starts on a phrase boundary, the next transition begins after a fixed
 32-beat interval, and the fade itself is measured in beats. The recipes curve
-the crossfader, EQ bass swap, and filter continuously; one showcase gesture is
-rotated per transition (scratch preview, loop roll, or transformer cuts).
+the crossfader, EQ bass swap, filter, and bounded key bridge continuously;
+showcase gestures rotate across scratch preview, loop roll, stutter, censor,
+and transformer cuts.
 
 ## Lyrics policy
 
