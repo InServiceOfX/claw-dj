@@ -84,8 +84,12 @@ def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
         # Rare hard cut: only when tempos are far apart and nothing else backs the pair.
         technique = "half_time_or_cut"
         beats = 4
-        notes = "Extreme tempo gap with no texture/lineage support — phrase-anchored hard cut (use sparingly)."
-        moves = ["rate_nudge_in", "hard_cut", "optional_loop_roll_out"]
+        notes = (
+            "Extreme tempo gap with no texture/lineage support — brake the outgoing "
+            "platter to a stop, then the new track hits (falls back to a phrase-anchored "
+            "hard cut without the clawdj binary). Use sparingly."
+        )
+        moves = ["brake_out", "hard_cut", "optional_loop_roll_out"]
     elif bpm_s < 0.5:
         technique = "tempo_gap_blend"
         beats = 16
@@ -234,15 +238,26 @@ def build_plan(
         tech["moves"] = [move for move in tech["moves"] if move != "optional_scratch_in"]
         flourish = "bass_swap"
         if profile.flourish_every and index % profile.flourish_every == 0:
-            flourish = ("bass_swap", "scratch_preview", "loop_roll", "transformer_cut")[
-                (index // profile.flourish_every) % 4
-            ]
+            # Rotation includes the Rust slip gestures (stutter/censor);
+            # the runner degrades them to plain blends when the clawdj
+            # binary is missing, so plans stay portable.
+            rotation = (
+                "bass_swap",
+                "scratch_preview",
+                "stutter_fill",
+                "loop_roll",
+                "censor_fill",
+                "transformer_cut",
+            )
+            flourish = rotation[(index // profile.flourish_every) % len(rotation)]
         if flourish == "scratch_preview" and tech["score"] >= 0.7:
             tech["moves"].insert(0, "optional_scratch_in")
         elif flourish == "loop_roll":
             tech["moves"].insert(0, "optional_loop_roll_out")
         elif flourish == "transformer_cut":
             tech["moves"].insert(0, "optional_transformer_cuts")
+        elif flourish in ("stutter_fill", "censor_fill"):
+            tech["moves"].insert(0, flourish)
         tech["showcase_move"] = flourish
 
         # Reserve the final beat for perform_transition() to anchor on. After

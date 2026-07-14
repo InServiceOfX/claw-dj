@@ -27,6 +27,47 @@ LOAD_TIMEOUT_S = 30.0
 EQ_GROUP = "[EqualizerRack1_{channel}_Effect1]"
 FILTER_GROUP = "[QuickEffectRack1_{channel}]"
 
+# Rust gesture executor (core-rust) — sub-beat timing loops for slip fills
+# and platter moves. Plans may name these gestures; when the binary is
+# missing every caller degrades to the plain Python path, so plans stay
+# portable across machines.
+_CLAWDJ_CANDIDATES = (
+    Path(__file__).resolve().parent.parent / "core-rust" / "target" / "release" / "clawdj",
+    Path(__file__).resolve().parent.parent / "core-rust" / "target" / "debug" / "clawdj",
+)
+_clawdj_missing_noted = False
+
+
+def clawdj_binary() -> Path | None:
+    for candidate in _CLAWDJ_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def rust_gesture(*args: str, port: int) -> bool:
+    """Run one `clawdj gesture …`; True on success, False to fall back."""
+    global _clawdj_missing_noted
+    import subprocess
+
+    binary = clawdj_binary()
+    if binary is None:
+        if not _clawdj_missing_noted:
+            print("  (clawdj binary not built — Rust gestures degrade to plain blends;"
+                  " build: cd core-rust && cargo build --release -p clawdj-cli)")
+            _clawdj_missing_noted = True
+        return False
+    # clap parses parent-level flags (--port) only before the subcommand.
+    result = subprocess.run(
+        [str(binary), "gesture", "--port", str(port), *args],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"  (gesture {args[0]} failed: {(result.stderr or result.stdout).strip()[:200]})")
+        return False
+    return True
+
 
 def _wait_for(mixxx: MixxxControl, group: str, key: str, predicate, timeout_s: float) -> float:
     deadline = time.monotonic() + timeout_s
@@ -218,6 +259,29 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     # Hard cuts are rare by design — only explicit hard_cut move or the
     # extreme-tempo half_time_or_cut technique (key_clash is now a blend).
     hard = technique in {"key_clash_cut", "half_time_or_cut"} or "hard_cut" in moves
+
+    # Slip fills on the outgoing deck right before the landing — Rust
+    # gestures, beat-anchored internally. Position keeps advancing under
+    # slip, so the transition anchor below still lands on grid.
+    if "stutter_fill" in moves and rust_gesture(
+            "stutter", "--deck", str(from_deck), "--rolls", "2", "--size", "0.5", port=port):
+        print("  stutter fill (slip loop-roll)")
+    elif "censor_fill" in moves and rust_gesture(
+            "censor", "--deck", str(from_deck), "--beats", "2", port=port):
+        print("  censor fill (slip reverse)")
+
+    # Platter exits: brake/spinback the outgoing deck to silence, THEN the
+    # incoming track hits. The moment of quiet is the drama — use sparingly.
+    if "brake_out" in moves or "spinback_out" in moves:
+        gesture = ("spinback", "--deck", str(from_deck), "--seconds", "1.6") \
+            if "spinback_out" in moves else ("brake", "--deck", str(from_deck), "--seconds", "1.4")
+        wait_for_next_beat(port, out_g)
+        if rust_gesture(*gesture, port=port):
+            mixxx.set("[Master]", "crossfader", crossfader_target(to_deck))
+            mixxx.set(deck_group(to_deck), "play", 1)
+            print(f"  {gesture[0]} exit -> deck {to_deck}")
+            return
+        # No binary: fall through to the anchored hard cut below.
 
     print(f"  anchoring on {out_g} beat ({bpm:.2f} BPM)")
     wait_for_next_beat(port, out_g)

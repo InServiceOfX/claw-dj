@@ -51,12 +51,24 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       `clawdj gesture …`. All live-validated against running Mixxx except
       spinback/fade (validated by construction; audible test pending).
 
+- [x] **Rust gestures wired into plans (2026-07-14)** — the flourish
+      rotation now includes `stutter_fill`/`censor_fill`, extreme-tempo cuts
+      became `brake_out` exits, and the runner shells out to
+      `clawdj gesture …` with graceful degradation to plain blends/hard cuts
+      when the binary is missing. Live-validated: stutter fill → brake exit
+      → incoming track hits. Gotcha: clap parses the parent `--port` flag
+      only BEFORE the gesture subcommand.
+- [x] **"Create the mix" UI page** — built in the Grok session (playlist
+      editor page 2: profile presets + free-text brief + analyze/enrich +
+      start); was listed here as todo — corrected per Codex's 2026-07-14
+      review.
+
 ## Next steps (roughly in order of value)
 
-1. **Wire Rust gestures into the plan runner** — `hands/run_mix_plan.py`
-   shells out to `clawdj gesture …` for moves the plan names (new optional
-   moves: `brake_out`, `spinback_out`, `censor_fill`, `stutter_fill`,
-   `kill_swap`). Techniques/profiles decide when; keep plan schema additive.
+1. **Audible pass on spinback + Rust fade** — implemented and wired
+   (`spinback_out`) but never heard; 2-minute check with a mini plan.
+   `kill_swap` gesture exists but is not yet a plan move (Python EQ ramps
+   still handle bass swaps inside fades).
 2. **Echo-out exit** — blocked on loading the Echo effect into a slot
    deterministically (effect_selector cycles; no load-by-name ControlObject
    found yet). Investigate `[EffectRack1_EffectUnitN_EffectM],effect_selector`
