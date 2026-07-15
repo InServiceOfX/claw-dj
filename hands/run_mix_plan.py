@@ -458,11 +458,62 @@ def echo_out_exit(mixxx: MixxxControl, deck: int) -> None:
 _echo_missing_noted = False
 
 
+def perform_juggle_intro(mixxx: MixxxControl, event: dict) -> None:
+    """Cool DJ-intro juggle: load a second copy of the opener on the other
+    deck, chop the crossfader back and forth between the two identical
+    copies over the first few bars, then land cleanly on the opener deck
+    and let it continue playing straight through -- nothing in the
+    beginning gets skipped, it's just presented as a flashy juggle first.
+
+    The other deck is borrowed temporarily; the plan's following `recue`
+    event reloads the real second track onto it afterward.
+    """
+    deck = int(event["deck"])
+    other = 2 if deck == 1 else 1
+    group, other_group = deck_group(deck), deck_group(other)
+    track_id = event.get("track_id")
+    if not track_id:
+        print("  juggle_intro: no track_id on this event, falling back to a plain start")
+        mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+        mixxx.set(group, "play", 1)
+        return
+
+    mixxx.set(group, "volume", 1.0)
+    mixxx.set(group, "play", 1)
+    bpm = mixxx.get(group, "bpm") or 95.0
+    period = 60.0 / max(60.0, min(200.0, bpm))
+
+    load_deck(mixxx, other, track_id, cue_seconds=0.0, expected_bpm=bpm)
+    mixxx.set(other_group, "volume", 1.0)
+    mixxx.set(other_group, "play", 1)
+
+    chops = max(2, int(event.get("juggle_chops", 6)))
+    hold_beats = float(event.get("juggle_hold_beats", 1.0))
+    print(f"  juggle_intro: {chops} chops between deck {deck} and deck {other} "
+          f"on {event.get('track')}")
+    for i in range(chops):
+        active = deck if i % 2 == 0 else other
+        mixxx.set("[Master]", "crossfader", crossfader_target(active))
+        time.sleep(hold_beats * period)
+
+    # Land on the opener deck, kill the borrowed copy -- deck plays on
+    # uninterrupted from wherever the juggle left it (no rewind: the point
+    # is nothing gets skipped overall).
+    mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+    mixxx.set(other_group, "play", 0)
+    print(f"  juggle landed on deck {deck}; playing straight through")
+
+
 def perform_opener_effect(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     """Tease the opener, echo/fade it out, rewind, and arm a clean first drop."""
     deck = int(event["deck"])
     group = deck_group(deck)
     style = str(event.get("style") or "echo_tease_drop")
+
+    if style == "juggle_intro":
+        perform_juggle_intro(mixxx, event)
+        return
+
     cue_position = mixxx.get(group, "playposition")
     mixxx.set("[Master]", "crossfader", crossfader_target(deck))
     mixxx.set(group, "volume", 1.0)
@@ -562,12 +613,14 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
 
     fade_s = beats * 60.0 / bpm
     bass_swap = any(move in moves for move in ("eq_kill_out_low", "eq_dip_out_mid", "eq_kill_out_high"))
-    if bass_swap:
-        try:
-            mixxx.set(eq_group(to_deck), "parameter1", 0.0)
-        except Exception:
-            bass_swap = False
-
+    # Ernest, 2026-07-14: hip-hop needs bass "front and center" -- do NOT
+    # pre-kill the incoming deck's low end at progress=0. The old code did,
+    # and for a long transition (e.g. 44 beats ≈ 28s) that left the incoming
+    # track fully bassless for ~14s while it was actively growing more
+    # prominent on the crossfader (audible on Runnin' Wit No Breaks). The
+    # incoming deck now keeps its normal bass throughout; only the outgoing
+    # deck's bass is killed, and only right at the handoff (progress>=0.5),
+    # by which point it's fading out anyway.
     swapped = False
     t0 = time.monotonic()
     while True:
