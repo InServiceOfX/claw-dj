@@ -48,8 +48,9 @@
     .ingest-detail { color:var(--muted); }
     .brain { padding:14px; margin-bottom:12px; border:1px solid var(--line); background:var(--panel); }
     .brain h2 { margin-bottom:3px; }
-    .brain-form { display:grid; grid-template-columns:minmax(240px,1fr) 190px 70px auto; gap:8px; margin-top:10px; }
+    .brain-form { display:grid; grid-template-columns:minmax(220px,1fr) 220px 140px 70px auto; gap:8px; margin-top:10px; }
     .brain-detail { color:var(--muted); min-height:20px; margin-top:8px; }
+    .enrich-console { background:#171717; color:#78d7ac; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; padding:10px 12px; margin-top:6px; max-height:220px; overflow-y:auto; white-space:pre-wrap; border-radius:4px; }
     .picks { margin-top:8px; border-top:1px solid var(--line); }
     .pick { display:grid; grid-template-columns:26px minmax(0,1fr); align-items:center; gap:8px; padding:6px 2px; border-bottom:1px solid #ecece8; }
     .pick input { width:16px; min-height:16px; accent-color:var(--green); }
@@ -106,18 +107,29 @@
   <main>
     <div class="page" id="page-curate">
       <div class="ingest">
-        <div><h2>New music</h2><div class="ingest-detail" id="ingest-detail">Checking the library index…</div></div>
-        <button id="scan">Check for new music</button>
+        <div><h2>New music</h2><div class="ingest-detail" id="ingest-detail">Checking the library index…</div>
+          <div class="ingest-detail" id="roots-detail" style="margin-top:4px"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+          <input id="add-root" type="text" placeholder="/Volumes/.../Music/NewFolder" style="min-width:220px" aria-label="Add a music folder to scan">
+          <button id="add-root-btn" title="Add a new folder as a scan root, then scan it">Add music folder</button>
+          <button id="scan">Check for new music</button>
+        </div>
       </div>
       <div class="brain picks-anchor" id="brain-panel">
         <h2>Ask the DJ brain</h2>
-        <div class="ingest-detail">Describe the set you want; an agent picks candidates from the new music. You review before anything is added. <strong>Suggest blends</strong> also lands results here.</div>
+        <div class="ingest-detail">Describe the set you want; an agent picks candidates. <strong>New music</strong> only searches the latest scan's additions; <strong>whole library</strong> searches everything (keyword pre-filtered, for briefs about music that's been here a while — eras, styles, genres). You review before anything is added. <strong>Suggest blends</strong> also lands results here.</div>
         <div class="brain-form">
-          <input id="brief" type="text" placeholder="e.g. recognizable 90s/2000s hits that mix with the current showcase" aria-label="Brief for the agent">
+          <input id="brief" type="text" placeholder="e.g. 90s West Coast G-funk, Chronic/Doggystyle era" aria-label="Brief for the agent">
           <select id="engine" aria-label="Agent engine">
             <option value="both">Both engines</option>
             <option value="nemoclaw">NemoClaw · Nemotron</option>
             <option value="h-agent">H Company · Holo</option>
+            <option value="generic">Generic LLM (xAI/local — set CLAWDJ_LLM_* env vars)</option>
+          </select>
+          <select id="pool" aria-label="Candidate pool">
+            <option value="new">New music only</option>
+            <option value="library">Whole library</option>
           </select>
           <input id="pick-count" type="number" min="3" max="50" value="20" aria-label="How many picks">
           <button id="ask" class="primary">Ask</button>
@@ -130,7 +142,7 @@
         </div>
       </div>
       <div class="toolbar">
-        <input id="search" type="search" placeholder="Search title, artist, or path" aria-label="Search tracks">
+        <input id="search" type="search" placeholder="Search title, artist, album, or path" aria-label="Search tracks">
         <select id="artist" aria-label="Filter by artist"><option value="">All artists</option></select>
         <div class="modes" aria-label="Analysis status">
           <button class="active" data-analysis="all">All</button><button data-analysis="analyzed">Analyzed</button><button data-analysis="missing">Missing BPM</button>
@@ -173,6 +185,7 @@
             </div>
           </div>
           <div class="brain-detail" id="enrich-detail"></div>
+          <pre class="enrich-console" id="enrich-console" hidden></pre>
           <div class="finalized-rows" id="finalized-rows"></div>
         </div>
         <div class="banner" id="plan-stale-banner" hidden>The dry-run plan below is <strong>stale</strong> — it does not match the current finalized set (e.g. you added a track). Rebuild the mix plan.</div>
@@ -242,8 +255,10 @@
       if (data.error) el('ingest-detail').textContent = `Scan failed: ${data.error}`;
       else if (data.running) el('ingest-detail').textContent = `Scanning ${roots || 'configured folders'}… ${data.processed || 0}/${data.discovered || '?'} files`;
       else if (data.finished_at) el('ingest-detail').textContent = `${data.new_count} new · ${data.changed_count} changed · ${data.unchanged_count} unchanged · ${data.untagged_count} need tags`;
-      else el('ingest-detail').textContent = roots ? `Ready to scan ${roots}` : 'Configure music folders with the scan command once.';
+      else el('ingest-detail').textContent = roots ? `Ready to scan ${roots}` : 'No folders configured yet — add one below.';
+      el('roots-detail').textContent = (data.roots || []).length ? `Scanned folders: ${(data.roots || []).join(', ')}` : '';
       el('scan').disabled = Boolean(data.running);
+      el('add-root-btn').disabled = Boolean(data.running);
       return data;
     }
     async function loadLibrary() {
@@ -288,7 +303,7 @@
       }catch(error){button.textContent='Finalize failed';el('notice').textContent=error.message;}
       setTimeout(()=>{button.textContent=original;button.disabled=false;},4000);
     });
-    const ENGINE_NAMES = {'nemoclaw':'NemoClaw · Nemotron','h-agent':'H Company · Holo','mix-graph':'Mix-graph (deterministic)','both':'both engines'};
+    const ENGINE_NAMES = {'nemoclaw':'NemoClaw · Nemotron','h-agent':'H Company · Holo','generic':'Generic LLM','mix-graph':'Mix-graph (deterministic)','both':'both engines'};
     function pickRow(pick) {
       const already = pick.enabled ? ' <span class="already">already in set</span>' : '';
       const excluded = pick.excluded ? ' <span class="already">you removed this earlier</span>' : '';
@@ -326,7 +341,7 @@
       const brief = el('brief').value.trim();
       if (!brief) { el('brain-detail').textContent = 'Write a brief first — what kind of set do you want?'; return; }
       el('ask').disabled = true; el('picks').hidden = el('picks-actions').hidden = true;
-      await api('/api/brain/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief,engine:el('engine').value,count:Number(el('pick-count').value)||20})});
+      await api('/api/brain/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief,engine:el('engine').value,pool:el('pool').value,count:Number(el('pick-count').value)||20})});
       const poll = setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);
       await pollBrain();
     });
@@ -360,7 +375,33 @@
         el('picks').innerHTML = `<div class="empty">${esc(error.message)}</div>`;
       }
     });
-    el('scan').addEventListener('click',async()=>{await api('/api/ingest/scan',{method:'POST'});el('notice').textContent='Looking for new or changed music. Existing files will not be reopened.';const poll=setInterval(async()=>{const status=await loadIngest();if(!status.running){clearInterval(poll);await Promise.all([loadMeta(),loadLibrary(),loadSelected()]);el('notice').textContent=status.error?`Scan failed: ${status.error}`:`Found ${status.new_count} new and ${status.changed_count} changed tracks.`}},750)});
+    function pollIngest(startingMessage) {
+      el('notice').textContent = startingMessage;
+      const poll = setInterval(async () => {
+        const status = await loadIngest();
+        if (!status.running) {
+          clearInterval(poll);
+          await Promise.all([loadMeta(), loadLibrary(), loadSelected()]);
+          el('notice').textContent = status.error
+            ? `Scan failed: ${status.error}`
+            : `Found ${status.new_count} new and ${status.changed_count} changed tracks.`;
+        }
+      }, 750);
+    }
+    el('scan').addEventListener('click', async () => {
+      await api('/api/ingest/scan', {method: 'POST'});
+      pollIngest('Looking for new or changed music. Existing files will not be reopened.');
+    });
+    el('add-root-btn').addEventListener('click', async () => {
+      const path = el('add-root').value.trim();
+      if (!path) { el('notice').textContent = 'Enter a folder path first.'; return; }
+      try {
+        await api('/api/ingest/add-root', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path})});
+        pollIngest(`Adding ${path} as a scan root and scanning it…`);
+      } catch (error) {
+        el('notice').textContent = error.message;
+      }
+    });
 
     // --- Create the mix ---
     const mixState = { profile: 'dj-showcase', pollTimer: null };
@@ -464,6 +505,15 @@
         el('enrich-detail').textContent = data.enrich_message;
       } else {
         el('enrich-detail').textContent = '';
+      }
+      const consoleEl = el('enrich-console');
+      const log = data.enrich_log || [];
+      if (log.length) {
+        consoleEl.hidden = false;
+        consoleEl.textContent = log.join('\n');
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      } else if (!data.enriching) {
+        consoleEl.hidden = true;
       }
       if (data.building) {
         const eng = data.order_engine && data.order_engine !== 'none'

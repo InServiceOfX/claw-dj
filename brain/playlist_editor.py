@@ -27,7 +27,7 @@ from brain.playlist import (
     track_record,
 )
 
-BRAIN_CACHE = {engine: DATA_DIR / f"brain_picks_{engine}.json" for engine in ("nemoclaw", "h-agent")}
+BRAIN_CACHE = {engine: DATA_DIR / f"brain_picks_{engine}.json" for engine in ("nemoclaw", "h-agent", "generic")}
 MIX_PLAN_PATH = DATA_DIR / "mix_plan.json"
 DEFAULT_PLAYLIST_JSON = DATA_DIR / "playlist.json"
 
@@ -75,13 +75,19 @@ class PlaylistApp:
             status["error"] = self.scan_error
         return status
 
-    def start_scan(self) -> dict:
+    def start_scan(self, extra_root: str | None = None) -> dict:
         if self.scan_thread and self.scan_thread.is_alive():
             return self.ingest_status()
         roots = [Path(path) for path in configured_roots()]
+        if extra_root:
+            candidate = Path(extra_root).expanduser()
+            if not candidate.is_dir():
+                raise ValueError(f"not a directory: {candidate}")
+            if candidate not in roots:
+                roots.append(candidate)
         if not roots:
             raise ValueError(
-                "No music folders configured. Run brain.scan_library with your RnB and HipHop folders once."
+                "No music folders configured yet — use 'Add music folder' below."
             )
 
         def work() -> None:
@@ -160,8 +166,14 @@ class PlaylistApp:
         }
         return status
 
-    def ask_brain(self, brief: str, engine: str, count: int) -> dict:
-        """Run agent candidate-picking (one engine or both) in the background."""
+    def ask_brain(self, brief: str, engine: str, count: int, pool: str = "new") -> dict:
+        """Run agent candidate-picking (one engine or both) in the background.
+
+        pool="library" scopes candidates to the whole crate (keyword
+        pre-filtered) instead of just the newest scan batch — needed for
+        briefs about music that's been in the library for a while, since
+        "new" pool can only ever see the most recent scan's delta.
+        """
         engines = ("nemoclaw", "h-agent") if engine == "both" else (engine,)
         for name in engines:
             if name not in BRAIN_CACHE:
@@ -179,8 +191,8 @@ class PlaylistApp:
                 try:
                     from brain.pick_candidates import run_pick
 
-                    picks = run_pick(engine=name, brief=brief, count=count)
-                    result = {"brief": brief, "engine": name, "picks": picks}
+                    picks = run_pick(engine=name, brief=brief, count=count, pool=pool)
+                    result = {"brief": brief, "engine": name, "pool": pool, "picks": picks}
                     self.brain_state["results"][name] = result
                     BRAIN_CACHE[name].write_text(json.dumps(result, indent=1) + "\n")
                 except Exception as error:  # surfaced in the local UI
@@ -357,7 +369,7 @@ class PlaylistApp:
         if query:
             tracks = [
                 track for track in tracks
-                if query in f"{track.artist} {track.title} {track.track_id}".casefold()
+                if query in f"{track.artist} {track.title} {track.album or ''} {track.track_id}".casefold()
             ]
         if artist:
             tracks = [track for track in tracks if track.artist == artist]
@@ -1129,6 +1141,10 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                 if self.path == "/api/ingest/scan":
                     self._json(app.start_scan(), HTTPStatus.ACCEPTED)
                     return
+                if self.path == "/api/ingest/add-root":
+                    payload = self._body()
+                    self._json(app.start_scan(extra_root=str(payload.get("path", ""))), HTTPStatus.ACCEPTED)
+                    return
                 if self.path == "/api/brain/ask":
                     payload = self._body()
                     self._json(
@@ -1136,6 +1152,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                             str(payload.get("brief", "")),
                             str(payload.get("engine", "nemoclaw")),
                             int(payload.get("count", 20)),
+                            str(payload.get("pool", "new")),
                         ),
                         HTTPStatus.ACCEPTED,
                     )
