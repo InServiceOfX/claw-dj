@@ -372,6 +372,7 @@ def build_plan(
                 "style": opener_directive["opener_style"],
                 "tease_beats": 4,
                 "track": f"{selected[0]['artist']} — {selected[0]['title']}",
+                "track_id": selected[0]["track_id"],
                 "detail": "Tease the iconic opening, echo it out, rewind, then drop clean.",
             }
         )
