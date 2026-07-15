@@ -195,6 +195,73 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
     showcase flourishes). No single settled DJ-vernacular term found for
     "mix to listen" — closest common terms are "listening mix" / "chill
     mix"; used "mix-to-listen" as the profile name since it's unambiguous.
+- [x] **Detailed DJ-craft edit pass on the West Coast G-funk set
+      (2026-07-14, night).** Ernest gave extremely specific real-time
+      feedback while listening to a live run; applied by hand (see below
+      for the future pipeline this points at):
+  - **Bass-kill timing bug, general fix**: `perform_transition` used to
+    pre-kill the INCOMING deck's low EQ at progress=0, only restoring it
+    at the crossfader midpoint -- for a long transition (44 beats ≈ 28s
+    on Runnin' Wit No Breaks) that's ~14s of the incoming track playing
+    bassless while actively growing more prominent. Now the incoming
+    deck never loses bass; only the outgoing deck's bass is killed, right
+    at the handoff.
+  - **New `juggle_intro` opener style**: loads a second copy of the
+    opener on the other deck, chops the crossfader between them over the
+    first bars (classic DJ-intro flourish), lands cleanly, plays straight
+    through -- nothing skipped. Live-validated (no crash, clean end
+    state); audible confirmation still pending.
+  - **dj_notes written from real lyric evidence, not guesses** — pulled
+    raw synced LRC lines to find exact verse boundaries rather than
+    trusting memory of the songs:
+    - Nuthin' But A "G" Thang: now the pinned opener, `cue_seconds=0`
+      (was cutting into the middle), `opener_style=juggle_intro`.
+    - Stranded On Death Row: existing Kurupt-landing directive kept;
+      `ride_beats=335` added so Snoop's verse (ends at 4:02.81, "Doggy
+      Dogg's done") plays in full before the next transition.
+    - Lil' Ghetto Boy: `entry_style=verse_landing` at 37.230s (Snoop's
+      literal first rapped line, found in the raw LRC — everything
+      before it is Dre's spoken community-message intro), `ride_beats=78`
+      so the verse rides through to the chorus at 82.9s instead of
+      cutting off after 7 beats.
+    - Gz Up, Hoes Down: `cue_seconds=8` (was starting later, past more of
+      the early material), `ride_phrases=3`.
+    - Tha Shiznit: `play_bpm=98.5` — was blending from an 88.3bpm
+      neighbor with no deliberate tempo target; nudges it toward its
+      genuinely faster character per Ernest's explicit "don't be afraid
+      to run it faster than default."
+  - **Real bug found while doing this**: multiple FILE COPIES of the same
+    song exist in the crate (different album/compilation folders), and
+    dj_notes must be written to the EXACT track_id that's actually in
+    `playlist.json` — writing to a same-titled-but-different copy is a
+    silent no-op (confirmed: Stranded On Death Row's first dj_notes write
+    landed on a compilation-disc copy, not the one actually selected;
+    `ride_beats` visibly failed to apply until traced to the wrong
+    file). Any future by-hand or agent-driven dj_notes edit should verify
+    against `playlist.json`'s actual track_id, not just match by title.
+  - **Reordered**: "213 — Groupie Luv" moved from position 2 (crowding
+    the intended chronological-ish Dre/Snoop/Warren-G opening run) to
+    late, adjacent to "Dollars & Sense" (closest BPM match, 97.0→98.9).
+    "Eastside LB" moved next to "This DJ (Remix Version)" (91.9→91.4bpm,
+    closest match of the suggested Warren G neighbors) instead of sitting
+    between Deep Cover and Lil' Ghetto Boy.
+  - **Not done, explicitly deferred by Ernest's own ask**: he asked for
+    the mix-brief text box (Create the mix page, right before "Build mix
+    plan") to eventually let an LLM make edits like this directly from a
+    detailed natural-language note, but said to just do it by hand this
+    time. Concrete design for that pipeline, next time it's picked up:
+    `brain/mix_directives.py` — feed an LLM (reuse `pick_candidates.py`'s
+    engine functions) the current ordered track list (with existing
+    dj_notes) + the free-text note + each track's raw synced LRC (for
+    verse-boundary asks) and get back structured
+    `{track_id, dj_notes, new_position}` edits; validate every returned
+    track_id against `playlist.json` before writing (the exact bug above)
+    and require the reorder to be a permutation of the existing set
+    (never invent/drop tracks); apply via the existing
+    `library_index`/`playlist_selection.json` write paths; always show a
+    diff for confirmation before committing, given how much specific
+    craft judgment (verse boundaries, neighbor BPM matches, "how much
+    monologue is OK to catch") went into this pass by hand.
 
 ## Next steps (roughly in order of value)
 
