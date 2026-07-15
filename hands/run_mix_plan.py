@@ -554,7 +554,17 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     bpm = mixxx.get(out_g, "bpm")
     if bpm <= 0:
         raise RuntimeError(f"{out_g} reports no BPM")
-    sync = "sync" in moves and technique != "half_time_or_cut"
+    # A deliberate incoming_bpm_target (dj_notes play_bpm) sets a specific
+    # bridge tempo below via set_bpm_target -- beatsync is a one-shot
+    # resync to whatever the outgoing deck is actually playing at, and
+    # firing it afterward silently overwrites that target back toward the
+    # outgoing tempo. Found 2026-07-16: Tha Shiznit's play_bpm=103 bridge
+    # was getting reverted this way, audible as "still sounds slow".
+    sync = (
+        "sync" in moves
+        and technique != "half_time_or_cut"
+        and event.get("incoming_bpm_target") is None
+    )
     # Hard cuts are rare by design — only explicit hard_cut move or the
     # extreme-tempo half_time_or_cut technique (key_clash is now a blend).
     hard = technique in {"key_clash_cut", "half_time_or_cut"} or "hard_cut" in moves

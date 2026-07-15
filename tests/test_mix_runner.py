@@ -139,3 +139,65 @@ class RecordingControlTests(TestCase):
         stop_recording(mixxx)
         self.assertEqual(mixxx.get("[Recording]", "status"), 0.0)
         self.assertIn(("[Recording]", "toggle_recording", 1), mixxx.writes)
+
+
+class IncomingBpmTargetMixxx(FakeMixxx):
+    """Deck 2's readback bpm tracks its rate, like a real Mixxx deck would."""
+
+    def __init__(self, *, outgoing_bpm: float = 6000.0, native_incoming_bpm: float = 96.8) -> None:
+        super().__init__()
+        self.values[("[Channel1]", "bpm")] = outgoing_bpm
+        self.values[("[Channel2]", "rate")] = 0.0
+        self.values[("[Channel2]", "rateRange")] = 0.08
+        self._native_incoming_bpm = native_incoming_bpm
+
+    def get(self, group: str, key: str) -> float:
+        if (group, key) == ("[Channel2]", "bpm"):
+            rate = self.values[("[Channel2]", "rate")]
+            rate_range = self.values[("[Channel2]", "rateRange")]
+            return self._native_incoming_bpm * (1.0 + rate * rate_range)
+        return super().get(group, key)
+
+
+class IncomingBpmTargetTests(TestCase):
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_incoming_bpm_target_survives_the_sync_move(self, _sleep, _wait_for_next_beat) -> None:
+        # Regression for 2026-07-16: a play_bpm bridge target set via
+        # set_bpm_target was getting silently overwritten by a later
+        # beatsync call when "sync" was also in the technique's moves,
+        # snapping the incoming deck back toward the outgoing deck's
+        # tempo. transition_beats=1 with a very high outgoing bpm keeps
+        # the crossfade loop's real elapsed time negligible.
+        mixxx = IncomingBpmTargetMixxx()
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 1,
+                "technique": "standard_blend",
+                "moves": ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"],
+                "incoming_bpm_target": 103.0,
+            },
+            port=9995,
+        )
+        self.assertNotIn(("[Channel2]", "beatsync", 1), mixxx.writes)
+        self.assertAlmostEqual(mixxx.get("[Channel2]", "bpm"), 103.0, delta=0.5)
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_sync_move_still_fires_without_a_bpm_target(self, _sleep, _wait_for_next_beat) -> None:
+        mixxx = IncomingBpmTargetMixxx()
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 1,
+                "technique": "standard_blend",
+                "moves": ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"],
+            },
+            port=9995,
+        )
+        self.assertIn(("[Channel2]", "beatsync", 1), mixxx.writes)
