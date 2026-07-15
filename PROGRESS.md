@@ -9,7 +9,13 @@
 ## How to run everything (quick reference)
 
 ```bash
-# Mixxx (patched 2.7 fork, default app) with the control API:
+# One command: starts patched Mixxx with the control API if it isn't
+# already running, waits for it, then opens the playlist editor.
+scripts/start.sh
+
+# Or manually:
+# Mixxx (patched 2.7 fork, default app — NOT stock Mixxx, see docs/BUILD_MIXXX.md)
+# with the control API:
 open -a Mixxx --args --control-api-port 9995
 
 # Playlist editor UI (scan / ask-the-DJ-brain / suggest / finalize):
@@ -146,6 +152,49 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       simplified repro): crossfade rode continuously from 19.65s through
       the entire ~12.6s transition to 32.34s — verse to verse, monologue
       never touched. All 60 tests still pass.
+- [x] **UI/workflow polish batch (2026-07-14, evening).**
+  - `scripts/start.sh` — one command: starts patched Mixxx (if not already
+    up) + opens the playlist editor. Answers "what do people run first."
+  - **New scan roots discoverable in the UI**: "Add music folder" input on
+    the Curate page (`/api/ingest/add-root`) — previously only `HipHop`/
+    `RnB` were ever configured (from the very first CLI scan weeks ago);
+    `Pop`/`Rock` existed on the drive but were invisible to the whole
+    system since nothing ever added them as roots. Added both now
+    (+1,372 tracks). "Check for new music" itself was never buggy — it
+    correctly reports 0 new once a root's fully indexed; the confusion was
+    two folders never being roots in the first place.
+  - **Generic OpenAI-compatible engine** for Ask the DJ brain
+    (`ask_generic` in `pick_candidates.py`) — env-configured
+    (`CLAWDJ_LLM_BASE_URL`/`_API_KEY`/`_MODEL`), works for xAI/Grok, local
+    Ollama/LM Studio, or OpenAI itself. No longer locked to NemoClaw/H
+    Company.
+  - **Whole-library candidate pool** for Ask the DJ brain (`--pool
+    library` / UI dropdown) — root-caused why "90s West Coast G-funk"
+    returned nothing: the brain only ever searched the latest scan's *new*
+    tracks, and G-funk classics were indexed weeks ago. New pool does a
+    keyword pre-filter over the whole 27k-track crate (top ~700 by
+    relevance) before handing candidates to the LLM.
+  - **Live per-track console output** for Analyze & enrich — the backend
+    already buffered a log (`enrich_log`), but only bpm/lyrics/phrases'
+    *phase-level* messages reached it; per-track lines existed only as
+    terminal `print()`s the browser never saw. Threaded `progress`
+    callbacks through `analyze_tracks`/`fill_lyrics`/`fill_phrases` so
+    every track shows up in a new scrolling `<pre>` console in the UI,
+    not just a single static "Enriching…" line.
+  - **LRCLIB lyric fetch robustness**: one retry on transient
+    network/timeout errors, and check the first 5 search results for
+    lyrics (not just `results[0]`, which can be an instrumental/no-lyrics
+    entry) before giving up on a title variant.
+  - **Album added to library search** (was title/artist/path only).
+  - **`avoid_silence` profile flag** + new **`mix-to-listen`** profile —
+    club-set redefined as "beat never stops, no hard cuts, occasional
+    planned drop only" (`avoid_silence=True` downgrades the rare
+    extreme-tempo hard-cut fallback to a smoother always-blending
+    technique); mix-to-listen is a 4th preset for a pure listening mix
+    (long-ish but variable segments favoring each song's best part, no
+    showcase flourishes). No single settled DJ-vernacular term found for
+    "mix to listen" — closest common terms are "listening mix" / "chill
+    mix"; used "mix-to-listen" as the profile name since it's unambiguous.
 
 ## Next steps (roughly in order of value)
 
@@ -161,9 +210,15 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
    live-validated with native-tempo, quantized cuts because phase-pull can
    move a lyric cue. Promote only after an audible test proves the pre-roll
    and cue semantics.
-4. **whisperX fallback for unsynced lyrics** — 7/24 tracks lack synced
-   lyrics; forced alignment against the plain lyrics fills the gap offline.
-5. **Generic OpenAI-compatible engine** in `brain/pick_candidates.py` —
+4. **whisperX fallback for unsynced lyrics** — recurring gap (7/24, then
+   8/22 in the next batch — some tracks LRCLIB just doesn't have synced
+   lyrics for, mostly deep-catalog G-funk/West Coast cuts). Forced
+   alignment (whisperX or similar) against the plain lyrics + the actual
+   audio file generates real timestamps offline, no LRCLIB dependency.
+   Real effort (new dependency, GPU/CPU cost, a new pipeline stage) —
+   still backlogged, not started.
+5. ~~**Generic OpenAI-compatible engine**~~ **DONE 2026-07-14** — see above.
+   Original text kept for context:
    covers xAI (Ernest has a key), local Ollama/LM Studio, and hermes with one
    client + base-URL/model config. NemoClaw/H engines stay while credits last.
 6. **Typed Rust control namespace** — codegen `controls.rs` from
