@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 PORT=9995
 
 if ! nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
-  echo "Starting Mixxx with the control API on port $PORT…"
+  echo "Starting Mixxx with the control API on port ${PORT}..."
   open -a Mixxx --args --control-api-port "$PORT"
   n=0
   until nc -z 127.0.0.1 "$PORT" 2>/dev/null || [ "$n" -ge 40 ]; do
@@ -31,5 +31,5 @@ else
   echo "Mixxx control API already running on port $PORT — reusing it."
 fi
 
-echo "Opening the playlist editor…"
+echo "Opening the playlist editor..."
 uv run python -m brain.playlist_editor --open
