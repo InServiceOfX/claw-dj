@@ -64,16 +64,6 @@ PROFILES: dict[str, MixProfile] = {
         flourish_every=5,
         avoid_silence=True,
     ),
-    "warm-up": MixProfile(
-        name="warm-up",
-        description="Unhurried, smooth, no tricks — long blends, songs breathe.",
-        seconds_per_track=100.0,
-        ride_phrases_pattern=(3, 4, 3, 4),
-        confidence_extra_phrase=0.5,
-        intro_entry_every=3,
-        transition_scale=2.0,
-        flourish_every=0,
-    ),
     "mix-to-listen": MixProfile(
         name="mix-to-listen",
         description=(

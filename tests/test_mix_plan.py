@@ -275,14 +275,14 @@ class MixPlanTest(TestCase):
             playlist.write_text(__import__("json").dumps(tracks))
             plan = compose_mix_plan(
                 playlist=playlist,
-                profile_name="warm-up",
+                profile_name="mix-to-listen",
                 mix_brief="clean, minimal",
                 tracks=3,
                 out=out,
             )
             self.assertTrue(out.exists())
             self.assertEqual(plan["track_count"], 3)
-            self.assertEqual(plan["profile"]["name"], "warm-up")
+            self.assertEqual(plan["profile"]["name"], "mix-to-listen")
             self.assertIn("flourishes off", " ".join(plan["profile"]["brief_adjustments"]))
             summary = plan_summary(plan, plan_path=out)
             self.assertTrue(summary["dry_run_ok"])

@@ -408,13 +408,13 @@
     const PROFILE_LABELS = {
       'dj-showcase': 'DJ showcase',
       'club-set': 'Club set',
-      'warm-up': 'Warm-up',
+      'mix-to-listen': 'Mix to listen',
     };
     function renderPresets(profiles) {
       const list = profiles && profiles.length ? profiles : [
         {name:'dj-showcase', description:'Short varied segments, frequent flourishes'},
-        {name:'club-set', description:'Longer rides and blends'},
-        {name:'warm-up', description:'Unhurried, smooth, no tricks'},
+        {name:'club-set', description:'Longer rides and blends, beat never stops'},
+        {name:'mix-to-listen', description:'A listening mix, not a performance'},
       ];
       el('mix-presets').innerHTML = list.map(p =>
         `<button type="button" data-profile="${esc(p.name)}" title="${esc(p.description || '')}" class="${p.name===mixState.profile?'active':''}">${esc(PROFILE_LABELS[p.name] || p.name)}</button>`
