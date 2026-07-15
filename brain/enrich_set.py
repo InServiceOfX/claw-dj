@@ -83,7 +83,7 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
     }
 
 
-def fill_bpm(missing: list[dict], port: int) -> None:
+def fill_bpm(missing: list[dict], port: int, *, progress=None) -> None:
     """Analyze via control API and persist readings into claw-dj immediately.
 
     Do not wait solely on Mixxx DB flush — the control API often has bpm
@@ -91,18 +91,21 @@ def fill_bpm(missing: list[dict], port: int) -> None:
     """
     from brain.analyze_via_mixxx import analyze_tracks, apply_analysis
 
-    results = analyze_tracks(missing, port=port)
+    results = analyze_tracks(missing, port=port, progress=progress)
     apply_analysis(results)
     # Best-effort: also pull anything Mixxx *did* flush (keys, older tracks).
     time.sleep(2)
     subprocess.run([sys.executable, "-m", "brain.sync_mixxx_analysis"], check=False)
 
 
-def fill_lyrics(db, tracks: list[dict], *, force: bool = False) -> tuple[int, int]:
+def fill_lyrics(db, tracks: list[dict], *, force: bool = False, progress=None) -> tuple[int, int]:
     from brain.lyrics import fetch_lyrics
 
     found = missed = 0
-    for track in tracks:
+    for i, track in enumerate(tracks, 1):
+        label = f"[{i}/{len(tracks)}] {track['artist']} — {track['title']}"
+        if progress:
+            progress(f"  [lyrics] {label}")
         record = fetch_lyrics(track["artist"], track["title"], force=force)
         db.execute(
             "INSERT OR REPLACE INTO lyrics(track_id, source, fetched_at, lyrics) VALUES (?,?,?,?)",
@@ -113,7 +116,10 @@ def fill_lyrics(db, tracks: list[dict], *, force: bool = False) -> tuple[int, in
             found += 1
         else:
             missed += 1
-            print(f"  [lyrics] not found: {track['artist']} — {track['title']}")
+            msg = f"  [lyrics] not found: {track['artist']} — {track['title']}"
+            print(msg)
+            if progress:
+                progress(msg)
     db.commit()
     return found, missed
 
@@ -168,7 +174,7 @@ def rewrite_similarity(db, track_ids: list[str]) -> int:
     return len(paths)
 
 
-def fill_phrases(db, tracks: list[dict], *, max_seconds: float = 300.0) -> int:
+def fill_phrases(db, tracks: list[dict], *, max_seconds: float = 300.0, progress=None) -> int:
     from brain.phrase_analysis import analyze_track
     from shared.mixxx_db import connect_readonly
 
@@ -184,10 +190,16 @@ def fill_phrases(db, tracks: list[dict], *, max_seconds: float = 300.0) -> int:
     analyzed = 0
     mixxx = connect_readonly()
     try:
-        for track in tracks:
+        for i, track in enumerate(tracks, 1):
+            label = f"[{i}/{len(tracks)}] {track['artist']} — {track['title']}"
+            if progress:
+                progress(f"  [phrases] {label}")
             row = mixxx.execute(query, (track["track_id"],)).fetchone()
             if row is None:
-                print(f"  [phrases] no Mixxx beatgrid yet: {track['artist']} — {track['title']}")
+                msg = f"  [phrases] no Mixxx beatgrid yet: {track['artist']} — {track['title']}"
+                print(msg)
+                if progress:
+                    progress(msg)
                 continue
             payload = analyze_track(row, max_seconds=max_seconds)
             db.execute(
@@ -301,7 +313,7 @@ def run_enrich(
 
         if need["bpm_key"] and not skip_bpm:
             note(f"[bpm/key] analyzing {len(need['bpm_key'])} tracks via muted Mixxx deck…")
-            fill_bpm(need["bpm_key"], port)
+            fill_bpm(need["bpm_key"], port, progress=note)
             summary["bpm_analyzed"] = len(need["bpm_key"])
             # Re-read playlist rows from disk after crate sync? fill_bpm only
             # updates index/crate; playlist.json is refreshed by the editor.
@@ -312,7 +324,7 @@ def run_enrich(
         lyric_targets = tracks if force_lyrics else need["lyrics"]
         if lyric_targets and not skip_lyrics:
             note(f"[lyrics] fetching {len(lyric_targets)} tracks from LRCLIB…")
-            found, missed = fill_lyrics(db, lyric_targets, force=force_lyrics)
+            found, missed = fill_lyrics(db, lyric_targets, force=force_lyrics, progress=note)
             summary["lyrics_found"] = found
             summary["lyrics_missed"] = missed
             note(f"lyrics: {found} found, {missed} not found")
@@ -335,7 +347,7 @@ def run_enrich(
             targets = [t for t in tracks if not gaps[t["track_id"]]["phrases"]]
             if targets:
                 note(f"[phrases] analyzing {len(targets)} tracks…")
-                done = fill_phrases(db, targets)
+                done = fill_phrases(db, targets, progress=note)
                 summary["phrases_analyzed"] = done
                 note(f"phrases: {done} analyzed")
             exported = export_phrases(db, ids)

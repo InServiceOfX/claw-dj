@@ -87,23 +87,32 @@ def analyze_tracks(
     deck: int = 4,
     port: int = DEFAULT_PORT,
     timeout_s: float = ANALYZE_TIMEOUT_S,
+    progress=None,
 ) -> list[dict]:
     """Load each record into a muted deck; return live API analysis rows.
 
     Each result: {track_id, artist, title, bpm, key, ok}.
+    `progress`, if given, is called with each per-track status line — lets
+    a web UI stream real-time console output instead of one static message
+    for the whole batch.
     """
+    def emit(msg: str) -> None:
+        print(msg)
+        if progress:
+            progress(msg)
+
     group = deck_group(deck)
     results: list[dict] = []
     with MixxxControl(port=port, timeout_s=timeout_s + 10) as mixxx:
         mixxx.set(group, "volume", 0.0)
-        for record in records:
+        for i, record in enumerate(records, 1):
             track_id = record["track_id"]
             label = (
-                f"{record['artist']} - {record['title']}"
+                f"[{i}/{len(records)}] {record['artist']} - {record['title']}"
                 if "artist" in record
-                else track_id
+                else f"[{i}/{len(records)}] {track_id}"
             )
-            print(label)
+            emit(label)
             # Eject so the bpm control drops to 0 before the next load — a
             # stale non-zero reading otherwise satisfies wait_for_bpm
             # immediately and the track never gets analyzed. Ejecting also
@@ -127,9 +136,9 @@ def analyze_tracks(
                     if key_str:
                         break
                     time.sleep(0.3)
-                print(f"    mixxx bpm: {bpm:.2f}" + (f"  key: {key_str}" if key_str else ""))
+                emit(f"    mixxx bpm: {bpm:.2f}" + (f"  key: {key_str}" if key_str else ""))
             else:
-                print("    analyzer produced no bpm (timeout)")
+                emit("    analyzer produced no bpm (timeout)")
             # Keep the track loaded a moment so Mixxx has a chance to start
             # writing analysis — still not reliable, which is why we persist
             # the API reading ourselves.
