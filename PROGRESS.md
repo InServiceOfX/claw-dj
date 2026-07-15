@@ -123,6 +123,29 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       Ernest's recorded showcase video. Playlist editor also now shows
       album + acapella/instrumental badges (useful for dj_notes picking a
       specific version deliberately).
+- [x] **Fixed: dj_notes cue_seconds was being silently overridden by Mixxx's
+      own auto-seek-on-load (2026-07-14).** Root cause of the "Regulate
+      still blends in during the monologue" bug Ernest caught by ear. The
+      dj_notes cue (19.65s, verified exact against synced lyrics — Warren
+      G's literal first rapped word) WAS being set correctly, but Mixxx's
+      `[Controls] CueRecall=3` preference (`SeekOnLoadMode::IntroStart`,
+      `src/engine/controls/cuecontrol.cpp`) auto-seeks every freshly loaded
+      deck to its own detected intro-start marker (~0.24s for this track)
+      — and that seek fires on a DELAY after `track_loaded`, racing our
+      manual seek rather than preceding it. Confirmed by disproving the
+      obvious alternative first: `cue_point`/`cue_set` looked like the
+      "real" fix (that's the persisted main-cue control) but `cue_point`
+      turned out to be a read-only mirror of the track's actual Cue object
+      (refreshed via `loadCuesFromTrack()`), not a writable target — direct
+      writes silently reverted too. The only mechanism that reliably wins
+      the race: `cue_deck()` in `hands/run_mix_plan.py` now polls
+      `playposition` for up to 1.5s after the initial seek, reasserting
+      whenever it drifts, until it holds steady for a continuous 500ms
+      window. Live-validated on the exact real seam from the recording
+      (Lil' Kim → Regulate, full `perform_transition` call, not a
+      simplified repro): crossfade rode continuously from 19.65s through
+      the entire ~12.6s transition to 32.34s — verse to verse, monologue
+      never touched. All 60 tests still pass.
 
 ## Next steps (roughly in order of value)
 

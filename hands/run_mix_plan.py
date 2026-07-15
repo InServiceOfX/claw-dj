@@ -194,22 +194,54 @@ def cue_deck(
     cue_fraction: float = 0.1,
     cue_seconds: float | None = None,
     duration: float | None = None,
+    settle_s: float = 1.5,
 ) -> tuple[float, str]:
-    """Seek a stopped deck and verify Mixxx accepted the requested cue."""
+    """Seek a stopped deck and verify Mixxx accepted the requested cue.
+
+    Setting `playposition` once is not enough. Mixxx's `[Controls] CueRecall`
+    preference (here: 3 = IntroStart) makes every freshly loaded deck
+    auto-seek to its own detected intro-start marker — and that seek fires
+    on a DELAY after `track_loaded` flips true, racing our manual seek
+    rather than preceding it. Discovered 2026-07-14 live: a deck manually
+    seeked to 19.65s (skipping Regulate's spoken intro per a dj_notes
+    directive, verified exact against the synced lyrics) would hold for
+    tens of milliseconds, then silently jump to ~0.24s (the track's
+    auto-detected intro-start) on its own — sometimes before `play`, so
+    the wrong content was already cued and playing before a transition
+    even reached it. Writing Mixxx's `cue_point`/`cue_set` controls
+    directly does NOT help: `cue_point` is a read-only mirror of the
+    track's real persisted cue object, refreshed from
+    `loadCuesFromTrack()`, not a target you can just set (verified: it
+    silently reverts too). The only mechanism that reliably wins the race
+    is polling: keep re-asserting `playposition` until it holds steady
+    through the deferred auto-seek's actual firing window, then it's safe.
+    """
     group = deck_group(deck)
     duration = duration or _wait_for(
         mixxx, group, "duration", lambda value: value > 0, LOAD_TIMEOUT_S
     )
     position = cue_seconds / duration if cue_seconds is not None else cue_fraction
     position = min(0.95, max(0.0, position))
+    tolerance = max(0.002, 1.0 / duration)
+
     mixxx.set(group, "playposition", position)
-    actual_position = _wait_for(
-        mixxx,
-        group,
-        "playposition",
-        lambda value: abs(value - position) <= max(0.002, 1.0 / duration),
-        3.0,
-    )
+    _wait_for(mixxx, group, "playposition", lambda value: abs(value - position) <= tolerance, 3.0)
+
+    # Outlast Mixxx's deferred seek-on-load: keep reasserting until the
+    # position holds steady for a continuous window, not just once.
+    deadline = time.monotonic() + settle_s
+    stable_since: float | None = None
+    while time.monotonic() < deadline:
+        actual = mixxx.get(group, "playposition")
+        if abs(actual - position) > tolerance:
+            mixxx.set(group, "playposition", position)
+            stable_since = None
+        elif stable_since is None:
+            stable_since = time.monotonic()
+        elif time.monotonic() - stable_since >= 0.5:
+            break
+        time.sleep(0.05)
+    actual_position = mixxx.get(group, "playposition")
     actual_seconds = actual_position * duration
     cue_label = (
         f"{cue_seconds:.2f}s verified at {actual_seconds:.2f}s"
