@@ -201,6 +201,23 @@
           <button id="build-mix" class="primary">Build mix plan</button>
         </div>
         <div class="ingest-detail" id="opener-detail" style="margin-top:6px"></div>
+        <div class="mix-form" style="grid-template-columns:170px auto;margin-top:6px">
+          <select id="directives-engine" aria-label="Engine for DJ-note edits">
+            <option value="nemoclaw">NemoClaw</option>
+            <option value="h-agent">H Company</option>
+            <option value="generic">Generic LLM</option>
+          </select>
+          <button id="interpret-directives" title="Turn the brief above into specific dj_notes edits (verse landings, cue points, reordering) grounded in each track's real lyrics — always previewed before anything is written">Interpret as DJ notes…</button>
+        </div>
+        <div class="brain-detail" id="directives-detail"></div>
+        <div class="mix-summary" id="directives-preview" hidden>
+          <div id="directives-notes"></div>
+          <div id="directives-reorder"></div>
+          <div class="mix-actions">
+            <button id="apply-directives" class="primary">Apply these edits</button>
+            <button id="discard-directives">Discard</button>
+          </div>
+        </div>
         <div class="brain-detail" id="mix-detail"></div>
         <div class="mix-summary" id="mix-summary" hidden>
           <div class="mix-stats" id="mix-stats"></div>
@@ -659,6 +676,67 @@
         el('mix-detail').textContent = error.message;
         el('build-mix').disabled = false;
       }
+    });
+    function renderDirectivesPreview(preview) {
+      const box = el('directives-preview');
+      if (!preview || (!preview.notes.length && !preview.reorder)) { box.hidden = true; return; }
+      box.hidden = false;
+      el('directives-notes').innerHTML = preview.notes.length ? '<strong>dj_notes changes:</strong>' + preview.notes.map(n =>
+        `<div class="pick"><span></span><span><span class="title">${esc(n.artist)} — ${esc(n.title)}</span><br>`
+        + `<span class="artist">was: ${esc(n.old || '(none)')}</span><br>`
+        + `<span class="artist">now: ${esc(n.new)}</span></span></div>`
+      ).join('') : '';
+      el('directives-reorder').innerHTML = preview.reorder
+        ? '<strong>reorder:</strong><ol>' + preview.reorder.map(t => `<li>${esc(t.artist)} — ${esc(t.title)}</li>`).join('') + '</ol>'
+        : '';
+    }
+    async function pollDirectives() {
+      const data = await api('/api/directives');
+      el('interpret-directives').disabled = !!data.running;
+      if (data.running) {
+        el('directives-detail').textContent = `Interpreting with ${data.engine}… (grounding against real lyrics, can take a minute or two)`;
+        return data;
+      }
+      el('directives-detail').textContent = data.error ? `Interpretation failed: ${data.error}` : '';
+      renderDirectivesPreview(data.preview);
+      return data;
+    }
+    el('interpret-directives').addEventListener('click', async () => {
+      const brief = el('mix-brief').value.trim();
+      if (!brief) { el('directives-detail').textContent = 'Write a brief above first — e.g. "land Regulate on Warren G\'s first verse, skip the monologue".'; return; }
+      el('interpret-directives').disabled = true;
+      el('directives-preview').hidden = true;
+      try {
+        await api('/api/directives/ask', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({brief, engine: el('directives-engine').value}),
+        });
+        const poll = setInterval(async () => { const status = await pollDirectives(); if (!status.running) clearInterval(poll); }, 2000);
+        await pollDirectives();
+      } catch (error) {
+        el('directives-detail').textContent = error.message;
+        el('interpret-directives').disabled = false;
+      }
+    });
+    el('apply-directives').addEventListener('click', async () => {
+      el('apply-directives').disabled = true;
+      try {
+        const result = await api('/api/directives/apply', {method: 'POST'});
+        el('notice').textContent = `Applied ${result.applied_notes} dj_notes edit(s)`
+          + (result.applied_reorder ? ' and reordered the set' : '') + '. Rebuild the mix plan to pick these up.';
+        el('directives-preview').hidden = true;
+        el('directives-detail').textContent = '';
+        await pollMix();
+      } catch (error) {
+        el('directives-detail').textContent = error.message;
+      } finally {
+        el('apply-directives').disabled = false;
+      }
+    });
+    el('discard-directives').addEventListener('click', () => {
+      el('directives-preview').hidden = true;
+      el('directives-detail').textContent = '';
     });
     el('start-mix').addEventListener('click', async () => {
       const summary = el('mix-stats').textContent || 'the current plan';

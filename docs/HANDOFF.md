@@ -796,3 +796,40 @@ Do **not** infer that verse-tour cuts should now use `beatsync_phase`: the tour
 was live-validated without sync because phase-pull can move its lyric-aligned
 cue. Phase-only alignment remains a separate A/B experiment for ordinary hard
 cuts before it becomes planner vocabulary.
+
+## Mix-brief -> dj_notes edits, and set recording (2026-07-15)
+
+A detailed by-hand DJ-craft editing pass on 2026-07-14 (verse landings, cue
+timing, reordering — see PROGRESS.md) motivated building the pipeline it had
+been standing in for: `brain/mix_directives.py`. Given a free-text brief and
+the current finalized track order, it asks an LLM (reusing
+`pick_candidates.py`'s engine functions) for structured
+`{notes: {id: dj_notes}, reorder: [id,...] | null}` edits, grounding any
+brief-mentioned track in its real raw synced lyrics (`lyric_timelines` table)
+rather than letting the model guess a timestamp. IDs in the prompt/response
+are short synthetic ones (`t000`-style), never real paths — so a hallucinated
+or wrong-file-copy path structurally cannot reach the write path. A reorder
+must be an exact permutation of the current set or it's rejected outright.
+Dry-run by default; `--apply` (or the web UI's "Apply these edits" button)
+writes dj_notes into `library.sqlite3` and patches `playlist.json`'s rows in
+place directly — **not** a `load_crate()`/`export_playlist()` round trip,
+because `crate.json` is only refreshed on scan/analyze/sync and would serve
+stale dj_notes back into playlist.json otherwise. Wired into the web UI
+(`playlist_editor.py`: `ask_directives`/`apply_directives`, background-thread
+pattern matching `ask_brain`; `playlist.html`: "Interpret as DJ notes…"
+button right before "Build mix plan", reusing the `#mix-brief` textbox).
+
+Real end-to-end test against the live 28-track set (nemoclaw engine) both
+validated the pipeline (correctly grounded a verse-landing ask in actual
+lyrics) and demonstrated why the dry-run/confirm step is load-bearing: asked
+not to touch one track's BPM, the model added a `play_bpm` directive anyway.
+Nothing gets written without a human looking at the diff first — by design,
+not as a stopgap.
+
+Separately, `hands/run_mix_plan.py` gained `--record`, toggling Mixxx's
+`[Recording]` control group (`toggle_recording`/`status`, confirmed against
+the patched fork's `recording/defs_recording.h`) around the plan run inside
+a `try/finally`, and never touching a recording that was already running.
+Current build has no mp3 encoder (`docs/BUILD_MIXXX.md`'s macOS recipe omits
+`-DFFMPEG=ON`), so this records WAV; convert with `ffmpeg` after, or rebuild
+with FFMPEG support for native mp3.

@@ -81,3 +81,61 @@ class MixRunnerTests(TestCase):
                 },
                 port=9995,
             )
+
+
+class RecordingMixxx(FakeMixxx):
+    """Simulates Mixxx flipping [Recording],status after toggle_recording."""
+
+    def __init__(self, *, starts_recording: bool = True, initial_status: float = 0.0) -> None:
+        super().__init__()
+        self.values[("[Recording]", "status")] = initial_status
+        self._starts_recording = starts_recording
+
+    def set(self, group: str, key: str, value: float) -> None:
+        super().set(group, key, value)
+        if (group, key) == ("[Recording]", "toggle_recording") and self._starts_recording:
+            current = self.values[("[Recording]", "status")]
+            self.values[("[Recording]", "status")] = 0.0 if current >= 1.0 else 1.0
+
+
+class RecordingControlTests(TestCase):
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_start_recording_toggles_and_confirms(self, _sleep) -> None:
+        from hands.run_mix_plan import start_recording
+
+        mixxx = RecordingMixxx(initial_status=0.0)
+        started = start_recording(mixxx)
+        self.assertTrue(started)
+        self.assertEqual(mixxx.get("[Recording]", "status"), 1.0)
+        self.assertIn(("[Recording]", "toggle_recording", 1), mixxx.writes)
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_start_recording_leaves_existing_recording_alone(self, _sleep) -> None:
+        from hands.run_mix_plan import start_recording
+
+        mixxx = RecordingMixxx(initial_status=1.0)
+        started = start_recording(mixxx)
+        self.assertFalse(started)
+        self.assertNotIn(
+            ("[Recording]", "toggle_recording", 1),
+            mixxx.writes,
+            "must never toggle a recording that was already running",
+        )
+
+    @patch("hands.run_mix_plan.time.sleep")
+    @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 0.0, 10.0])
+    def test_start_recording_times_out_without_crashing(self, _monotonic, _sleep) -> None:
+        from hands.run_mix_plan import start_recording
+
+        mixxx = RecordingMixxx(starts_recording=False, initial_status=0.0)
+        started = start_recording(mixxx, timeout_s=5.0)
+        self.assertFalse(started)
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_stop_recording_toggles_and_confirms(self, _sleep) -> None:
+        from hands.run_mix_plan import stop_recording
+
+        mixxx = RecordingMixxx(initial_status=1.0)
+        stop_recording(mixxx)
+        self.assertEqual(mixxx.get("[Recording]", "status"), 0.0)
+        self.assertIn(("[Recording]", "toggle_recording", 1), mixxx.writes)

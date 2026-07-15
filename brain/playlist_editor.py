@@ -41,6 +41,9 @@ class PlaylistApp:
         self.brain_thread: threading.Thread | None = None
         self.brain_state: dict = {"running": 0, "error": None, "picks": None,
                                   "brief": None, "engine": None}
+        self.directives_thread: threading.Thread | None = None
+        self.directives_state: dict = {"running": 0, "error": None, "preview": None,
+                                       "brief": None, "engine": None}
         self.mix_thread: threading.Thread | None = None
         self.mix_run_thread: threading.Thread | None = None
         self.enrich_thread: threading.Thread | None = None
@@ -202,6 +205,76 @@ class PlaylistApp:
         self.brain_thread = threading.Thread(target=work, daemon=True)
         self.brain_thread.start()
         return self.brain_status()
+
+    def directives_status(self) -> dict:
+        return dict(self.directives_state)
+
+    def ask_directives(self, brief: str, engine: str) -> dict:
+        """Interpret a free-text DJ instruction into dj_notes edits + a
+        possible reorder — brain.mix_directives, run in the background since
+        the LLM call can take a while. Only builds a preview; nothing is
+        written until apply_directives() confirms it."""
+        from brain.pick_candidates import ENGINES
+
+        if engine not in ENGINES and engine != "h-agent":
+            raise ValueError(f"unknown engine {engine!r}")
+        if not brief.strip():
+            raise ValueError("brief is empty — say what you want changed")
+        if self.directives_thread and self.directives_thread.is_alive():
+            return self.directives_status()
+        self.directives_state = {"running": 1, "error": None, "preview": None,
+                                 "brief": brief, "engine": engine}
+
+        def work() -> None:
+            try:
+                from brain.mix_directives import build_prompt, load_playlist, parse_directives
+                from brain.pick_candidates import ask_h_agent
+                from brain.library_index import DEFAULT_INDEX
+
+                tracks = load_playlist(DEFAULT_PLAYLIST_JSON)
+                prompt = build_prompt(tracks, brief, DEFAULT_INDEX)
+                reply = ask_h_agent(prompt) if engine == "h-agent" else ENGINES[engine](prompt)
+                notes, reorder = parse_directives(reply, tracks)
+                by_id = {t["track_id"]: t for t in tracks}
+                preview = {
+                    "notes": [
+                        {"track_id": tid, "artist": by_id[tid]["artist"], "title": by_id[tid]["title"],
+                         "old": by_id[tid].get("dj_notes") or "", "new": note}
+                        for tid, note in notes.items()
+                    ],
+                    "reorder": [
+                        {"track_id": tid, "artist": by_id[tid]["artist"], "title": by_id[tid]["title"]}
+                        for tid in reorder
+                    ] if reorder else None,
+                }
+                self.directives_state.update(running=0, error=None, preview=preview)
+            except Exception as error:  # surfaced in the local UI
+                self.directives_state.update(running=0, error=str(error), preview=None)
+
+        self.directives_thread = threading.Thread(target=work, daemon=True)
+        self.directives_thread.start()
+        return self.directives_status()
+
+    def apply_directives(self) -> dict:
+        """Commit the last preview: write dj_notes to SQLite + playlist.json,
+        and reorder playlist.json/playlist_selection.json if requested."""
+        preview = self.directives_state.get("preview")
+        if not preview:
+            raise ValueError("nothing to apply — ask the brain for edits first")
+        from brain.mix_directives import apply_directives as write_directives, load_playlist
+
+        tracks = load_playlist(DEFAULT_PLAYLIST_JSON)
+        notes = {row["track_id"]: row["new"] for row in preview.get("notes") or []}
+        reorder = [row["track_id"] for row in preview["reorder"]] if preview.get("reorder") else None
+        write_directives(tracks, notes, reorder)
+        self.reload()
+        self.mix_state["summary"] = None  # plan is stale relative to the new notes/order
+        self.directives_state["preview"] = None
+        return {
+            "applied_notes": len(notes),
+            "applied_reorder": bool(reorder),
+            "finalized": self.finalized_snapshot(),
+        }
 
     def suggest_blends(self, limit: int = 20) -> dict:
         """Deterministic mix-graph picks that blend with the CURRENT edited set.
@@ -1109,6 +1182,9 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/brain":
                 self._json(app.brain_status())
                 return
+            if parsed.path == "/api/directives":
+                self._json(app.directives_status())
+                return
             if parsed.path == "/api/mix":
                 self._json(app.mix_status())
                 return
@@ -1160,6 +1236,19 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                 if self.path == "/api/brain/apply":
                     payload = self._body()
                     self._json(app.apply_picks(list(payload.get("track_ids", []))))
+                    return
+                if self.path == "/api/directives/ask":
+                    payload = self._body()
+                    self._json(
+                        app.ask_directives(
+                            str(payload.get("brief", "")),
+                            str(payload.get("engine", "nemoclaw")),
+                        ),
+                        HTTPStatus.ACCEPTED,
+                    )
+                    return
+                if self.path == "/api/directives/apply":
+                    self._json(app.apply_directives())
                     return
                 if self.path == "/api/suggest":
                     payload = self._body()

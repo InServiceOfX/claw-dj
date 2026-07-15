@@ -465,7 +465,7 @@ def perform_juggle_intro(mixxx: MixxxControl, event: dict) -> None:
     and let it continue playing straight through -- nothing in the
     beginning gets skipped, it's just presented as a flashy juggle first.
 
-    The other deck is borrowed temporarily; the plan's following `recue`
+    The other deck is borrowed temporarily; the plan's following `load`
     event reloads the real second track onto it afterward.
     """
     deck = int(event["deck"])
@@ -673,7 +673,40 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     print(f"  {beats}-beat landing -> deck {to_deck}")
 
 
-def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) -> None:
+def start_recording(mixxx: MixxxControl, *, timeout_s: float = 5.0) -> bool:
+    """Toggle Mixxx's [Recording],toggle_recording on. Returns True if this
+    call is the one that started it (so the caller knows to stop it later —
+    never touch a recording someone else already had running)."""
+    if mixxx.get("[Recording]", "status") >= 1.0:
+        print("  already recording (started outside this run) — leaving it alone")
+        return False
+    mixxx.set("[Recording]", "toggle_recording", 1)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if mixxx.get("[Recording]", "status") >= 1.0:
+            print("  recording started (WAV — see Mixxx Preferences > Recording for the directory; "
+                  "convert to mp3 afterward with ffmpeg if you want one)")
+            return True
+        time.sleep(0.1)
+    print("  WARNING: asked Mixxx to start recording but status never went high — "
+          "check a recording directory is configured in Preferences > Recording")
+    return False
+
+
+def stop_recording(mixxx: MixxxControl, *, timeout_s: float = 5.0) -> None:
+    mixxx.set("[Recording]", "toggle_recording", 1)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if mixxx.get("[Recording]", "status") < 1.0:
+            print("  recording stopped")
+            return
+        time.sleep(0.1)
+    print("  WARNING: asked Mixxx to stop recording but status never went low — check Mixxx directly")
+
+
+def run_plan(
+    plan: dict, *, port: int, dry_run: bool, max_events: int | None, record: bool = False
+) -> None:
     events = plan["events"]
     if max_events:
         events = events[:max_events]
@@ -691,121 +724,134 @@ def run_plan(plan: dict, *, port: int, dry_run: bool, max_events: int | None) ->
         if track.get("track_id")
     }
     with MixxxControl(port=port, timeout_s=LOAD_TIMEOUT_S + 5) as mixxx:
-        pending_preload: dict | None = None
-        for i, event in enumerate(events, 1):
-            op = event["op"]
-            print(f"\n[{i}/{len(events)}] {op}")
-            if op == "reset_instrument":
-                reset_instrument(mixxx)
-            elif op == "opener_effect":
-                perform_opener_effect(mixxx, event, port=port)
-            elif op == "recue":
-                _, cue_label = cue_deck(
-                    mixxx,
-                    int(event["deck"]),
-                    cue_fraction=float(event.get("cue_fraction", 0.1)),
-                    cue_seconds=event.get("cue_seconds"),
+        we_started_recording = False
+        if record:
+            print("starting recording…")
+            we_started_recording = start_recording(mixxx)
+        try:
+            _run_events(mixxx, events, expected_bpms, port=port)
+        finally:
+            if we_started_recording:
+                print("\nstopping recording…")
+                stop_recording(mixxx)
+
+
+def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *, port: int) -> None:
+    pending_preload: dict | None = None
+    for i, event in enumerate(events, 1):
+        op = event["op"]
+        print(f"\n[{i}/{len(events)}] {op}")
+        if op == "reset_instrument":
+            reset_instrument(mixxx)
+        elif op == "opener_effect":
+            perform_opener_effect(mixxx, event, port=port)
+        elif op == "recue":
+            _, cue_label = cue_deck(
+                mixxx,
+                int(event["deck"]),
+                cue_fraction=float(event.get("cue_fraction", 0.1)),
+                cue_seconds=event.get("cue_seconds"),
+            )
+            print(f"  deck {event['deck']} re-cued: {cue_label}")
+        elif op == "load":
+            load_deck(
+                mixxx,
+                event["deck"],
+                event["track_id"],
+                event.get("cue_fraction", 0.1),
+                event.get("cue_seconds"),
+                expected_bpms.get(event["track_id"]),
+            )
+        elif op == "start":
+            deck = event["deck"]
+            mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+            mixxx.set(deck_group(deck), "play", 1)
+            print(f"  deck {deck} playing")
+        elif op == "play_body":
+            beats = event.get("beats")
+            seconds = float(event.get("seconds", 30))
+            if beats is not None:
+                print(f"  riding {event.get('track')} for {beats} live beats")
+            else:
+                print(f"  riding {event.get('track')} for {seconds:.0f}s")
+            print(f"  hints: {event.get('instrument_hints')}")
+            ensure_deck_playing(mixxx, int(event["deck"]))
+            if beats is not None:
+                # timeout scales with the ride: full verses (verse tour) can outlast
+                # the old fixed 90s at slower tempos
+                wait_for_beats(port, deck_group(int(event["deck"])), int(beats),
+                               timeout_s=max(90.0, int(beats) * 1.5))
+            else:
+                time.sleep(seconds)
+        elif op == "preload_after_transition":
+            pending_preload = event
+        elif op == "transition":
+            from_deck = int(event["from_deck"])
+            to_deck = int(event["to_deck"])
+            beats = int(event.get("transition_beats", 16))
+            moves = list(event.get("moves") or [])
+            print(f"  {event.get('technique')}: {event.get('from_track')} → {event.get('to_track')}")
+            print(f"  moves: {moves}")
+            print(f"  notes: {event.get('notes')}")
+            # Ensure incoming is loaded (may already be)
+            preview_moves = {
+                "optional_scratch_in",
+                "optional_loop_roll_out",
+                "rate_nudge_in",
+                "eq_boost_in_mid",
+                "filter_open_in",
+            }
+            apply_moves(mixxx, from_deck, to_deck, [move for move in moves if move in preview_moves])
+            perform_transition(mixxx, event, port=port)
+            # restore EQ/filter after land
+            apply_moves(mixxx, from_deck, to_deck, ["eq_restore", "filter_reset"])
+            if event.get("incoming_bpm_target") is not None:
+                print(
+                    f"  holding deck {to_deck} at bridge tempo "
+                    f"{float(event['incoming_bpm_target']):.2f} BPM"
                 )
-                print(f"  deck {event['deck']} re-cued: {cue_label}")
-            elif op == "load":
+            else:
+                settle_rate(mixxx, to_deck)
+            if pending_preload and pending_preload.get("deck") == from_deck:
+                print(f"  preload next into freed deck {from_deck}")
                 load_deck(
                     mixxx,
-                    event["deck"],
-                    event["track_id"],
-                    event.get("cue_fraction", 0.1),
-                    event.get("cue_seconds"),
-                    expected_bpms.get(event["track_id"]),
+                    from_deck,
+                    pending_preload["track_id"],
+                    pending_preload.get("cue_fraction", 0.1),
+                    pending_preload.get("cue_seconds"),
+                    expected_bpms.get(pending_preload["track_id"]),
                 )
-            elif op == "start":
-                deck = event["deck"]
-                mixxx.set("[Master]", "crossfader", crossfader_target(deck))
-                mixxx.set(deck_group(deck), "play", 1)
-                print(f"  deck {deck} playing")
-            elif op == "play_body":
-                beats = event.get("beats")
-                seconds = float(event.get("seconds", 30))
-                if beats is not None:
-                    print(f"  riding {event.get('track')} for {beats} live beats")
-                else:
-                    print(f"  riding {event.get('track')} for {seconds:.0f}s")
-                print(f"  hints: {event.get('instrument_hints')}")
+                pending_preload = None
+        elif op == "finale":
+            beats = event.get("beats")
+            seconds = float(event.get("seconds", 30))
+            if event.get("play_to_end"):
+                deck = int(event["deck"])
+                group = deck_group(deck)
+                print(f"  finale {event.get('track')} (play to end)")
+                ensure_deck_playing(mixxx, deck)
+                deadline = time.monotonic() + seconds + 30.0
+                while time.monotonic() < deadline:
+                    if mixxx.get(group, "play") < 0.5 or mixxx.get(group, "playposition") >= 0.999:
+                        break
+                    time.sleep(0.25)
+            elif beats:
+                print(f"  finale {event.get('track')} ({beats} beats)")
                 ensure_deck_playing(mixxx, int(event["deck"]))
-                if beats is not None:
-                    # timeout scales with the ride: full verses (verse tour) can outlast
-                    # the old fixed 90s at slower tempos
-                    wait_for_beats(port, deck_group(int(event["deck"])), int(beats),
-                                   timeout_s=max(90.0, int(beats) * 1.5))
-                else:
-                    time.sleep(seconds)
-            elif op == "preload_after_transition":
-                pending_preload = event
-            elif op == "transition":
-                from_deck = int(event["from_deck"])
-                to_deck = int(event["to_deck"])
-                beats = int(event.get("transition_beats", 16))
-                moves = list(event.get("moves") or [])
-                print(f"  {event.get('technique')}: {event.get('from_track')} → {event.get('to_track')}")
-                print(f"  moves: {moves}")
-                print(f"  notes: {event.get('notes')}")
-                # Ensure incoming is loaded (may already be)
-                preview_moves = {
-                    "optional_scratch_in",
-                    "optional_loop_roll_out",
-                    "rate_nudge_in",
-                    "eq_boost_in_mid",
-                    "filter_open_in",
-                }
-                apply_moves(mixxx, from_deck, to_deck, [move for move in moves if move in preview_moves])
-                perform_transition(mixxx, event, port=port)
-                # restore EQ/filter after land
-                apply_moves(mixxx, from_deck, to_deck, ["eq_restore", "filter_reset"])
-                if event.get("incoming_bpm_target") is not None:
-                    print(
-                        f"  holding deck {to_deck} at bridge tempo "
-                        f"{float(event['incoming_bpm_target']):.2f} BPM"
-                    )
-                else:
-                    settle_rate(mixxx, to_deck)
-                if pending_preload and pending_preload.get("deck") == from_deck:
-                    print(f"  preload next into freed deck {from_deck}")
-                    load_deck(
-                        mixxx,
-                        from_deck,
-                        pending_preload["track_id"],
-                        pending_preload.get("cue_fraction", 0.1),
-                        pending_preload.get("cue_seconds"),
-                        expected_bpms.get(pending_preload["track_id"]),
-                    )
-                    pending_preload = None
-            elif op == "finale":
-                beats = event.get("beats")
-                seconds = float(event.get("seconds", 30))
-                if event.get("play_to_end"):
-                    deck = int(event["deck"])
-                    group = deck_group(deck)
-                    print(f"  finale {event.get('track')} (play to end)")
-                    ensure_deck_playing(mixxx, deck)
-                    deadline = time.monotonic() + seconds + 30.0
-                    while time.monotonic() < deadline:
-                        if mixxx.get(group, "play") < 0.5 or mixxx.get(group, "playposition") >= 0.999:
-                            break
-                        time.sleep(0.25)
-                elif beats:
-                    print(f"  finale {event.get('track')} ({beats} beats)")
-                    ensure_deck_playing(mixxx, int(event["deck"]))
-                    # timeout scales with the ride: full verses (verse tour) can outlast
-                    # the old fixed 90s at slower tempos
-                    wait_for_beats(port, deck_group(int(event["deck"])), int(beats),
-                                   timeout_s=max(90.0, int(beats) * 1.5))
-                else:
-                    print(f"  finale {event.get('track')} ({seconds:.0f}s)")
-                    time.sleep(seconds)
-            elif op == "stop_all":
-                for deck in (1, 2):
-                    mixxx.set(deck_group(deck), "play", 0)
-                print("  stopped")
+                # timeout scales with the ride: full verses (verse tour) can outlast
+                # the old fixed 90s at slower tempos
+                wait_for_beats(port, deck_group(int(event["deck"])), int(beats),
+                               timeout_s=max(90.0, int(beats) * 1.5))
             else:
-                print(f"  (skip unknown op {op})")
+                print(f"  finale {event.get('track')} ({seconds:.0f}s)")
+                time.sleep(seconds)
+        elif op == "stop_all":
+            for deck in (1, 2):
+                mixxx.set(deck_group(deck), "play", 0)
+            print("  stopped")
+        else:
+            print(f"  (skip unknown op {op})")
     print("\nmix plan complete")
 
 
@@ -815,11 +861,18 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-events", type=int, default=None, help="execute only the first N events")
+    parser.add_argument(
+        "--record", action="store_true",
+        help="record the set via Mixxx's own recorder (WAV by default — this build has no mp3 "
+             "encoder; convert afterward with ffmpeg, or rebuild Mixxx with -DFFMPEG=ON for "
+             "native mp3). Starts/stops automatically around the plan; never touches a recording "
+             "that was already running.",
+    )
     args = parser.parse_args()
     if not args.plan.exists():
         raise SystemExit(f"missing {args.plan} — run: uv run python -m brain.build_mix_plan")
     plan = json.loads(args.plan.read_text())
-    run_plan(plan, port=args.port, dry_run=args.dry_run, max_events=args.max_events)
+    run_plan(plan, port=args.port, dry_run=args.dry_run, max_events=args.max_events, record=args.record)
 
 
 if __name__ == "__main__":

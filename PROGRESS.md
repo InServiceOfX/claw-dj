@@ -28,6 +28,13 @@ uv run python -m brain.enrich_set            # --status to just report
 uv run python -m brain.curate_playlist --mode selection --planner mix-graph
 uv run python -m brain.build_mix_plan --tracks N --profile dj-showcase --mix-brief "..."
 uv run python -m hands.run_mix_plan          # --dry-run first
+uv run python -m hands.run_mix_plan --record # also records WAV via Mixxx's own recorder
+
+# Turn a free-text DJ instruction into dj_notes edits (+ optional reorder),
+# grounded in each mentioned track's real synced lyrics. Dry-run by default;
+# also reachable from the web UI's "Interpret as DJ notes…" button:
+uv run python -m brain.mix_directives --brief "..." --engine nemoclaw
+uv run python -m brain.mix_directives --brief "..." --engine nemoclaw --apply
 
 # Verse tour (one song, two decks, chorus skipped):
 uv run python -m brain.build_verse_tour --track "21 Questions"
@@ -245,23 +252,76 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
     "Eastside LB" moved next to "This DJ (Remix Version)" (91.9→91.4bpm,
     closest match of the suggested Warren G neighbors) instead of sitting
     between Deep Cover and Lil' Ghetto Boy.
-  - **Not done, explicitly deferred by Ernest's own ask**: he asked for
-    the mix-brief text box (Create the mix page, right before "Build mix
-    plan") to eventually let an LLM make edits like this directly from a
-    detailed natural-language note, but said to just do it by hand this
-    time. Concrete design for that pipeline, next time it's picked up:
-    `brain/mix_directives.py` — feed an LLM (reuse `pick_candidates.py`'s
-    engine functions) the current ordered track list (with existing
-    dj_notes) + the free-text note + each track's raw synced LRC (for
-    verse-boundary asks) and get back structured
-    `{track_id, dj_notes, new_position}` edits; validate every returned
-    track_id against `playlist.json` before writing (the exact bug above)
-    and require the reorder to be a permutation of the existing set
-    (never invent/drop tracks); apply via the existing
-    `library_index`/`playlist_selection.json` write paths; always show a
-    diff for confirmation before committing, given how much specific
-    craft judgment (verse boundaries, neighbor BPM matches, "how much
-    monologue is OK to catch") went into this pass by hand.
+  - **DONE 2026-07-15**: `brain/mix_directives.py` — the mix-brief-to-edits
+    pipeline this by-hand pass motivated. Reuses `pick_candidates.py`'s
+    engine functions (`ENGINES`, `ask_h_agent`); feeds the LLM the current
+    ordered track list (short ids, not real paths — `t000` style, exactly
+    like `pick_candidates.build_whole_library_view`'s `id_map` pattern) with
+    existing dj_notes, plus each brief-referenced track's raw synced LRC
+    pulled from `lyric_timelines` (token-overlap match against
+    artist/title, `_mentioned_tracks()`), and asks for
+    `{"notes": {short_id: new_dj_notes}, "reorder": [short_id, ...] | null}`.
+    `parse_directives()` maps short ids back to real track_ids and enforces
+    the two hard rules: every id must exist in the current set (the exact
+    wrong-file-copy bug above, guarded structurally — a hallucinated path
+    can't even be expressed, since only short ids the model was given are
+    valid), and a reorder must be an exact permutation (checked as a set
+    equality + length check) — never invent or drop a track. Dry-run by
+    default (`print_diff`); `--apply` writes dj_notes to
+    `library.sqlite3` AND patches `playlist.json`'s rows in place directly
+    — **deliberately not** a `load_crate()`/`export_playlist()` round trip,
+    because `crate.json` is a lazily-synced compatibility export (only
+    refreshed on scan/analyze/sync) and would silently serve stale dj_notes
+    back into playlist.json otherwise; a landmine this design sidesteps
+    rather than hits. Wired into the web UI: `playlist_editor.py` gained
+    `ask_directives`/`directives_status`/`apply_directives` (same
+    background-thread-+-poll pattern as `ask_brain`) and
+    `/api/directives/{ask,apply}` + `GET /api/directives`; `playlist.html`
+    got an "Interpret as DJ notes…" button right before "Build mix plan"
+    (reusing the same `#mix-brief` textbox) that shows the diff and
+    requires an explicit "Apply these edits" click — never auto-applies.
+    Tested against the live 28-track set through a real nemoclaw call: it
+    correctly grounded a verse-landing-style ask in real lyrics and closed
+    the loop end-to-end, but also caught a real LLM instruction-following
+    miss ("don't touch this track's bpm" → it added a `play_bpm` anyway) —
+    concrete evidence for why dry-run-first is load-bearing, not
+    decorative. 13 unit tests in `tests/test_mix_directives.py` (id
+    validation, permutation enforcement, JSON-in-prose extraction, sqlite +
+    playlist.json write correctness).
+  - **DONE 2026-07-15**: `--record` flag on `hands/run_mix_plan.py` —
+    toggles Mixxx's `[Recording],toggle_recording`/`status` controls
+    (`start_recording`/`stop_recording` in `hands/run_mix_plan.py`,
+    confirmed against `RECORDING_PREF_KEY = "[Recording]"` in
+    `recording/defs_recording.h` in the patched fork) around the plan run,
+    inside a `try/finally` so a crash mid-set still stops the recording.
+    Never touches a recording that was already running when the plan
+    started (checks `status` first). Current build has no mp3 encoder (no
+    `-DFFMPEG=ON` — see `docs/BUILD_MIXXX.md`), so this records WAV;
+    convert with `ffmpeg` afterward, or rebuild with FFMPEG support for
+    native mp3. 4 unit tests in `tests/test_mix_runner.py`
+    (`RecordingControlTests`) using a fake control object.
+  - **Real bug found by ear, fixed 2026-07-15**: `juggle_intro` openers
+    (`hands.run_mix_plan.perform_juggle_intro`) load a second copy of the
+    OPENER track onto the other deck to juggle between, and leave it
+    loaded there when the juggle ends. `build_mix_plan.py` used to follow
+    the `opener_effect` event with a `recue` for deck 2 — but `recue` only
+    re-seeks whatever's *currently* loaded, it can't reload a different
+    track. So the first transition crossfaded back into a second copy of
+    the opener track instead of the real next track — audible live as
+    Ernest reported: "in the middle towards the end of Snoop's first verse,
+    you DO NOT need to fade in Dr. Dre's Nuthin' But a G Thing again."
+    Fixed by changing that post-opener event from `recue` to an explicit
+    `load` of the real second track (`brain/build_mix_plan.py`, right
+    after the `opener_effect` append) — reloading deck 2 properly undoes
+    the juggle's clobber before the first transition runs. Updated
+    `tests/test_mix_plan.py::test_opener_effect_and_verse_landing_cue` to
+    assert `load` (not `recue`) follows `opener_effect`.
+  - Same request: reordered "Tha Eastsidaz — G'd Up" (2000) from position 1
+    (right after the opener) to late in the set, just before "DJ Quik —
+    Dollars & Sense" (97.1→98.9 bpm bridge) — chronologically it's later
+    material than the early-90s Chronic/Doggystyle-era songs that should
+    open the mix. "Warren G — Regulate" naturally became the new track
+    right after the opener.
 
 ## Next steps (roughly in order of value)
 

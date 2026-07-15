@@ -376,9 +376,16 @@ def build_plan(
                 "detail": "Tease the iconic opening, echo it out, rewind, then drop clean.",
             }
         )
+        # juggle_intro reuses deck 2 to juggle a second copy of the opener
+        # track (see hands.run_mix_plan.perform_juggle_intro) and leaves it
+        # loaded there when it stops — a bare "recue" only re-seeks whatever
+        # is currently loaded, it can't reload, so without this the first
+        # transition would crossfade back into the opener track instead of
+        # the real second track. Explicitly reload deck 2 with the actual
+        # next track once the juggle is done.
         events.append(
             {
-                "op": "recue",
+                "op": "load",
                 "deck": 2,
                 "track_id": selected[1]["track_id"],
                 "artist": selected[1]["artist"],

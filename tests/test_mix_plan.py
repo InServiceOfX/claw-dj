@@ -200,7 +200,12 @@ class MixPlanTest(TestCase):
         )
         ops = [event["op"] for event in plan["events"]]
         self.assertIn("opener_effect", ops)
-        self.assertEqual(ops[ops.index("opener_effect") + 1], "recue")
+        # juggle_intro-style openers reuse deck 2 to juggle a second copy of
+        # the opener track and leave it loaded there — a bare recue can only
+        # re-seek whatever's currently loaded, not reload it, so this must be
+        # an explicit "load" of the real second track or the first
+        # transition would crossfade back into the opener instead.
+        self.assertEqual(ops[ops.index("opener_effect") + 1], "load")
         verse = plan["tracks"][1]
         self.assertEqual(verse["cue_source"], "dj_notes_landing")
         self.assertAlmostEqual(verse["cue_seconds"], 12.968, places=3)
