@@ -119,13 +119,30 @@ def fetch_lyrics(artist: str, title: str, *, force: bool = False) -> dict:
     try:
         for variant in title_search_variants(title):
             query = urllib.parse.urlencode({"q": f"{artist} {variant}"})
-            results = _http_get_json(f"{LRCLIB_SEARCH}?{query}")
+            # LRCLIB is a free, occasionally-flaky community service — retry
+            # once on a transient error before giving up on this variant.
+            results = None
+            for attempt in range(2):
+                try:
+                    results = _http_get_json(f"{LRCLIB_SEARCH}?{query}")
+                    break
+                except (urllib.error.URLError, TimeoutError, OSError):
+                    if attempt == 0:
+                        continue
+                    raise
             if not isinstance(results, list) or not results:
                 continue
-            best = results[0]
-            text = best.get("plainLyrics") or best.get("syncedLyrics")
-            if not text:
+            # The top-ranked result is sometimes an instrumental/no-lyrics
+            # entry — check several candidates, not just results[0], before
+            # moving on to the next title variant.
+            best = None
+            for candidate in results[:5]:
+                if candidate.get("plainLyrics") or candidate.get("syncedLyrics"):
+                    best = candidate
+                    break
+            if best is None:
                 continue
+            text = best.get("plainLyrics") or best.get("syncedLyrics")
             # strip simple timestamps if synced
             text = re.sub(r"\[\d+:\d+[^\]]*\]", "", text)
             record.update(
