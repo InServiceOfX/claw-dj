@@ -134,12 +134,19 @@ def track_directives(track: dict) -> dict:
     }
 
 
-def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
+def pick_technique(
+    left: dict, right: dict, affinity: dict | None, *, avoid_silence: bool = False
+) -> dict:
     """Choose how to play Mixxx between two tracks — instrument vocabulary.
 
     Default bias (Ernest, hackathon set): *blend* most of the time. Abrupt
     hard cuts are rare — reserved for extreme tempo gaps with no texture
     support (a "drop" moment), not the everyday path.
+
+    `avoid_silence=True` (club-set, mix-to-listen) removes even that rare
+    brake/hard-cut fallback — the floor should never stop moving, so an
+    extreme tempo gap downgrades to the smoother always-blending
+    tempo_gap_blend instead of a dramatic stop.
     """
     bpm_s, bpm_r = bpm_compatibility(left.get("bpm"), right.get("bpm"))
     key_s, key_r = key_compatibility(left.get("key"), right.get("key"))
@@ -187,7 +194,7 @@ def pick_technique(left: dict, right: dict, affinity: dict | None) -> dict:
             "because no safe ±2-semitone bridge was found."
         )
         moves = ["sync", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"]
-    elif bpm_s < 0.35 and not lineage and chroma < 0.55:
+    elif bpm_s < 0.35 and not lineage and chroma < 0.55 and not avoid_silence:
         # Rare hard cut: only when tempos are far apart and nothing else backs the pair.
         technique = "half_time_or_cut"
         beats = 4
@@ -397,7 +404,7 @@ def build_plan(
         out_deck = live_deck
         in_deck = 2 if live_deck == 1 else 1
         aff = affinity_lookup.get(tuple(sorted((outgoing["track_id"], incoming["track_id"]))))
-        tech = pick_technique(outgoing, incoming, aff)
+        tech = pick_technique(outgoing, incoming, aff, avoid_silence=profile.avoid_silence)
 
         # Compatibility chooses the base recipe; the profile controls how
         # often we show off and how long the landing takes.

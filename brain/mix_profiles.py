@@ -34,6 +34,10 @@ class MixProfile:
     flourish_every: int = 1
     # First N transitions prioritize longer beat-matched blends and suppress tricks.
     smooth_opening_transitions: int = 0
+    # Never let the outgoing deck go fully silent (no brake/hard-cut fallback
+    # for extreme tempo gaps — downgrades to a smoother, always-blending
+    # tempo_gap_blend instead). For "keep the floor dancing" profiles.
+    avoid_silence: bool = False
 
 
 PROFILES: dict[str, MixProfile] = {
@@ -49,12 +53,16 @@ PROFILES: dict[str, MixProfile] = {
     ),
     "club-set": MixProfile(
         name="club-set",
-        description="Longer rides and blends; keep the floor moving, show off less.",
+        description=(
+            "Keep the floor dancing: same energy, near-constant BPM, the beat "
+            "never stops — no hard cuts, only the occasional planned drop."
+        ),
         seconds_per_track=75.0,
         ride_phrases_pattern=(3, 2, 3, 4, 2, 3),
         intro_entry_every=6,
         transition_scale=1.75,
-        flourish_every=4,
+        flourish_every=5,
+        avoid_silence=True,
     ),
     "warm-up": MixProfile(
         name="warm-up",
@@ -65,6 +73,23 @@ PROFILES: dict[str, MixProfile] = {
         intro_entry_every=3,
         transition_scale=2.0,
         flourish_every=0,
+    ),
+    "mix-to-listen": MixProfile(
+        name="mix-to-listen",
+        description=(
+            "A listening mix, not a performance — play the best parts of each "
+            "song at whatever length earns it, no showcase cuts, no rush."
+        ),
+        seconds_per_track=85.0,
+        # Variable on purpose — some songs' best part is short, some deserve
+        # to run; unlike warm-up's uniform long pattern, this leans on
+        # confidence_extra_phrase to decide length per track.
+        ride_phrases_pattern=(2, 3, 2, 4, 3, 2, 4, 3),
+        confidence_extra_phrase=0.45,
+        intro_entry_every=5,
+        transition_scale=1.6,
+        flourish_every=0,
+        avoid_silence=True,
     ),
 }
 
