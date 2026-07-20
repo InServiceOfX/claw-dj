@@ -170,22 +170,41 @@ def scan(
 
 def incremental_scan(
     roots: list[Path], *, index_path: Path = DEFAULT_INDEX,
-    min_age_seconds: float = 300, workers: int = 8,
+    min_age_seconds: float = 300, workers: int = 8, progress_every: int = 100,
 ) -> dict:
-    """Index only new/changed files and return a user-facing scan summary."""
+    """Index only new/changed files and return a user-facing scan summary.
+
+    Live progress goes to two places at once: stdout (CLI runs) and the
+    `scan_state` row (`processed`/`discovered`), which the playlist-editor
+    GUI already polls every 750ms — previously `processed` was only written
+    once at the very end, so a long ingest sat on "0/N files" the whole
+    time in both surfaces.
+    """
     normalized = [root.expanduser().resolve() for root in roots]
     for root in normalized:
         if not root.exists():
             raise FileNotFoundError(f"scan root does not exist: {root}")
-    paths_by_root: dict[str, Path] = {}
-    for root in normalized:
-        for path in root.rglob("*"):
-            if path.suffix.lower() in AUDIO_EXTENSIONS and not path.name.startswith("._"):
-                paths_by_root[str(path)] = root
 
+    # Mark the scan running BEFORE discovery: rglob over a big USB tree can
+    # take a while by itself, and the GUI should show activity immediately.
     db = connect(index_path)
-    started_at = begin_scan(db, len(paths_by_root))
+    started_at = begin_scan(db, 0)
     try:
+        paths_by_root: dict[str, Path] = {}
+        for root in normalized:
+            for path in root.rglob("*"):
+                if path.suffix.lower() in AUDIO_EXTENSIONS and not path.name.startswith("._"):
+                    paths_by_root[str(path)] = root
+                    if len(paths_by_root) % 2000 == 0:
+                        print(f"    discovering… {len(paths_by_root)} audio files so far", flush=True)
+                        db.execute(
+                            "UPDATE scan_state SET discovered=? WHERE id=1",
+                            (len(paths_by_root),),
+                        )
+                        db.commit()
+        db.execute("UPDATE scan_state SET discovered=? WHERE id=1", (len(paths_by_root),))
+        db.commit()
+        print(f"    discovered {len(paths_by_root)} audio files under {len(normalized)} root(s)", flush=True)
         baseline_paths: set[str] = set()
         if DEFAULT_CRATE_CACHE.exists():
             try:
@@ -222,14 +241,39 @@ def incremental_scan(
             else:
                 changed.append(path)
 
+        # Unchanged files are already fully "processed" (their existing rows
+        # were just re-confirmed) — reflect that immediately so the GUI's
+        # processed/discovered counter jumps past everything being skipped
+        # instead of sitting at 0 while only the delta gets read.
+        db.execute("UPDATE scan_state SET processed=? WHERE id=1", (unchanged,))
+        db.commit()
+        print(
+            f"    {unchanged} unchanged (skipped, metadata already indexed); "
+            f"reading tags for {len(changed)} new/changed file(s)",
+            flush=True,
+        )
+
         now = time.time()
+        read_started = time.perf_counter()
         skipped: list[dict] = []
         records: list[dict] = []
         with ThreadPoolExecutor(max_workers=workers) as pool:
             results = pool.map(
                 lambda p: _read_record(p, min_age_seconds=min_age_seconds, now=now), changed
             )
-            for result in results:
+            for i, result in enumerate(results, start=1):
+                if progress_every and i % progress_every == 0:
+                    rate = i / (time.perf_counter() - read_started)
+                    remaining = (len(changed) - i) / rate if rate else 0
+                    print(
+                        f"    {i}/{len(changed)} new/changed files "
+                        f"({rate:.0f}/s, ~{remaining:.0f}s left)",
+                        flush=True,
+                    )
+                    db.execute(
+                        "UPDATE scan_state SET processed=? WHERE id=1", (unchanged + i,)
+                    )
+                    db.commit()
                 if result is None:
                     continue
                 kind, payload = result

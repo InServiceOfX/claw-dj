@@ -51,7 +51,7 @@ keys must match exactly):
   entry_style=beat_drop | gentle_blend | verse_landing
   landing_seconds=<number>   (with entry_style=verse_landing) exact second the vocal/verse lands
   landing_beats=<int>        (with entry_style=verse_landing) beat count to land on
-  opener_style=echo_tease_drop | juggle_intro   (only meaningful on the first track)
+  opener_style=echo_tease_drop | juggle_intro | juggle_brake_intro   (only meaningful on the first track)
   full_track                 bare flag — play the whole track, no cut
 
 Real examples written by hand this project (style + precision to match):

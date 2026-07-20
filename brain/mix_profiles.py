@@ -135,6 +135,15 @@ def apply_brief(profile: MixProfile, brief: str) -> tuple[MixProfile, list[str]]
     if smooth_opening:
         profile = replace(profile, smooth_opening_transitions=7)
         notes.append("first 7 transitions use longer trick-free beat-matched blends")
+    if has(
+        "no hard cut", "avoid hard cut", "hard cuts sparingly", "no abrupt end",
+        "avoid the brake", "keep it blending", "keep the beat going",
+    ):
+        profile = replace(profile, avoid_silence=True)
+        notes.append(
+            "hard cuts (half_time_or_cut) downgraded to a smooth tempo-gap "
+            "blend instead (no hard cut / sparingly)"
+        )
     return profile, notes
 
 

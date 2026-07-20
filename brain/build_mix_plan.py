@@ -109,17 +109,88 @@ def load_dj_notes_lookup() -> dict[str, str]:
         }
 
 
+def load_lyric_line_lookup() -> dict[str, list[float]]:
+    """Sorted lyric-line start times per track, from synced LRC where it
+    exists — used to snap a cue point onto an actual word boundary instead
+    of trusting the beatgrid/energy phrase-picker blindly (it has no idea
+    where a word starts; it can and does land mid-syllable)."""
+    from brain.library_index import connect
+    from brain.lyric_timeline import parse_lrc
+
+    with closing(connect()) as db:
+        rows = db.execute(
+            "SELECT track_id, lrc FROM lyric_timelines WHERE lrc IS NOT NULL"
+        ).fetchall()
+    out: dict[str, list[float]] = {}
+    for row in rows:
+        lines = parse_lrc(row["lrc"])
+        if lines:
+            out[row["track_id"]] = sorted(line.t for line in lines if line.text.strip())
+    return out
+
+
+def load_beat_phase_lookup() -> dict[str, dict]:
+    """Cached real onset/waveform snare-parity analysis (brain.onset_analysis),
+    keyed by track_id -- {"snare_parity": 0|1, "confidence": float, "bpm":
+    float, "first_beat_seconds": float}. Filled by
+    brain.enrich_set.fill_beat_phase. Missing entries (a track never
+    analyzed yet) simply skip the phase check below rather than erroring --
+    same graceful-degradation pattern as phrase_lookup/lyric_line_lookup."""
+    from brain.library_index import connect
+
+    with closing(connect()) as db:
+        rows = db.execute(
+            "SELECT track_id, snare_parity, confidence, bpm, first_beat_seconds FROM beat_phase"
+        ).fetchall()
+    return {
+        row["track_id"]: {
+            "snare_parity": row["snare_parity"],
+            "confidence": row["confidence"],
+            "bpm": row["bpm"],
+            "first_beat_seconds": row["first_beat_seconds"],
+        }
+        for row in rows
+    }
+
+
+def snap_to_lyric_line(
+    cue_seconds: float, track_id: str, lyric_line_lookup: dict[str, list[float]], *, max_snap_s: float = 6.0
+) -> tuple[float, bool]:
+    """Nudge a cue point forward to the nearest lyric-line start at or after
+    it, so playback never begins mid-word. Never snaps backward (that would
+    replay content the phrase-picker's energy target already skipped past)
+    and gives up (returns the original point) if the nearest line is
+    further away than `max_snap_s` — likely an instrumental stretch, where
+    forcing a snap would drift too far from the intended entry point."""
+    lines = lyric_line_lookup.get(track_id)
+    if not lines:
+        return cue_seconds, False
+    for start in lines:
+        if start >= cue_seconds:
+            if start - cue_seconds <= max_snap_s:
+                return start, True
+            return cue_seconds, False
+    return cue_seconds, False
+
+
 def track_directives(track: dict) -> dict:
     """Parse small machine-readable hints embedded in natural DJ notes."""
     notes = str(track.get("dj_notes") or "")
 
     def number(name: str) -> float | None:
-        match = re.search(rf"\b{re.escape(name)}\s*=\s*(\d+(?:\.\d+)?)", notes, re.I)
-        return float(match.group(1)) if match else None
+        # The LAST match wins, not the first: by convention the real
+        # directive sits at the end of the note, but prose earlier in the
+        # same note sometimes narrates an old value (e.g. "was
+        # ride_beats=128, now ...") for human context. Taking the first
+        # match silently picked up stale history twice in one session
+        # before this was made the parser's own responsibility instead of
+        # relying on every note's author never mentioning an old number.
+        matches = re.findall(rf"\b{re.escape(name)}\s*=\s*(\d+(?:\.\d+)?)", notes, re.I)
+        return float(matches[-1]) if matches else None
 
     def word(name: str) -> str | None:
-        match = re.search(rf"\b{re.escape(name)}\s*=\s*([a-z_]+)", notes, re.I)
-        return match.group(1).casefold() if match else None
+        matches = re.findall(rf"\b{re.escape(name)}\s*=\s*([a-z_]+)", notes, re.I)
+        return matches[-1].casefold() if matches else None
 
     return {
         "cue_seconds": number("cue_seconds"),
@@ -127,10 +198,12 @@ def track_directives(track: dict) -> dict:
         "ride_beats": int(value) if (value := number("ride_beats")) is not None else None,
         "play_bpm": number("play_bpm"),
         "entry_style": word("entry_style"),
+        "exit_style": word("exit_style"),
         "opener_style": word("opener_style"),
         "landing_seconds": number("landing_seconds"),
         "landing_beats": int(value) if (value := number("landing_beats")) is not None else None,
         "full_track": bool(re.search(r"\bfull_track\b", notes, re.I)),
+        "no_flourish": bool(re.search(r"\bno_flourish\b", notes, re.I)),
     }
 
 
@@ -208,7 +281,15 @@ def pick_technique(
         technique = "tempo_gap_blend"
         beats = 16
         notes = "Tempo gap large — rate-nudge into a longer EQ/filter blend rather than a slam cut."
-        moves = ["rate_nudge_in", "sync", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"]
+        # No "sync" here on purpose: beatsync fully snaps the incoming deck
+        # to whatever the outgoing deck is ACTUALLY playing at, which for a
+        # genuinely large gap means an audible, jarring speed change (heard
+        # live, 2026-07-16: "the speed up... shouldn't be that fast, it
+        # sounds terrible"). rate_nudge_in already gives a small, bounded
+        # taste of movement (+5%) without forcing a full hard tempo-match —
+        # let the mismatch stand and be masked by the EQ/filter blend
+        # instead, which is what "rather than a slam cut" already promised.
+        moves = ["rate_nudge_in", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"]
     elif chroma > 0.7:
         technique = "chroma_matched_blend"
         beats = 20
@@ -262,11 +343,14 @@ def build_plan(
     seconds_per_track: float,
     affinity_lookup: dict[tuple[str, str], dict],
     phrase_lookup: dict[str, dict] | None = None,
+    lyric_line_lookup: dict[str, list[float]] | None = None,
+    beat_phase_lookup: dict[str, dict] | None = None,
     phrase_beats: int = 32,
     profile: "MixProfile | None" = None,
     provenance: dict | None = None,
 ) -> dict:
     from brain.mix_profiles import PROFILES
+    from brain.onset_analysis import count_shift_beats
 
     profile = profile or PROFILES["dj-showcase"]
     selected = tracks[:count]
@@ -274,17 +358,37 @@ def build_plan(
         raise SystemExit("need at least 2 tracks in the filtered playlist")
 
     phrase_lookup = phrase_lookup or {}
+    lyric_line_lookup = lyric_line_lookup or {}
+    beat_phase_lookup = beat_phase_lookup or {}
+    # Populated by cue_fields() below every time it resolves an absolute
+    # cue_seconds for a track -- lets the phase-parity check (further down)
+    # look up each track's OWN entry beat_index without re-deriving it.
+    cue_beat_index_cache: dict[str, int] = {}
     events: list[dict] = []
+
+    def _remember_cue_beat_index(track_id: str, result: dict) -> dict:
+        """Cache the resolved beat_index for this cue so the phase-parity
+        check further down can find each track's OWN entry beat_index
+        without re-deriving it (needed once this track later becomes the
+        OUTGOING side of a transition)."""
+        cue_seconds = result.get("cue_seconds")
+        phase = beat_phase_lookup.get(track_id)
+        if cue_seconds is not None and phase:
+            period = 60.0 / phase["bpm"]
+            cue_beat_index_cache[track_id] = round(
+                (cue_seconds - phase["first_beat_seconds"]) / period
+            )
+        return result
 
     def cue_fields(track: dict, fallback_fraction: float, slot: int = 0) -> dict:
         directive = track_directives(track)
         if directive["cue_seconds"] is not None:
-            return {
+            return _remember_cue_beat_index(track["track_id"], {
                 "cue_seconds": directive["cue_seconds"],
                 "cue_confidence": 1.0,
                 "cue_source": "dj_notes",
                 "dj_notes": track.get("dj_notes") or "",
-            }
+            })
         if (
             directive["landing_seconds"] is not None
             and directive["landing_beats"] is not None
@@ -298,16 +402,25 @@ def build_plan(
                 directive["landing_seconds"]
                 - directive["landing_beats"] * 60.0 / float(track["bpm"]),
             )
-            return {
+            return _remember_cue_beat_index(track["track_id"], {
                 "cue_seconds": round(cue_seconds, 3),
                 "landing_seconds": directive["landing_seconds"],
                 "landing_beats": directive["landing_beats"],
                 "cue_confidence": 1.0,
                 "cue_source": "dj_notes_landing",
                 "dj_notes": track.get("dj_notes") or "",
-            }
+            })
         phrase = phrase_lookup.get(track["track_id"])
         if not phrase:
+            duration = track.get("duration_seconds")
+            if duration:
+                raw = fallback_fraction * duration
+                snapped, did_snap = snap_to_lyric_line(raw, track["track_id"], lyric_line_lookup)
+                if did_snap:
+                    return _remember_cue_beat_index(track["track_id"], {
+                        "cue_seconds": round(snapped, 3),
+                        "cue_source": "fraction_fallback+lyric_snap",
+                    })
             return {"cue_fraction": fallback_fraction, "cue_source": "fraction_fallback"}
         body = phrase.get("body")
         intro = phrase.get("intro")
@@ -328,12 +441,22 @@ def build_plan(
             pick, source = intro, "phrase_intro"
         if pick is None:
             pick = phrase
-        return {
-            "cue_seconds": pick["cue_seconds"],
+        # The beatgrid/energy phrase-picker has no idea where a word starts —
+        # it can and does land mid-syllable. Never start in the middle of a
+        # word: snap forward to the nearest actual lyric-line start when
+        # synced lyrics are available (Ernest, 2026-07-16, caught on Cassie
+        # — Me&U landing on "...wanna see if it's true").
+        cue_seconds, did_snap = snap_to_lyric_line(
+            pick["cue_seconds"], track["track_id"], lyric_line_lookup
+        )
+        if did_snap:
+            source = f"{source}+lyric_snap"
+        return _remember_cue_beat_index(track["track_id"], {
+            "cue_seconds": cue_seconds,
             "cue_beat_index": pick.get("beat_index"),
             "cue_confidence": pick.get("confidence"),
             "cue_source": source,
-        }
+        })
     # Instrument reset
     events.append(
         {
@@ -376,13 +499,13 @@ def build_plan(
                 "detail": "Tease the iconic opening, echo it out, rewind, then drop clean.",
             }
         )
-        # juggle_intro reuses deck 2 to juggle a second copy of the opener
-        # track (see hands.run_mix_plan.perform_juggle_intro) and leaves it
-        # loaded there when it stops — a bare "recue" only re-seeks whatever
+        # juggle_intro/juggle_brake_intro reuse deck 2 to juggle a second
+        # copy of the opener track (see hands.run_mix_plan) and leave it
+        # loaded there when they stop — a bare "recue" only re-seeks whatever
         # is currently loaded, it can't reload, so without this the first
         # transition would crossfade back into the opener track instead of
         # the real second track. Explicitly reload deck 2 with the actual
-        # next track once the juggle is done.
+        # next track once the opener effect is done.
         events.append(
             {
                 "op": "load",
@@ -393,13 +516,18 @@ def build_plan(
                 **cue_fields(selected[1], 0.12, 1),
             }
         )
-    events.append(
-        {
-            "op": "start",
-            "deck": 1,
-            "detail": "Play deck 1; deck 2 cued and silent until first transition",
-        }
-    )
+    start_event = {
+        "op": "start",
+        "deck": 1,
+        "detail": "Play deck 1; deck 2 cued and silent until first transition",
+    }
+    if opener_directive["play_bpm"] is not None:
+        # The opener has no incoming transition to hang pick_technique's
+        # incoming_bpm_target on (that's the only other place play_bpm gets
+        # applied) — without this, a play_bpm directive on track 0 silently
+        # did nothing. Bump it the moment it actually starts playing instead.
+        start_event["bpm_target"] = opener_directive["play_bpm"]
+    events.append(start_event)
 
     live_deck = 1
     play_s = seconds_per_track
@@ -413,6 +541,7 @@ def build_plan(
         in_deck = 2 if live_deck == 1 else 1
         aff = affinity_lookup.get(tuple(sorted((outgoing["track_id"], incoming["track_id"]))))
         tech = pick_technique(outgoing, incoming, aff, avoid_silence=profile.avoid_silence)
+        incoming_directive = track_directives(incoming)
 
         # Compatibility chooses the base recipe; the profile controls how
         # often we show off and how long the landing takes.
@@ -421,7 +550,7 @@ def build_plan(
             tech["transition_beats"] = max(4, int(round(scaled / 4)) * 4)
         tech["moves"] = [move for move in tech["moves"] if move != "optional_scratch_in"]
         flourish = "bass_swap"
-        if profile.flourish_every and index % profile.flourish_every == 0:
+        if profile.flourish_every and index % profile.flourish_every == 0 and not incoming_directive["no_flourish"]:
             # Rotation includes the Rust slip gestures (stutter/censor);
             # the runner degrades them to plain blends when the clawdj
             # binary is missing, so plans stay portable.
@@ -459,7 +588,9 @@ def build_plan(
             if tech["technique"] == "half_time_or_cut":
                 tech.update(
                     technique="tempo_gap_blend",
-                    moves=["rate_nudge_in", "sync", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"],
+                    # See the other tempo_gap_blend definition above for why
+                    # "sync" is deliberately absent.
+                    moves=["rate_nudge_in", "filter_sweep_out", "crossfade", "filter_reset", "eq_restore"],
                 )
             tech["showcase_move"] = "smooth_opening"
             tech["notes"] += " Opening directive: longer beat-matched blend, no flourish."
@@ -526,6 +657,26 @@ def build_plan(
         pattern = profile.ride_phrases_pattern
         ride_phrases = pattern[index % len(pattern)]
         directive = track_directives(outgoing)
+        if directive["exit_style"] == "echo_out":
+            # Echo-out exit (docs/DJ_TRANSITIONS_PLAYBOOK.md #4): the
+            # outgoing track fades under a rising echo tail, then the
+            # incoming starts clean at its own tempo. The standard gentle
+            # answer for large tempo gaps -- nothing rhythmic overlaps, so
+            # no tempo bridging (and none of tempo_gap_blend's forced
+            # stretch) is needed. Directive-driven only, per the playbook's
+            # "use as an exit strategy, not a habit" warning. Overrides the
+            # incoming's entry_style: there is no overlap to land into.
+            tech.update(
+                technique="echo_out_exit",
+                transition_beats=4,
+                moves=["echo_out_exit"],
+                showcase_move="echo_out",
+                notes=(
+                    "Human DJ note: echo-out exit -- fade the outgoing track "
+                    "under a rising echo tail, then start the incoming clean "
+                    "at its own tempo. No tempo bridging."
+                ),
+            )
         if directive["ride_phrases"] is not None:
             ride_phrases = max(1, min(8, directive["ride_phrases"]))
         out_phrase = phrase_lookup.get(outgoing["track_id"]) or {}
@@ -535,6 +686,40 @@ def build_plan(
         ride_beats = max(0, next_boundary - elapsed_in_phrase - 1)
         if directive["ride_beats"] is not None:
             ride_beats = max(0, min(512, directive["ride_beats"]))
+
+        # Real onset/waveform check (brain.onset_analysis): a standard
+        # backbeat puts the snare on every OTHER beat, so which beat-in-bar
+        # the transition anchors on (kick vs. snare position) is a real,
+        # audible property -- not just a tempo-matching question. Mixxx's
+        # generic beatsync locks GENERIC beat ticks together; it has no
+        # idea whether that lines up actual drum hits. Found live,
+        # 2026-07-16/17: three separate "beats don't match" complaints
+        # traced to real, confirmed parity mismatches this check would
+        # have caught automatically. Only runs when both tracks have
+        # cached analysis (brain.enrich_set.fill_beat_phase) -- silently
+        # skipped otherwise, same graceful-degradation pattern as
+        # phrase_lookup/lyric_line_lookup.
+        outgoing_phase = beat_phase_lookup.get(outgoing["track_id"])
+        incoming_phase = beat_phase_lookup.get(incoming["track_id"])
+        outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
+        incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
+        if (
+            outgoing_phase and incoming_phase
+            and outgoing_entry_beat is not None and incoming_entry_beat is not None
+        ):
+            shift = count_shift_beats(
+                outgoing_snare_parity=outgoing_phase["snare_parity"],
+                outgoing_anchor_beat_index=outgoing_entry_beat + ride_beats,
+                incoming_snare_parity=incoming_phase["snare_parity"],
+                incoming_cue_beat_index=incoming_entry_beat,
+            )
+            if shift:
+                print(
+                    f"  [beat-phase] {outgoing['artist']} — {outgoing['title']} -> "
+                    f"{incoming['artist']} — {incoming['title']}: nudging ride_beats "
+                    f"{ride_beats} -> {ride_beats + shift} to match snare parity"
+                )
+                ride_beats += shift
 
         # Play body of outgoing track
         events.append(
@@ -763,6 +948,8 @@ def compose_mix_plan(
         seconds_per_track=seconds_per_track if seconds_per_track is not None else profile.seconds_per_track,
         affinity_lookup=load_affinity_lookup(),
         phrase_lookup=load_phrase_lookup(phrase_analysis),
+        lyric_line_lookup=load_lyric_line_lookup(),
+        beat_phase_lookup=load_beat_phase_lookup(),
         phrase_beats=phrase_beats if phrase_beats is not None else profile.phrase_beats,
         profile=profile,
         provenance=provenance,

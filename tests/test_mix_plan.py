@@ -9,6 +9,7 @@ from brain.build_mix_plan import (
     pick_technique,
     pitch_adjust_for_blend,
     plan_summary,
+    snap_to_lyric_line,
     track_directives,
 )
 from brain.lyrics import lyric_overlap, title_search_variants, tokens
@@ -59,6 +60,25 @@ class MixPlanTest(TestCase):
         if gap["technique"] == "tempo_gap_blend":
             self.assertNotIn("hard_cut", gap["moves"])
 
+    def test_tempo_gap_blend_never_forces_a_hard_sync(self) -> None:
+        # avoid_silence=True guarantees tempo_gap_blend over half_time_or_cut
+        # for a deterministic assertion. "sync" fully snaps the incoming
+        # deck to whatever the outgoing deck is ACTUALLY playing at, which
+        # for a gap this large means an audible, jarring speed change —
+        # heard live, 2026-07-16, on Sade — The Sweetest Taboo entering
+        # from a track held at a much higher bumped tempo: "the speed up...
+        # shouldn't be that fast, it sounds terrible." rate_nudge_in already
+        # gives a small bounded taste of movement without a full sync-lock.
+        tech = pick_technique(
+            {"bpm": 90.0, "key": "Am"},
+            {"bpm": 140.0, "key": "Am"},
+            {"score": 0.3, "lyric_score": 0.0, "chroma_score": 0.0, "reasons": []},
+            avoid_silence=True,
+        )
+        self.assertEqual(tech["technique"], "tempo_gap_blend")
+        self.assertNotIn("sync", tech["moves"])
+        self.assertIn("rate_nudge_in", tech["moves"])
+
     def test_pitch_adjust_uses_smallest_harmonic_bridge(self) -> None:
         adjustment = pitch_adjust_for_blend("C", "F#")
         self.assertIsNotNone(adjustment)
@@ -96,6 +116,68 @@ class MixPlanTest(TestCase):
         # intentional part of the current plan defaults.
         self.assertEqual(body["beats"], 63)
 
+    def test_snap_to_lyric_line_moves_forward_to_next_word(self) -> None:
+        lookup = {"/music/a.mp3": [2.38, 37.18, 44.26, 49.00, 59.87]}
+        # Cassie — Me&U's real case: beatgrid/energy picker landed at 48.2s,
+        # mid-line ("...wanna see if it's true", 44.26-49.00) — must snap
+        # forward to the next line, never backward into content already
+        # implicitly skipped.
+        snapped, did_snap = snap_to_lyric_line(48.2053, "/music/a.mp3", lookup)
+        self.assertTrue(did_snap)
+        self.assertAlmostEqual(snapped, 49.00)
+
+    def test_snap_to_lyric_line_exact_hit_is_a_noop(self) -> None:
+        lookup = {"/music/a.mp3": [2.38, 37.18]}
+        snapped, did_snap = snap_to_lyric_line(37.18, "/music/a.mp3", lookup)
+        self.assertTrue(did_snap)
+        self.assertAlmostEqual(snapped, 37.18)
+
+    def test_snap_to_lyric_line_gives_up_beyond_cap(self) -> None:
+        lookup = {"/music/a.mp3": [2.38, 60.0]}
+        snapped, did_snap = snap_to_lyric_line(48.2, "/music/a.mp3", lookup, max_snap_s=6.0)
+        self.assertFalse(did_snap)
+        self.assertEqual(snapped, 48.2)
+
+    def test_snap_to_lyric_line_no_data_is_a_noop(self) -> None:
+        snapped, did_snap = snap_to_lyric_line(48.2, "/music/unknown.mp3", {})
+        self.assertFalse(did_snap)
+        self.assertEqual(snapped, 48.2)
+
+    def test_snap_to_lyric_line_never_snaps_backward(self) -> None:
+        # Every candidate line is behind the cue point -> nothing to snap to.
+        lookup = {"/music/a.mp3": [2.38, 10.0, 20.0]}
+        snapped, did_snap = snap_to_lyric_line(48.2, "/music/a.mp3", lookup)
+        self.assertFalse(did_snap)
+        self.assertEqual(snapped, 48.2)
+
+    def test_build_plan_snaps_phrase_body_cue_off_a_mid_word_landing(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/opener.mp3", "artist": "Cassie", "title": "Me&U",
+                "bpm": 100.0, "key": "Am", "duration_seconds": 192.4,
+            },
+            {
+                "track_id": "/music/next.mp3", "artist": "Someone", "title": "Else",
+                "bpm": 100.0, "key": "Am",
+            },
+        ]
+        phrase_lookup = {
+            "/music/opener.mp3": {
+                "intro": {"cue_seconds": 0.2, "beat_index": 0, "confidence": 0.7, "score": 1.1},
+                "body": {"cue_seconds": 48.2053, "beat_index": 80, "confidence": 0.53, "score": 0.68},
+            }
+        }
+        lyric_line_lookup = {"/music/opener.mp3": [2.38, 37.18, 44.26, 49.00, 59.87]}
+        plan = build_plan(
+            tracks, count=2, seconds_per_track=20.0, affinity_lookup={},
+            phrase_lookup=phrase_lookup, lyric_line_lookup=lyric_line_lookup,
+        )
+        load_event = next(
+            e for e in plan["events"] if e["op"] == "load" and e["track_id"] == "/music/opener.mp3"
+        )
+        self.assertAlmostEqual(load_event["cue_seconds"], 49.00)
+        self.assertEqual(load_event["cue_source"], "phrase_body+lyric_snap")
+
     def test_title_search_variants_fix_many_man(self) -> None:
         variants = title_search_variants("Many Man (Wish Death)")
         self.assertTrue(any("Many Men" in v for v in variants))
@@ -108,6 +190,17 @@ class MixPlanTest(TestCase):
         self.assertTrue(any("longer" in note for note in notes))
         # "no tricks" must not also fire the "tricks" positive branch.
         self.assertFalse(any("every transition" in note for note in notes))
+
+    def test_apply_brief_avoid_hard_cuts(self) -> None:
+        profile, notes = apply_brief(
+            PROFILES["dj-showcase"], "great song choices, just use hard cuts sparingly"
+        )
+        self.assertTrue(profile.avoid_silence)
+        self.assertTrue(any("hard cut" in note for note in notes))
+
+    def test_apply_brief_default_profile_keeps_hard_cuts_available(self) -> None:
+        profile, _ = apply_brief(PROFILES["dj-showcase"], "smooth, longer blends")
+        self.assertFalse(profile.avoid_silence)
 
     def test_dj_notes_directives_override_cue_and_ride(self) -> None:
         directives = track_directives(
@@ -127,6 +220,48 @@ class MixPlanTest(TestCase):
         self.assertIsNone(directives["landing_seconds"])
         self.assertIsNone(directives["landing_beats"])
         self.assertTrue(directives["full_track"])
+        self.assertFalse(directives["no_flourish"])
+
+    def test_dj_notes_last_directive_wins_over_stale_prose_mentions(self) -> None:
+        # A note narrating its own history ("was ride_beats=128, trimmed to
+        # ride_beats=112...") before the real final directive must not let
+        # an earlier, stale number win -- found live twice in one session
+        # before the parser itself was fixed to always prefer the last match.
+        directives = track_directives(
+            {
+                "dj_notes": (
+                    "Ride length trimmed twice already, first the full "
+                    "third verse (ride_beats=128), then partway into it "
+                    "(ride_beats=112) -- still too long, trim further. "
+                    "cue_seconds=61.97; ride_beats=96"
+                )
+            }
+        )
+        self.assertEqual(directives["ride_beats"], 96)
+        self.assertEqual(directives["cue_seconds"], 61.97)
+
+    def test_no_flourish_directive_suppresses_showcase_moves(self) -> None:
+        directives = track_directives({"dj_notes": "no_flourish"})
+        self.assertTrue(directives["no_flourish"])
+
+        # At index=1 the flourish rotation would normally land on
+        # "scratch_preview" (rotation[1]) -- a track with no_flourish must
+        # fall back to the plain "bass_swap" default instead.
+        tracks = [
+            {"track_id": "/music/a.mp3", "artist": "A", "title": "A", "bpm": 100.0, "key": "Am"},
+            {"track_id": "/music/b.mp3", "artist": "B", "title": "B", "bpm": 100.5, "key": "Am"},
+            {
+                "track_id": "/music/c.mp3", "artist": "C", "title": "C", "bpm": 101.0, "key": "Am",
+                "dj_notes": "no_flourish",
+            },
+        ]
+        from dataclasses import replace
+
+        profile = replace(PROFILES["dj-showcase"], flourish_every=1)
+        plan = build_plan(tracks, count=3, seconds_per_track=20.0, affinity_lookup={}, profile=profile)
+        transitions = [e for e in plan["events"] if e["op"] == "transition"]
+        self.assertEqual(transitions[1]["showcase_move"], "bass_swap")
+        self.assertNotIn("optional_scratch_in", transitions[1]["moves"])
 
     def test_track_entry_directives_override_transition(self) -> None:
         tracks = [
@@ -217,6 +352,126 @@ class MixPlanTest(TestCase):
         self.assertEqual(transition["landing_seconds"], 28.74)
         body = next(event for event in plan["events"] if event["op"] == "play_body")
         self.assertEqual(body["beats"], 63)
+
+    def test_opener_play_bpm_reaches_the_start_event(self) -> None:
+        # play_bpm only ever applied via pick_technique's incoming_bpm_target,
+        # which fires on a transition INTO a track — the opener has no
+        # incoming transition, so a play_bpm directive on track 0 silently
+        # did nothing. Must reach the "start" event instead.
+        tracks = [
+            {
+                "track_id": "/music/opener.mp3", "artist": "Cassie", "title": "Me&U",
+                "bpm": 100.0, "key": "Am", "dj_notes": "cue_seconds=0; play_bpm=103.0",
+            },
+            {
+                "track_id": "/music/next.mp3", "artist": "Someone", "title": "Else",
+                "bpm": 94.0, "key": "Am",
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        start_event = next(e for e in plan["events"] if e["op"] == "start")
+        self.assertEqual(start_event["bpm_target"], 103.0)
+
+    def test_exit_style_echo_out_overrides_technique(self) -> None:
+        # docs/DJ_TRANSITIONS_PLAYBOOK.md #4: an echo-out exit is the gentle
+        # large-gap escape -- no tempo bridging at all, so sync must be gone
+        # from the moves and the incoming enters clean.
+        tracks = [
+            {
+                "track_id": "/m/a.mp3", "artist": "A", "title": "Out",
+                "bpm": 92.0, "key": "Db",
+                "dj_notes": "cue_seconds=0; ride_beats=32; exit_style=echo_out",
+            },
+            {
+                "track_id": "/m/b.mp3", "artist": "B", "title": "In",
+                "bpm": 78.0, "key": "F#", "dj_notes": "cue_seconds=5",
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        self.assertEqual(transition["technique"], "echo_out_exit")
+        self.assertEqual(transition["moves"], ["echo_out_exit"])
+        self.assertNotIn("sync", transition["moves"])
+        self.assertIsNone(transition.get("incoming_bpm_target"))
+
+    def test_beat_phase_mismatch_auto_corrects_ride_beats(self) -> None:
+        # Ernest, 2026-07-17: three separate "beats don't match" complaints
+        # traced to real, confirmed snare-parity mismatches (see
+        # brain.onset_analysis) that pure bar-count arithmetic missed. This
+        # wires the check into build_plan() itself so future builds catch
+        # it automatically instead of needing another manual investigation.
+        tracks = [
+            {
+                "track_id": "/music/a.mp3", "artist": "A", "title": "Outgoing",
+                "bpm": 100.0, "key": "Am", "dj_notes": "cue_seconds=0; ride_beats=10",
+            },
+            {
+                "track_id": "/music/b.mp3", "artist": "B", "title": "Incoming",
+                "bpm": 100.0, "key": "Am", "dj_notes": "cue_seconds=6.0",
+            },
+        ]
+        beat_phase_lookup = {
+            # A's snare on odd beats; A's own entry (beat 0) + ride_beats=10
+            # lands its exit anchor on beat 10 (even) -- target parity
+            # (10+1)%2=1.
+            "/music/a.mp3": {
+                "snare_parity": 1, "confidence": 0.5, "bpm": 100.0, "first_beat_seconds": 0.0,
+            },
+            # B's snare on EVEN beats; B's cue (beat 10, from cue_seconds=6.0
+            # at 100bpm) gives current parity (10+0)%2=0 -- mismatched.
+            "/music/b.mp3": {
+                "snare_parity": 0, "confidence": 0.5, "bpm": 100.0, "first_beat_seconds": 0.0,
+            },
+        }
+        plan = build_plan(
+            tracks, count=2, seconds_per_track=20.0, affinity_lookup={},
+            beat_phase_lookup=beat_phase_lookup,
+        )
+        body = next(event for event in plan["events"] if event["op"] == "play_body")
+        # 10 -> 11 flips A's exit anchor to odd parity, matching B's cue.
+        self.assertEqual(body["beats"], 11)
+
+    def test_beat_phase_match_leaves_ride_beats_untouched(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/a.mp3", "artist": "A", "title": "Outgoing",
+                "bpm": 100.0, "key": "Am", "dj_notes": "cue_seconds=0; ride_beats=10",
+            },
+            {
+                "track_id": "/music/b.mp3", "artist": "B", "title": "Incoming",
+                "bpm": 100.0, "key": "Am", "dj_notes": "cue_seconds=6.0",
+            },
+        ]
+        beat_phase_lookup = {
+            "/music/a.mp3": {
+                "snare_parity": 1, "confidence": 0.5, "bpm": 100.0, "first_beat_seconds": 0.0,
+            },
+            # Same parity as A this time -- already aligned, no nudge expected.
+            "/music/b.mp3": {
+                "snare_parity": 1, "confidence": 0.5, "bpm": 100.0, "first_beat_seconds": 0.0,
+            },
+        }
+        plan = build_plan(
+            tracks, count=2, seconds_per_track=20.0, affinity_lookup={},
+            beat_phase_lookup=beat_phase_lookup,
+        )
+        body = next(event for event in plan["events"] if event["op"] == "play_body")
+        self.assertEqual(body["beats"], 10)
+
+    def test_non_opener_play_bpm_does_not_leak_onto_start_event(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/opener.mp3", "artist": "A", "title": "A",
+                "bpm": 100.0, "key": "Am",
+            },
+            {
+                "track_id": "/music/next.mp3", "artist": "B", "title": "B",
+                "bpm": 94.0, "key": "Am", "dj_notes": "play_bpm=98.0",
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        start_event = next(e for e in plan["events"] if e["op"] == "start")
+        self.assertNotIn("bpm_target", start_event)
 
     def test_smooth_opening_brief_builds_long_trick_free_blends(self) -> None:
         profile, notes = apply_brief(

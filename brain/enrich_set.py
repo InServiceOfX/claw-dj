@@ -223,6 +223,51 @@ def export_phrases(db, track_ids: list[str]) -> int:
     return len(tracks)
 
 
+def fill_beat_phase(db, tracks: list[dict], *, max_seconds: float = 240.0, progress=None) -> int:
+    """Fill `beat_phase` (real onset/waveform snare-parity analysis).
+
+    Depends on `phrases` already being filled -- that's where bpm/
+    first_beat_seconds come from (Mixxx's own analyzed beatgrid), so this
+    step belongs after phrases in the enrichment order. See
+    brain.onset_analysis for what "snare parity" means and why.
+    """
+    from brain.onset_analysis import detect_snare_phase
+
+    analyzed = 0
+    for i, track in enumerate(tracks, 1):
+        label = f"[{i}/{len(tracks)}] {track['artist']} — {track['title']}"
+        if progress:
+            progress(f"  [beat_phase] {label}")
+        row = db.execute(
+            "SELECT payload FROM phrases WHERE track_id = ?", (track["track_id"],)
+        ).fetchone()
+        if row is None:
+            msg = f"  [beat_phase] no phrase/beatgrid data yet: {track['artist']} — {track['title']}"
+            print(msg)
+            if progress:
+                progress(msg)
+            continue
+        payload = json.loads(row[0])
+        bpm, first_beat = payload.get("bpm"), payload.get("first_beat_seconds")
+        if not bpm or first_beat is None:
+            continue
+        result = detect_snare_phase(
+            track["track_id"], bpm=bpm, first_beat_seconds=first_beat, max_seconds=max_seconds
+        )
+        db.execute(
+            "INSERT OR REPLACE INTO beat_phase"
+            "(track_id, analyzed_at, snare_parity, confidence, bpm, first_beat_seconds) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                track["track_id"], time.time(), result["snare_parity"], result["confidence"],
+                bpm, first_beat,
+            ),
+        )
+        analyzed += 1
+    db.commit()
+    return analyzed
+
+
 def enrichment_status(playlist_path: Path = DEFAULT_PLAYLIST_JSON) -> dict:
     """Gap report for the UI — does not mutate anything."""
     if not playlist_path.exists():
@@ -372,19 +417,45 @@ def run_enrich(
 
         gaps = status(db, ids)
         summary["complete"] = sum(1 for g in gaps.values() if all(g.values()))
+        retryable = 0
         for tid, g in gaps.items():
             holes = [k for k, ok in g.items() if not ok]
             if holes:
                 track = next(t for t in tracks if t["track_id"] == tid)
+                # Tell the user WHICH gaps a re-run can actually fix.
+                # Chroma on .m4a: the Rust/Symphonia decoder can't read
+                # these files' channel layout — a permanent limitation;
+                # the fix is swapping the playlist to an mp3 copy of the
+                # same song if one exists. Phrases: Mixxx flushes deck
+                # analysis to its DB minutes late, so "no Mixxx beatgrid
+                # yet" heals on its own — re-running later fixes it.
+                is_m4a = tid.lower().endswith(".m4a")
+                hints = []
+                if "chroma" in holes and is_m4a:
+                    hints.append("chroma: m4a decode limitation — re-running "
+                                 "won't help; swap to an mp3 copy if one exists")
+                if "phrases" in holes:
+                    hints.append("phrases: Mixxx flushes analysis lazily — "
+                                 "re-run Analyze in a few minutes")
+                    retryable += 1
+                if "chroma" in holes and not is_m4a:
+                    hints.append("chroma: re-run may help")
+                    retryable += 1
                 row = {
                     "artist": track.get("artist"),
                     "title": track.get("title"),
                     "track_id": tid,
                     "missing": holes,
+                    "hints": hints,
                 }
                 summary["incomplete"].append(row)
                 note(f"incomplete ({', '.join(holes)}): {track.get('artist')} — {track.get('title')}")
+                for hint in hints:
+                    note(f"    ↳ {hint}")
+        summary["retryable"] = retryable
         note(f"enrichment: {summary['complete']}/{len(tracks)} tracks fully enriched")
+        if retryable:
+            note(f"re-running Analyze later can fix {retryable} of the gaps above")
 
     return summary
 

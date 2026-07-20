@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS phrases (
     analyzed_at REAL NOT NULL,
     payload TEXT NOT NULL
 );
+-- Cached real onset/waveform analysis (brain.onset_analysis): which beat
+-- parity (even/odd, mod 2) carries the snare/backbeat, so build_mix_plan
+-- can pick cue points and ride lengths that land actual drum hits
+-- together, not just generic beatgrid ticks. See docs/DJ_STYLE_GUIDE.md.
+CREATE TABLE IF NOT EXISTS beat_phase (
+    track_id TEXT PRIMARY KEY,
+    analyzed_at REAL NOT NULL,
+    snare_parity INTEGER NOT NULL,
+    confidence REAL NOT NULL,
+    bpm REAL NOT NULL,
+    first_beat_seconds REAL NOT NULL
+);
 -- Synced-lyric timeline: raw LRC plus detected verse/chorus segments with
 -- vocal-start times snapped to the Mixxx beatgrid — the cut points the
 -- verse-tour / lyric-aware transitions build on. See brain/lyric_timeline.py.

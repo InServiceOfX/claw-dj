@@ -188,13 +188,23 @@ class PlaylistApp:
         self.brain_state = {"running": 1, "error": None, "results": {},
                             "brief": brief, "engine": engine}
 
+        # "count" is the user's total-picks budget, not a per-engine one —
+        # split it across engines when running both, so asking for 50 with
+        # "both" selected doesn't silently mean "up to 50 from EACH" (up to
+        # 100 total). Each engine may still return fewer than its share;
+        # the LLM's own count isn't hard-truncated downstream either.
+        engine_counts = {
+            name: count // len(engines) + (1 if i < count % len(engines) else 0)
+            for i, name in enumerate(engines)
+        }
+
         def work() -> None:
             errors = []
             for name in engines:
                 try:
                     from brain.pick_candidates import run_pick
 
-                    picks = run_pick(engine=name, brief=brief, count=count, pool=pool)
+                    picks = run_pick(engine=name, brief=brief, count=engine_counts[name], pool=pool)
                     result = {"brief": brief, "engine": name, "pool": pool, "picks": picks}
                     self.brain_state["results"][name] = result
                     BRAIN_CACHE[name].write_text(json.dumps(result, indent=1) + "\n")
@@ -417,6 +427,35 @@ class PlaylistApp:
         save_selection(self.selection)
         save_exclusions(sorted(self.excluded))
         return {"added": added, "unknown": unknown, "selected_count": len(self.selection)}
+
+    def clear_selection(self, *, archive: bool = True, label: str | None = None) -> dict:
+        """Empty the enabled set to start a new mix from scratch.
+
+        Archives the current playlist.json + mix_plan.json first by
+        default (best-effort — skipped, not failed, if nothing's been
+        finalized/built yet) so the outgoing mix isn't lost. Leaves
+        playlist_exclusions.json alone; that's a separate durable opinion
+        about specific tracks, not part of "what's currently enabled".
+        """
+        archived_path = None
+        if archive:
+            from brain.archive_mix_plan import archive_mix_plan
+
+            try:
+                archived_path = str(
+                    archive_mix_plan(label=label or "before-clear")
+                )
+            except FileNotFoundError:
+                pass
+        cleared_count = len(self.selection)
+        self.selection = []
+        self.selected = set()
+        save_selection(self.selection)
+        return {
+            "archived_path": archived_path,
+            "cleared_count": cleared_count,
+            "selected_count": 0,
+        }
 
     def metadata(self) -> dict:
         return {
@@ -1205,6 +1244,15 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     app.set_enabled(payload["track_id"], bool(payload["enabled"]))
                     self._json(app.metadata())
                     return
+                if self.path == "/api/selection/clear":
+                    payload = self._body()
+                    self._json(
+                        app.clear_selection(
+                            archive=bool(payload.get("archive", True)),
+                            label=payload.get("label"),
+                        )
+                    )
+                    return
                 if self.path == "/api/seed":
                     self._json(app.add_seed())
                     return
@@ -1228,7 +1276,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                             str(payload.get("brief", "")),
                             str(payload.get("engine", "nemoclaw")),
                             int(payload.get("count", 20)),
-                            str(payload.get("pool", "new")),
+                            str(payload.get("pool", "library")),
                         ),
                         HTTPStatus.ACCEPTED,
                     )

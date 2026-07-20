@@ -1,7 +1,14 @@
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from hands.run_mix_plan import perform_transition, set_bpm_target
+from hands.run_mix_plan import (
+    _run_events,
+    load_deck,
+    perform_juggle_brake_intro,
+    perform_transition,
+    run_plan,
+    set_bpm_target,
+)
 
 
 class FakeMixxx:
@@ -187,6 +194,53 @@ class IncomingBpmTargetTests(TestCase):
 
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")
+    def test_incoming_bpm_target_still_gets_a_phase_only_sync(self, _sleep, _wait_for_next_beat) -> None:
+        # Found 2026-07-17: a play_bpm hold skipping "sync" entirely meant
+        # tempo was correct but the incoming deck's PHASE never actually
+        # locked to the outgoing deck's beat -- half this mix's transitions
+        # had a play_bpm hold, and beat-matching suffered for it compared
+        # to a set that used real sync almost everywhere. beatsync_phase
+        # snaps phase without touching tempo, so it can run alongside a
+        # play_bpm hold instead of trading phase-lock away entirely.
+        mixxx = IncomingBpmTargetMixxx()
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 1,
+                "technique": "standard_blend",
+                "moves": ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"],
+                "incoming_bpm_target": 103.0,
+            },
+            port=9995,
+        )
+        self.assertIn(("[Channel2]", "beatsync_phase", 1), mixxx.writes)
+        # Tempo must still hold at the target -- phase-only sync must not
+        # touch it.
+        self.assertAlmostEqual(mixxx.get("[Channel2]", "bpm"), 103.0, delta=0.5)
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_half_time_or_cut_gets_no_phase_only_sync_either(self, _sleep, _wait_for_next_beat) -> None:
+        mixxx = IncomingBpmTargetMixxx()
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 1,
+                "technique": "half_time_or_cut",
+                "moves": ["sync", "hard_cut"],
+                "incoming_bpm_target": 103.0,
+            },
+            port=9995,
+        )
+        self.assertNotIn(("[Channel2]", "beatsync_phase", 1), mixxx.writes)
+        self.assertNotIn(("[Channel2]", "beatsync", 1), mixxx.writes)
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
     def test_sync_move_still_fires_without_a_bpm_target(self, _sleep, _wait_for_next_beat) -> None:
         mixxx = IncomingBpmTargetMixxx()
         perform_transition(
@@ -201,3 +255,183 @@ class IncomingBpmTargetTests(TestCase):
             port=9995,
         )
         self.assertIn(("[Channel2]", "beatsync", 1), mixxx.writes)
+
+
+class JuggleBrakeIntroTests(TestCase):
+    @patch("hands.run_mix_plan.rust_gesture", return_value=True)
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_brakes_and_rewinds_to_the_original_cue(self, _sleep, _rust_gesture) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "playposition")] = 0.0
+        # No track_id -> skips the juggle-against-a-second-copy step (that
+        # part is unmodified perform_juggle_intro code); this isolates the
+        # new brake + rewind-to-cue behavior.
+        perform_juggle_brake_intro(mixxx, {"deck": 1}, port=9995)
+        self.assertAlmostEqual(mixxx.get("[Channel1]", "playposition"), 0.0)
+        self.assertEqual(mixxx.get("[Channel1]", "volume"), 1.0)
+        # Resumes immediately -- no dead pause waiting for a later `start`.
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 1)
+        self.assertEqual(mixxx.writes[-1], ("[Channel1]", "play", 1))
+
+    @patch("hands.run_mix_plan.rust_gesture", return_value=False)
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_falls_back_to_manual_fade_without_clawdj_binary(self, _sleep, _rust_gesture) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "playposition")] = 0.3
+        perform_juggle_brake_intro(mixxx, {"deck": 1}, port=9995)
+        # Fallback fade ramps volume down to 0 and stops the deck itself
+        # (rust_gesture unavailable means brake() never sets play=0 for us),
+        # but playback still resumes immediately after the rewind.
+        self.assertIn(("[Channel1]", "play", 0), mixxx.writes)
+        volume_writes = [v for g, k, v in mixxx.writes if (g, k) == ("[Channel1]", "volume")]
+        self.assertIn(0.0, volume_writes)
+        self.assertEqual(volume_writes[-1], 1.0)
+        self.assertAlmostEqual(mixxx.get("[Channel1]", "playposition"), 0.3)
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 1)
+        self.assertEqual(mixxx.writes[-1], ("[Channel1]", "play", 1))
+
+
+class VerseLandingMissTests(TestCase):
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_missed_landing_snaps_and_continues_instead_of_crashing(self, _sleep, _wait) -> None:
+        # Seen live 2026-07-19: a track whose grid Mixxx re-analyzed into a
+        # different tempo family made the pre-roll run short; the old hard
+        # RuntimeError killed the whole set mid-mix, twice. Must recover.
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel2]", "duration")] = 268.0
+        mixxx.values[("[Channel2]", "playposition")] = 76.6 / 268.0  # short of 84.27
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1, "to_deck": 2, "transition_beats": 1,
+                "technique": "verse_landing_blend",
+                "moves": ["crossfade"],
+                "landing_seconds": 84.27,
+                "landing_tolerance_seconds": 1.0,
+            },
+            port=9995,
+        )
+        self.assertIn(
+            ("[Channel2]", "playposition", 84.27 / 268.0), mixxx.writes
+        )
+
+
+class EchoOutExitTests(TestCase):
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_echo_out_uses_the_reserved_echo_unit_when_loaded(self, _sleep, _wait) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[EffectRack1_EffectUnit2_Effect3]", "loaded")] = 1.0
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1, "to_deck": 2, "transition_beats": 4,
+                "technique": "echo_out_exit", "moves": ["echo_out_exit"],
+            },
+            port=9995,
+        )
+        self.assertIn(("[EffectRack1_EffectUnit2_Effect3]", "enabled", 1), mixxx.writes)
+        self.assertIn(("[EffectRack1_EffectUnit2]", "group_[Channel1]_enable", 1), mixxx.writes)
+        # Outgoing stopped, incoming started clean; no sync of any kind.
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 0)
+        self.assertEqual(mixxx.get("[Channel2]", "play"), 1)
+        self.assertNotIn(("[Channel2]", "beatsync", 1), mixxx.writes)
+        self.assertNotIn(("[Channel2]", "beatsync_phase", 1), mixxx.writes)
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_echo_out_falls_back_to_plain_fade_without_echo_loaded(self, _sleep, _wait) -> None:
+        mixxx = FakeMixxx()  # ECHO_SLOT loaded reads 0.0
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1, "to_deck": 2, "transition_beats": 4,
+                "technique": "echo_out_exit", "moves": ["echo_out_exit"],
+            },
+            port=9995,
+        )
+        volume_writes = [v for g, k, v in mixxx.writes if (g, k) == ("[Channel1]", "volume")]
+        self.assertIn(0.0, volume_writes)
+        self.assertEqual(volume_writes[-1], 1.0)  # restored after the stop
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 0)
+        self.assertEqual(mixxx.get("[Channel2]", "play"), 1)
+
+
+class RunPlanInterruptTests(TestCase):
+    @patch("hands.run_mix_plan._run_events", side_effect=KeyboardInterrupt)
+    @patch("hands.run_mix_plan.MixxxControl")
+    def test_ctrl_c_stops_both_decks_instead_of_leaving_them_playing(
+        self, mock_mixxx_control, _run_events
+    ) -> None:
+        mixxx = FakeMixxx()
+        mock_mixxx_control.return_value.__enter__ = MagicMock(return_value=mixxx)
+        mock_mixxx_control.return_value.__exit__ = MagicMock(return_value=False)
+
+        # Should not raise -- KeyboardInterrupt is caught and handled, not
+        # left to unwind as a bare traceback.
+        run_plan({"events": []}, port=9995, dry_run=False, max_events=None)
+
+        self.assertIn(("[Channel1]", "play", 0), mixxx.writes)
+        self.assertIn(("[Channel2]", "play", 0), mixxx.writes)
+
+
+class StartEventBpmTargetTests(TestCase):
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_start_event_bpm_target_applies_before_play(self, _sleep) -> None:
+        class RateMixxx(FakeMixxx):
+            def __init__(self) -> None:
+                super().__init__()
+                self.values[("[Channel1]", "rate")] = 0.0
+                self.values[("[Channel1]", "rateRange")] = 0.08
+
+            def get(self, group: str, key: str) -> float:
+                if (group, key) == ("[Channel1]", "bpm"):
+                    rate = self.values[("[Channel1]", "rate")]
+                    rate_range = self.values[("[Channel1]", "rateRange")]
+                    return 100.0 * (1.0 + rate * rate_range)
+                return super().get(group, key)
+
+        mixxx = RateMixxx()
+        _run_events(mixxx, [{"op": "start", "deck": 1, "bpm_target": 103.0}], {}, port=9995)
+        self.assertAlmostEqual(mixxx.get("[Channel1]", "bpm"), 103.0, delta=0.5)
+        # The rate bump must land before play=1, not after (no audible jump).
+        rate_writes = [i for i, w in enumerate(mixxx.writes) if w[1] == "rate" and w[2] != 0.0]
+        play_writes = [i for i, w in enumerate(mixxx.writes) if w[1] == "play" and w[2] == 1]
+        self.assertTrue(rate_writes and play_writes)
+        self.assertLess(min(rate_writes), min(play_writes))
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_start_event_without_bpm_target_is_unaffected(self, _sleep) -> None:
+        mixxx = FakeMixxx()
+        _run_events(mixxx, [{"op": "start", "deck": 1}], {}, port=9995)
+        self.assertIn(("[Channel1]", "play", 1), mixxx.writes)
+
+
+class LoadDeckBpmTimeoutTests(TestCase):
+    @patch("hands.run_mix_plan.LOAD_TIMEOUT_S", 0.02)
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_bpm_confirmation_timeout_does_not_crash_the_set(self, _sleep) -> None:
+        # A newly-added track whose analysis hasn't settled into Mixxx's own
+        # cache yet can report a bpm that never matches the plan's expected
+        # value -- confirmed live, 2026-07-16 (a track added earlier the
+        # same session). One track's slow/flaky analysis must not raise
+        # and crash the whole live set.
+        class StubbornBpmMixxx(FakeMixxx):
+            def __init__(self) -> None:
+                super().__init__()
+                # Starts unloaded so the eject-wait (v < 0.5) resolves
+                # immediately; .load() below flips it, same as a real deck.
+                self.values[("[Channel1]", "track_loaded")] = 0.0
+                self.values[("[Channel1]", "duration")] = 200.0
+                self.values[("[Channel1]", "bpm")] = 200.0  # never near expected_bpm
+                self.values[("[Channel1]", "playposition")] = 0.0
+
+            def load(self, deck: int, path: str, play: bool = False) -> None:
+                self.values[("[Channel1]", "track_loaded")] = 1.0
+
+        mixxx = StubbornBpmMixxx()
+        load_deck(mixxx, 1, "/music/new_track.mp3", expected_bpm=103.176)
+        # Must have proceeded past the bpm wait (cue_deck ran) rather than
+        # raising TimeoutError.
+        self.assertIn(("[Channel1]", "volume", 1.0), mixxx.writes)

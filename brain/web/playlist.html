@@ -128,8 +128,8 @@
             <option value="generic">Generic LLM (xAI/local — set CLAWDJ_LLM_* env vars)</option>
           </select>
           <select id="pool" aria-label="Candidate pool">
+            <option value="library" selected>Whole library</option>
             <option value="new">New music only</option>
-            <option value="library">Whole library</option>
           </select>
           <input id="pick-count" type="number" min="3" max="50" value="20" aria-label="How many picks">
           <button id="ask" class="primary">Ask</button>
@@ -158,7 +158,9 @@
           <div class="rows" id="library"></div>
         </section>
         <section>
-          <div class="section-head"><h2>Enabled set</h2><span class="count" id="set-count"></span></div>
+          <div class="section-head"><span><h2 style="display:inline">Enabled set</h2> <span class="count" id="set-count"></span></span>
+            <button type="button" id="clear-set" title="Archive the current playlist.json + mix_plan.json, then empty the enabled set to start a new mix">Clear set&hellip;</button>
+          </div>
           <div class="rows" id="selected"></div>
         </section>
       </div>
@@ -300,6 +302,26 @@
     el('library').addEventListener('change',toggle); el('selected').addEventListener('change',toggle);
     el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
+    el('clear-set').addEventListener('click', async () => {
+      const count = state.meta ? state.meta.selected_count : 0;
+      if (!confirm(`Archive the current playlist.json + mix_plan.json, then clear all ${count} enabled tracks to start a new mix?`)) return;
+      el('clear-set').disabled = true;
+      try {
+        const result = await api('/api/selection/clear', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({archive: true}),
+        });
+        el('notice').textContent = result.archived_path
+          ? `Archived to ${result.archived_path}. Cleared ${result.cleared_count} tracks — enabled set is empty.`
+          : `Nothing to archive (no finalized playlist/mix plan yet). Cleared ${result.cleared_count} tracks — enabled set is empty.`;
+        await Promise.all([loadMeta(), loadLibrary(), loadSelected()]);
+      } catch (error) {
+        el('notice').textContent = error.message;
+      } finally {
+        el('clear-set').disabled = false;
+      }
+    });
     el('nav-curate').addEventListener('click', () => showPage('curate'));
     el('nav-mix').addEventListener('click', () => showPage('mix'));
     el('back-curate').addEventListener('click', () => showPage('curate'));

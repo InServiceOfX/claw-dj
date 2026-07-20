@@ -281,15 +281,32 @@ def load_deck(
     # values and cue the wrong file. The plan knows the intended analyzed BPM,
     # so use it as the load-identity barrier before touching playposition.
     tolerance = max(0.35, (expected_bpm or 0.0) * 0.01)
-    bpm = _wait_for(
-        mixxx,
-        group,
-        "bpm",
-        lambda v: v > 0 and (
-            expected_bpm is None or abs(v - expected_bpm) <= tolerance
-        ),
-        LOAD_TIMEOUT_S,
-    )
+    try:
+        bpm = _wait_for(
+            mixxx,
+            group,
+            "bpm",
+            lambda v: v > 0 and (
+                expected_bpm is None or abs(v - expected_bpm) <= tolerance
+            ),
+            LOAD_TIMEOUT_S,
+        )
+    except TimeoutError:
+        # A newly-added track whose analysis hasn't settled into Mixxx's own
+        # cache yet (seen live, 2026-07-16, on a track added earlier the
+        # same session) can miss this identity-barrier check indefinitely.
+        # One track's slow/flaky analysis must not crash the whole live
+        # set -- fall back to whatever Mixxx currently reports (or the
+        # plan's own expected value if Mixxx still reports nothing) and
+        # keep going, loudly, rather than raising.
+        bpm = mixxx.get(group, "bpm")
+        if bpm <= 0:
+            bpm = expected_bpm or 0.0
+        print(
+            f"  WARNING: {group} bpm never confirmed near expected "
+            f"{expected_bpm} within {LOAD_TIMEOUT_S:.0f}s (reads {bpm:.2f}) "
+            "-- proceeding anyway, cue timing may be slightly off"
+        )
     duration = _wait_for(mixxx, group, "duration", lambda v: v > 0, LOAD_TIMEOUT_S)
     _, cue_label = cue_deck(
         mixxx,
@@ -504,6 +521,87 @@ def perform_juggle_intro(mixxx: MixxxControl, event: dict) -> None:
     print(f"  juggle landed on deck {deck}; playing straight through")
 
 
+def perform_juggle_brake_intro(mixxx: MixxxControl, event: dict, *, port: int) -> None:
+    """Juggle the opener against a second copy of itself over its
+    instrumental intro (same beat-anchored chop as juggle_intro), then
+    brake the platter to a hard, abrupt stop -- vinyl pulled to a halt by
+    hand -- rewind to the original cue, and resume playing immediately,
+    right here. Deliberately does NOT leave it paused for the plan's
+    following `start` event to pick up later (unlike echo_tease_drop) --
+    that event fires after the next `load` (reloading deck 2 with the real
+    second track), which takes real wall-clock time and would leave a dead
+    silent gap between the brake and the replay. cue_position is already a
+    beat-aligned cue (dj_notes cue_seconds or the lyric-snapped default),
+    so resuming the instant the rewind lands is already "on the beat" --
+    no extra beat-wait needed, and none is available anyway while stopped
+    (wait_for_next_beat needs the deck already playing to see beat edges).
+
+    Ernest, 2026-07-16: "start from beginning... do an interesting intro
+    with just the instrumental part... juggle... play with even the abrupt
+    vinyl end... and play the cue again." Then: "after the abrupt end,
+    don't pause that long, keep on the beat to play it again."
+    """
+    deck = int(event["deck"])
+    other = 2 if deck == 1 else 1
+    group, other_group = deck_group(deck), deck_group(other)
+    track_id = event.get("track_id")
+    cue_position = mixxx.get(group, "playposition")
+
+    mixxx.set(group, "volume", 1.0)
+    mixxx.set(group, "play", 1)
+
+    if track_id:
+        bpm = mixxx.get(group, "bpm") or 95.0
+        period = 60.0 / max(60.0, min(200.0, bpm))
+        load_deck(mixxx, other, track_id, cue_seconds=0.0, expected_bpm=bpm)
+        mixxx.set(other_group, "volume", 1.0)
+        mixxx.set(other_group, "play", 1)
+
+        chops = max(2, int(event.get("juggle_chops", 6)))
+        hold_beats = float(event.get("juggle_hold_beats", 1.0))
+        print(f"  juggle_brake_intro: {chops} chops between deck {deck} and deck {other} "
+              f"on {event.get('track')}")
+        for i in range(chops):
+            active = deck if i % 2 == 0 else other
+            mixxx.set("[Master]", "crossfader", crossfader_target(active))
+            time.sleep(hold_beats * period)
+
+        mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+        mixxx.set(other_group, "play", 0)
+    else:
+        print("  juggle_brake_intro: no track_id on this event, skipping the juggle")
+        mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+
+    # Shorter than perform_transition's brake_out (1.4s, tuned for a
+    # mid-mix hand-off with room to breathe): this is a tease-and-replay,
+    # so a snappier stop keeps the gap before Me&U resumes tight rather
+    # than dragging out the deceleration. Ernest, 2026-07-16: "less of a
+    # gap from the abrupt end... to playing Me&U again."
+    brake_seconds = float(event.get("brake_seconds", 0.7))
+    if rust_gesture("brake", "--deck", str(deck), "--seconds", str(brake_seconds), port=port):
+        print(f"  brake ({brake_seconds:.1f}s) -> abrupt vinyl stop on deck {deck}")
+    else:
+        # Portable fallback when the clawdj binary is missing: quick fade +
+        # stop, same time budget as the rust brake gesture above.
+        fade_steps = 10
+        for step in range(fade_steps, -1, -1):
+            mixxx.set(group, "volume", step / fade_steps)
+            time.sleep(brake_seconds / fade_steps)
+        mixxx.set(group, "play", 0)
+        print(f"  brake unavailable (no clawdj binary) -> plain stop on deck {deck}")
+
+    mixxx.set(group, "rate", 0.0)
+    mixxx.set(group, "pitch_adjust", 0.0)
+    mixxx.set(group, "playposition", cue_position)
+    _wait_for(
+        mixxx, group, "playposition",
+        lambda value: abs(value - cue_position) <= 0.002, 2.0,
+    )
+    mixxx.set(group, "volume", 1.0)
+    mixxx.set(group, "play", 1)
+    print("  cue replayed on the beat -- no dead pause before riding forward")
+
+
 def perform_opener_effect(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     """Tease the opener, echo/fade it out, rewind, and arm a clean first drop."""
     deck = int(event["deck"])
@@ -512,6 +610,9 @@ def perform_opener_effect(mixxx: MixxxControl, event: dict, *, port: int) -> Non
 
     if style == "juggle_intro":
         perform_juggle_intro(mixxx, event)
+        return
+    if style == "juggle_brake_intro":
+        perform_juggle_brake_intro(mixxx, event, port=port)
         return
 
     cue_position = mixxx.get(group, "playposition")
@@ -565,6 +666,21 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         and technique != "half_time_or_cut"
         and event.get("incoming_bpm_target") is None
     )
+    # When a play_bpm hold IS active, ordinary beatsync gets skipped
+    # entirely (see above) -- which also means the incoming deck's PHASE
+    # never gets locked to the outgoing deck's beat, only its tempo. Found
+    # 2026-07-17: half of a mix's transitions using play_bpm holds meant
+    # real beat-matching (kick-to-kick, not just tempo-to-tempo) was
+    # missing on half the set -- a mix that used real sync almost
+    # everywhere else (the West Coast set) beat-matched noticeably better.
+    # Mixxx's beatsync_phase snaps phase WITHOUT touching tempo, so it can
+    # run alongside a play_bpm hold instead of trading phase-lock away for
+    # tempo-accuracy.
+    phase_only_sync = (
+        "sync" in moves
+        and technique != "half_time_or_cut"
+        and event.get("incoming_bpm_target") is not None
+    )
     # Hard cuts are rare by design — only explicit hard_cut move or the
     # extreme-tempo half_time_or_cut technique (key_clash is now a blend).
     hard = technique in {"key_clash_cut", "half_time_or_cut"} or "hard_cut" in moves
@@ -594,6 +710,27 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             "censor", "--deck", str(from_deck), "--beats", "2", port=port):
         print("  censor fill (slip reverse)")
 
+    # Echo-out exit (docs/DJ_TRANSITIONS_PLAYBOOK.md #4): the outgoing deck
+    # fades under a rising echo tail (~1s ramp, live-validated 2026-07-14),
+    # then the incoming starts clean at its own tempo — the gentle
+    # large-gap exit, no tempo bridging at all. Falls back to a plain
+    # quick fade when the reserved Echo slot isn't loaded in the GUI.
+    if "echo_out_exit" in moves:
+        wait_for_next_beat(port, out_g)
+        if echo_ready(mixxx):
+            echo_out_exit(mixxx, from_deck)
+            mixxx.set(out_g, "play", 0)
+        else:
+            for step in range(10, -1, -1):
+                mixxx.set(out_g, "volume", step / 10.0)
+                time.sleep(0.05)
+            mixxx.set(out_g, "play", 0)
+            mixxx.set(out_g, "volume", 1.0)
+        mixxx.set("[Master]", "crossfader", crossfader_target(to_deck))
+        mixxx.set(deck_group(to_deck), "play", 1)
+        print(f"  echo-out exit -> deck {to_deck}")
+        return
+
     # Platter exits: brake/spinback the outgoing deck to silence, THEN the
     # incoming track hits. The moment of quiet is the drama — use sparingly.
     if "brake_out" in moves or "spinback_out" in moves:
@@ -612,6 +749,9 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     mixxx.set(in_g, "play", 1)
     if sync:
         mixxx.set(in_g, "beatsync", 1)
+    elif phase_only_sync:
+        mixxx.set(in_g, "beatsync_phase", 1)
+        print(f"  phase-locked deck {to_deck} to {out_g} beat (tempo held at play_bpm)")
 
     start_cf = mixxx.get("[Master]", "crossfader")
     end_cf = crossfader_target(to_deck)
@@ -637,11 +777,20 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         progress = min(1.0, (time.monotonic() - t0) / fade_s)
         curve = smoothstep(progress)
         mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * curve)
-        if bass_swap and progress >= 0.5 and not swapped:
-            mixxx.set(eq_group(from_deck), "parameter1", 0.0)
-            mixxx.set(eq_group(to_deck), "parameter1", 0.5)
-            swapped = True
-            print("  bass swap")
+        if bass_swap and progress >= 0.35:
+            # GRADUAL bass handover, not an instant kill: ramp the outgoing
+            # deck's low EQ from neutral to zero across the middle of the
+            # fade (0.35-0.65 progress). An instant kill at the midpoint is
+            # audible as a lurch -- the whole point of a bass swap is that
+            # it's smooth (docs/DJ_TRANSITIONS_PLAYBOOK.md #2: "gradualness
+            # IS the technique"). The incoming deck's bass stays untouched
+            # per Ernest's 2026-07-14 note above.
+            ramp = smoothstep(min(1.0, (progress - 0.35) / 0.3))
+            mixxx.set(eq_group(from_deck), "parameter1", 0.5 * (1.0 - ramp))
+            if not swapped and progress >= 0.65:
+                mixxx.set(eq_group(to_deck), "parameter1", 0.5)
+                swapped = True
+                print("  bass swap (gradual)")
         if "filter_sweep_out" in moves:
             try:
                 mixxx.set(filter_group(from_deck), "super1", 0.5 - 0.4 * curve)
@@ -672,14 +821,25 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         expected_landing = float(event["landing_seconds"])
         tolerance = float(event.get("landing_tolerance_seconds", 1.0))
         if abs(actual_landing - expected_landing) > tolerance:
-            raise RuntimeError(
-                f"verse landing missed: expected {expected_landing:.3f}s, "
-                f"Mixxx reports {actual_landing:.3f}s"
+            # A missed landing must not kill the whole live set (seen
+            # 2026-07-19: a track whose beatgrid Mixxx re-analyzed into a
+            # different tempo family made the pre-roll run short and the
+            # old hard RuntimeError ended the night mid-mix, twice).
+            # Recover instead: snap the deck to the intended landing --
+            # one audible jump on ONE transition beats a dead stage.
+            if duration > 0:
+                mixxx.set(in_g, "playposition", expected_landing / duration)
+            print(
+                f"  WARNING: verse landing missed (expected "
+                f"{expected_landing:.3f}s, Mixxx reported "
+                f"{actual_landing:.3f}s) -- snapped to the intended landing "
+                "and continuing; check this track's beatgrid/bpm data"
             )
-        print(
-            f"  verse landing verified at {actual_landing:.3f}s "
-            f"(target {expected_landing:.3f}s)"
-        )
+        else:
+            print(
+                f"  verse landing verified at {actual_landing:.3f}s "
+                f"(target {expected_landing:.3f}s)"
+            )
     print(f"  {beats}-beat landing -> deck {to_deck}")
 
 
@@ -740,6 +900,17 @@ def run_plan(
             we_started_recording = start_recording(mixxx)
         try:
             _run_events(mixxx, events, expected_bpms, port=port)
+        except KeyboardInterrupt:
+            # Ctrl-C only kills this script -- Mixxx itself is a separate
+            # process and keeps playing whatever was on the decks unless
+            # told to stop. Stop both explicitly instead of leaving music
+            # running with nothing driving it.
+            print("\n\nstopped by user -- stopping both decks")
+            for deck in (1, 2):
+                try:
+                    mixxx.set(deck_group(deck), "play", 0)
+                except Exception:
+                    pass
         finally:
             if we_started_recording:
                 print("\nstopping recording…")
@@ -774,9 +945,17 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
             )
         elif op == "start":
             deck = event["deck"]
+            bpm_target = event.get("bpm_target")
+            if bpm_target is not None:
+                # Applied before play=1 so the deck is already at the target
+                # rate for the very first sample, not audibly ramping/jumping
+                # mid-playback.
+                set_bpm_target(mixxx, deck, float(bpm_target))
             mixxx.set("[Master]", "crossfader", crossfader_target(deck))
             mixxx.set(deck_group(deck), "play", 1)
-            print(f"  deck {deck} playing")
+            print(f"  deck {deck} playing" + (
+                f" (bumped to {float(bpm_target):.2f} BPM)" if bpm_target is not None else ""
+            ))
         elif op == "play_body":
             beats = event.get("beats")
             seconds = float(event.get("seconds", 30))
