@@ -439,10 +439,20 @@ def echo_ready(mixxx: MixxxControl) -> bool:
         return False
 
 
-def echo_out_exit(mixxx: MixxxControl, deck: int) -> None:
+def echo_out_exit(mixxx: MixxxControl, deck: int, *, to_deck: int | None = None) -> None:
     """Echo-out: route the outgoing deck through the reserved Echo unit,
-    ring the tail in as its volume drops, then leave the unit routed off
-    (echo naturally decays into the still-playing incoming track).
+    ring the tail in as its volume drops, then leave the unit routed off.
+
+    `to_deck`, when given, starts the incoming deck playing and crossfades
+    to it DURING the same ramp instead of after — found live 2026-07-19:
+    the original sequential version (ramp fully to silence, THEN stop the
+    outgoing deck, THEN start the incoming one) left a real gap of dead
+    air, the opposite of the "keep the beat going" the echo-out is
+    supposed to deliver. With `to_deck` there is always something audible:
+    the incoming track's own sound is already under the echo tail the
+    whole time. Without `to_deck` (the opener-tease use, `echo_tease_drop`)
+    the original behavior is unchanged on purpose — that context wants a
+    real, brief silence before replaying the SAME track's cue.
 
     No-ops (with a one-time note) if Echo hasn't been loaded into the
     configured unit/slot — see ECHO_UNIT/ECHO_SLOT above.
@@ -459,11 +469,18 @@ def echo_out_exit(mixxx: MixxxControl, deck: int) -> None:
     mixxx.set(ECHO_SLOT, "enabled", 1)
     mixxx.set(ECHO_UNIT, route_key, 1)
     mixxx.set(ECHO_UNIT, "mix", 0.0)
+    in_group = deck_group(to_deck) if to_deck is not None else None
+    start_cf = mixxx.get("[Master]", "crossfader") if in_group else None
+    end_cf = crossfader_target(to_deck) if in_group else None
+    if in_group:
+        mixxx.set(in_group, "play", 1)
     steps = 20
     for i in range(steps + 1):
         progress = i / steps
         mixxx.set(ECHO_UNIT, "mix", progress)
         mixxx.set(group, "volume", 1.0 - progress)
+        if in_group:
+            mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * progress)
         time.sleep(0.05)
     # Deck volume restored on its next load; echo unit unrouted so it
     # doesn't color whatever plays through this effect unit next.
@@ -718,16 +735,26 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     if "echo_out_exit" in moves:
         wait_for_next_beat(port, out_g)
         if echo_ready(mixxx):
-            echo_out_exit(mixxx, from_deck)
+            # to_deck starts playing and the crossfader moves DURING the
+            # ramp -- see echo_out_exit's docstring for why the old
+            # sequential (ramp, then stop, then start) version left dead
+            # air, the opposite of "keep the beat going".
+            echo_out_exit(mixxx, from_deck, to_deck=to_deck)
             mixxx.set(out_g, "play", 0)
         else:
-            for step in range(10, -1, -1):
-                mixxx.set(out_g, "volume", step / 10.0)
+            # No Echo loaded: same fix applies to the plain-fade fallback
+            # -- crossfade to the already-playing incoming deck instead of
+            # a silent fade-then-switch.
+            mixxx.set(deck_group(to_deck), "play", 1)
+            start_cf = mixxx.get("[Master]", "crossfader")
+            end_cf = crossfader_target(to_deck)
+            for step in range(11):
+                progress = step / 10.0
+                mixxx.set(out_g, "volume", 1.0 - progress)
+                mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * progress)
                 time.sleep(0.05)
             mixxx.set(out_g, "play", 0)
             mixxx.set(out_g, "volume", 1.0)
-        mixxx.set("[Master]", "crossfader", crossfader_target(to_deck))
-        mixxx.set(deck_group(to_deck), "play", 1)
         print(f"  echo-out exit -> deck {to_deck}")
         return
 

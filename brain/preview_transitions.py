@@ -150,22 +150,24 @@ def _atempo_chain(rate: float) -> str:
     return ",".join(filters)
 
 
+ECHO_OUT_RAMP_S = 1.0  # matches the live ~1s echo_out_exit ramp
+
+
 def render_spec(spec: dict, out_file: Path) -> None:
     fade = spec["fade_wall_s"]
     out_filter = _atempo_chain(spec["out_rate"])
     if spec.get("echo_out"):
         # Approximate the live echo-out: a rising echo on the outgoing
-        # segment's last second while it fades to silence, then the
-        # incoming enters clean.
-        tail_start = max(0.0, spec["out_duration_s"] / max(spec["out_rate"], 1e-6) - 1.2)
-        out_filter += (
-            f",aecho=0.8:0.85:80|160:0.5|0.35,"
-            f"afade=t=out:st={tail_start:.3f}:d=1.2"
-        )
+        # segment's last second, crossfaded into the incoming track (NOT
+        # spliced) -- the runner fix, 2026-07-19, makes the incoming deck
+        # start and the crossfader move DURING the same ramp so there is
+        # never a silent gap; concat here would misrepresent that as a
+        # sequential cut-to-silence-then-start.
+        out_filter += ",aecho=0.8:0.85:80|160:0.5|0.35"
     joiner = (
         "[a][b]concat=n=2:v=0:a=1[out]"
-        if spec["hard_cut"] or spec.get("echo_out") or fade < 0.1
-        else f"[a][b]acrossfade=d={fade:.3f}[out]"
+        if spec["hard_cut"] or fade < 0.1
+        else f"[a][b]acrossfade=d={(ECHO_OUT_RAMP_S if spec.get('echo_out') else fade):.3f}[out]"
     )
     command = [
         "ffmpeg", "-y", "-v", "error",

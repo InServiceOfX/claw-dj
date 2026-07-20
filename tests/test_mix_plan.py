@@ -431,6 +431,35 @@ class MixPlanTest(TestCase):
         # 10 -> 11 flips A's exit anchor to odd parity, matching B's cue.
         self.assertEqual(body["beats"], 11)
 
+    def test_trust_ride_beats_blocks_the_auto_nudge(self) -> None:
+        # Ear override (Ernest, 2026-07-19): the parity measurement driving
+        # a nudge can be a near-coin-flip (confidence 0.015 seen live), and
+        # a human-certified ride length must never be silently shifted.
+        tracks = [
+            {
+                "track_id": "/m/a.mp3", "artist": "A", "title": "Outgoing",
+                "bpm": 100.0, "key": "Am",
+                "dj_notes": "cue_seconds=0; ride_beats=10; trust_ride_beats",
+            },
+            {
+                "track_id": "/m/b.mp3", "artist": "B", "title": "Incoming",
+                "bpm": 100.0, "key": "Am", "dj_notes": "cue_seconds=6.0",
+            },
+        ]
+        beat_phase_lookup = {
+            # Deliberately mismatched parities: the nudge WOULD fire.
+            "/m/a.mp3": {"snare_parity": 1, "confidence": 0.5, "bpm": 100.0,
+                         "first_beat_seconds": 0.0},
+            "/m/b.mp3": {"snare_parity": 0, "confidence": 0.5, "bpm": 100.0,
+                         "first_beat_seconds": 0.0},
+        }
+        plan = build_plan(
+            tracks, count=2, seconds_per_track=20.0, affinity_lookup={},
+            beat_phase_lookup=beat_phase_lookup,
+        )
+        body = next(event for event in plan["events"] if event["op"] == "play_body")
+        self.assertEqual(body["beats"], 10)
+
     def test_beat_phase_match_leaves_ride_beats_untouched(self) -> None:
         tracks = [
             {

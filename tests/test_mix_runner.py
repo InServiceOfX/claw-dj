@@ -357,6 +357,35 @@ class EchoOutExitTests(TestCase):
         self.assertEqual(mixxx.get("[Channel1]", "play"), 0)
         self.assertEqual(mixxx.get("[Channel2]", "play"), 1)
 
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_echo_out_never_leaves_a_silent_gap(self, _sleep, _wait) -> None:
+        # Found live 2026-07-19: the original sequential version (ramp the
+        # outgoing deck fully to silence, THEN stop it, THEN start the
+        # incoming one) left real dead air -- the opposite of "keep the
+        # beat going". The incoming deck must start playing WHILE the
+        # outgoing deck is still audible, not after.
+        mixxx = FakeMixxx()
+        mixxx.values[("[EffectRack1_EffectUnit2_Effect3]", "loaded")] = 1.0
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1, "to_deck": 2, "transition_beats": 4,
+                "technique": "echo_out_exit", "moves": ["echo_out_exit"],
+            },
+            port=9995,
+        )
+        play_index = mixxx.writes.index(("[Channel2]", "play", 1))
+        # Every volume write on the outgoing deck strictly before the
+        # incoming deck starts must still be audible (> 0) -- there is no
+        # point in the sequence where both decks are silent at once.
+        for group, key, value in mixxx.writes[:play_index]:
+            if (group, key) == ("[Channel1]", "volume"):
+                self.assertGreater(value, 0.0)
+        # And the incoming starts before the outgoing deck is stopped.
+        stop_index = mixxx.writes.index(("[Channel1]", "play", 0))
+        self.assertLess(play_index, stop_index)
+
 
 class RunPlanInterruptTests(TestCase):
     @patch("hands.run_mix_plan._run_events", side_effect=KeyboardInterrupt)

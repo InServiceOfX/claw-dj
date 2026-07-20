@@ -23,6 +23,17 @@ add to it, don't just re-derive these lessons from scratch each session.
   into. Either start from the true beginning (`cue_seconds=0`), or use a
   dedicated opener style (`opener_style=echo_tease_drop` /
   `juggle_intro` / `juggle_brake_intro`).
+- **`cue_seconds` on an opener with any `opener_style` is not just "where
+  the ride starts counting from" — it's the exact load position AND the
+  point the juggle/brake/tease mechanism rewinds to and resumes from.**
+  Broke this live, 2026-07-19: extending an opener's ride by moving
+  `cue_seconds` forward (to skip to a verse) silently pulled the whole
+  juggle-brake-rewind drama into the middle of the song instead of the
+  true instrumental intro, and the actual intro material never played.
+  To extend an opener's ride, change `ride_beats` ONLY — recompute it
+  from the *true* entry beat_index (almost always 0) to reach the same
+  target ending, and never move `cue_seconds` away from the track's real
+  start for as long as an `opener_style` directive is present.
 - **Always dry-run before committing a new dj_notes/reorder batch.**
   Rebuild, inspect the actual `mix_plan.json` events (not just the
   console summary), and run the test suite. Several bugs in this

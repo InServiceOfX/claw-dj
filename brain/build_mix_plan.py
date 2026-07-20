@@ -204,6 +204,12 @@ def track_directives(track: dict) -> dict:
         "landing_beats": int(value) if (value := number("landing_beats")) is not None else None,
         "full_track": bool(re.search(r"\bfull_track\b", notes, re.I)),
         "no_flourish": bool(re.search(r"\bno_flourish\b", notes, re.I)),
+        # Ear override: the human certified this exact ride length by
+        # listening -- the beat-phase auto-nudge must NOT touch it. Needed
+        # because the nudge's snare-parity input can be a near-coin-flip
+        # measurement (seen live 2026-07-19: confidence 0.015 drove a nudge
+        # the ear then flagged as off by one).
+        "trust_ride_beats": bool(re.search(r"\btrust_ride_beats\b", notes, re.I)),
     }
 
 
@@ -704,7 +710,8 @@ def build_plan(
         outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
         incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
         if (
-            outgoing_phase and incoming_phase
+            not directive["trust_ride_beats"]
+            and outgoing_phase and incoming_phase
             and outgoing_entry_beat is not None and incoming_entry_beat is not None
         ):
             shift = count_shift_beats(

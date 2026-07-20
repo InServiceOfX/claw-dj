@@ -1272,6 +1272,121 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       added.
     - 130/130 tests pass; plan rebuilt (#14 Mya→AYTS now scores 0.748);
       20/20 previews re-rendered.
+  - **DONE 2026-07-19, twenty-third round**: Cassie→Al B. Sure! (album)
+    →Rock The Boat chain built; a real bug in that build broke Cassie's
+    opener and got fixed same-round; plus four more live-feedback fixes.
+    - **Cassie → Al B. Sure! (album, 91.6bpm/Ebm) → Rock The Boat**
+      chain built per Ernest's pick from the earlier bpm/key search.
+      Cassie's ride extended to reach the requested exit point.
+    - **Broke, then fixed, Cassie's opener in the same round**: extending
+      the ride by moving `cue_seconds` from 0 to 19.57 (to skip to the
+      first verse) silently dragged the ENTIRE `juggle_brake_intro`
+      juggle/brake/rewind mechanism into the middle of the song with it
+      — `cue_seconds` on an opener is both the load position AND the
+      exact point the juggle rewinds to and resumes from, not just "where
+      the ride starts counting." Ernest caught it immediately by ear
+      ("the beginning sounds terrible... don't mess up Cassie's
+      verses"). Fixed by reverting `cue_seconds` to 0 and reaching the
+      same intended ending purely via `ride_beats` (0→207, auto-nudged
+      to 208 for count parity) — same technique, computed from the
+      correct baseline. Recorded as a permanent rule in
+      `docs/DJ_STYLE_GUIDE.md`.
+    - **Echo-out exit's real bug, found and fixed**: Ernest's complaint
+      ("it just leaves silence, we want to keep the beat going") was
+      correct — the original implementation rang the echo tail to full
+      volume-zero, THEN stopped the outgoing deck, THEN started the
+      incoming one: fully sequential, a real gap of dead air. Redesigned
+      `echo_out_exit()` to take an optional `to_deck` — the incoming
+      deck now starts playing and the crossfader moves DURING the same
+      ~1s ramp, so something is always audible; the plain-fade fallback
+      (no Echo loaded) got the identical fix. The opener-tease use
+      (`echo_tease_drop`, no `to_deck`) is deliberately unchanged — that
+      context wants a real brief silence before replaying the same
+      track. New regression test asserts no point in the write sequence
+      has both decks silent at once. Preview renderer updated to match
+      (crossfade instead of splice for echo-out).
+    - **Movin' On → Mya blend confirmed real** (bpm 0.9% apart) — Mya's
+      `entry_style=beat_drop` removed, letting the default technique
+      picker choose a genuine blend instead of a hard cut, per Ernest's
+      explicit "don't use the brake/stop" ask.
+    - **Mya's ride extended** to verse 1 → full chorus 1 (both internal
+      repeats) → verse 2 → full chorus 2, exiting before the closing tag
+      line, per Ernest's spec.
+    - **Don't Wanna Fall in Love → All For You, real bug found**: All
+      For You's own dj_notes literally said "beatsync_phase aligns the
+      beat" as justification for holding it at its own native 113.5 —
+      but Jane Child is deliberately held at Escapade's bumped 115.24,
+      so the two decks sat 1.7% apart in tempo for the ENTIRE 32-beat
+      overlap (phase-only sync doesn't hold tempo matched, only snaps
+      phase once) — exactly Ernest's "snares not matching" complaint.
+      Removed the hold; real full sync now locks both tempo and phase to
+      Jane Child's live rate, `settle_rate` glides back after — the same
+      recipe as the "almost immaculate" If→Touchin transition. Confirmed
+      via the real plan JSON: `incoming_bpm_target: None`.
+    - **Repeated the stale-prose-directive bug in a new shape** while
+      writing the All For You fix note: described the OLD removed value
+      as literal text ("the play_bpm=113.5 hold was wrong") with no real
+      trailing directive for that key — since it was now the ONLY match
+      in the text, the parser (correctly, per its own last-match rule)
+      read it as live and the hold silently came back. Caught by
+      re-checking the rebuilt plan's JSON rather than trusting the note
+      text was right, fixed by rewording to avoid the literal
+      `key=value` shape anywhere except the real trailing directives.
+      Worth remembering as a durable rule: never write `key=value` in
+      prose for a key being discussed but not set, in ANY dj_notes.
+    - **How Many Ways researched, not moved**: fresh library-wide search
+      confirms The-Dream — Rockin' That Shit (78.0bpm, 0.1% off) is the
+      ONLY genuinely close-tempo match anywhere in the library — same
+      track flagged for a different slot earlier and left as an open
+      question pending Ernest's call, now that the echo-out fix may make
+      the existing exit work without relocating anything.
+    - 131/131 tests pass (130 + 1 no-silence-gap regression); plan
+      rebuilt; 21/21 previews re-rendered, 0 failures.
+
+  - **DONE 2026-07-19, twenty-fourth round**: six ear-feedback fixes plus
+    a new ear-override directive.
+    - **New `trust_ride_beats` directive**: locks a human-certified ride
+      length against the beat-phase auto-nudge. Needed because the
+      nudge's snare-parity input can be a near-coin-flip (LWND's
+      confidence is 0.015) — when the ear says the count is off by one,
+      the ear outranks the measurement. Parser + build_plan gate + test.
+    - **LWND → Entourage count fix**: ear said "perfect beat match, wrong
+      count by 1" at the auto-nudged 75 — shifted to 76 and locked with
+      trust_ride_beats. Direction of a one-count error isn't knowable
+      from data; if still off, the documented fallback candidate is 74.
+    - **Entourage → Escapade**: removed Escapade's play_bpm hold (the
+      "hit at real tempo instantly" hold left the decks 7.6% apart the
+      whole overlap — the exact un-beat-matched complaint); real full
+      sync now slows Escapade to Entourage's live tempo for the blend,
+      settle_rate glides it back to native after, landing lengthened
+      24→32 beats per "blend starting earlier". Ernest explicitly ok'd
+      the slow-down-then-restore shape.
+    - **AYTS → If**: echo-out exit dropped (Ernest disliked the abrupt
+      end); plain synced blend instead. If now cues onto its hard
+      industrial instrumental 8 beats in (4.836s, skipping the very
+      beginning per Ernest) with ride reduced by the same 8 beats
+      (187→179) so the ear-certified "almost immaculate" exit anchor
+      into Touchin, Lovin lands on the exact same beat index; locked
+      with trust_ride_beats.
+    - **Al B. Sure! (album) → Rock The Boat**: ride cut 122→40 (~26s) —
+      exit right after the first part of the chorus per Ernest. Flagged
+      as approximate: no synced lyrics exist for this exact copy.
+    - **You're Makin' Me High**: entry moved to the instrumental
+      beginning, 8 beats in (5.326s), keeping the most-of-song ride
+      (311 beats to ~3:28).
+    - **YMMH → How Many Ways**: echo-out replaced with the explicit ask —
+      HMW cues at 0:41, `entry_style=gentle_blend` forces a fully-synced
+      24-beat overlap (HMW sped ~18% up to meet YMMH, Ernest's explicit
+      call), then settle_rate glides it back to its native 77.9 ballad
+      tempo as the closer plays out.
+    - All values verified against the rebuilt plan JSON (not note text).
+      132/132 tests pass; 21/21 previews re-rendered.
+  - **DONE 2026-07-20**: added `full_track` to How Many Ways — it's the
+    closer now (Al B. Sure! album/Rock The Boat/AYTS reorders since
+    pushed it off the old closer slot), so it needed the flag explicitly
+    re-added to play out completely rather than a fixed duration.
+    Confirmed via the rebuilt plan's `finale` event: `play_to_end: True`,
+    `seconds: 247.1` (the real remaining length). 132/132 tests pass.
 
 ## Next steps (roughly in order of value)
 
