@@ -10,6 +10,12 @@ full crate. Every step checks SQLite first and fills only what's missing:
                  mix ordering/plan techniques get real texture coverage
   4. phrases   — beat-aligned energy cue analysis (intro/body entries) into
                  the `phrases` table + phrase_analysis.json for the planner
+  5. beat_phase — real onset/waveform snare-parity analysis (which beat-in-
+                 bar carries the backbeat) into the `beat_phase` table;
+                 depends on phrases (bpm/first_beat_seconds come from
+                 there). build_mix_plan.py uses this to auto-correct
+                 transitions whose kick/snare land on the wrong beat --
+                 see brain/onset_analysis.py and docs/DJ_STYLE_GUIDE.md.
 
 Usage:
     uv run python -m brain.enrich_set                # fill all missing
@@ -49,7 +55,7 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
                 track_ids,
             )
         }
-        for table in ("lyrics", "chroma", "phrases", "lyric_timelines")
+        for table in ("lyrics", "chroma", "phrases", "lyric_timelines", "beat_phase")
     }
     # BPM alone is enough for the mix plan; key is best-effort (control API
     # may not map, and Mixxx DB flush often lags). Treat bpm IS NOT NULL as ok.
@@ -78,6 +84,10 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
             # attempted counts: tracks without synced lyrics on LRCLIB get an
             # empty-timeline row so we don't refetch every run
             "timeline": tid in have["lyric_timelines"],
+            # real onset/waveform snare-parity analysis (brain.onset_analysis)
+            # -- depends on phrases (that's where bpm/first_beat_seconds come
+            # from), so it belongs after phrases in the pipeline.
+            "beat_phase": tid in have["beat_phase"],
         }
         for tid in track_ids
     }
@@ -284,7 +294,7 @@ def enrichment_status(playlist_path: Path = DEFAULT_PLAYLIST_JSON) -> dict:
             for t in tracks
             if not gaps[t["track_id"]][field]
         ]
-        for field in ("bpm_key", "lyrics", "chroma", "phrases")
+        for field in ("bpm_key", "lyrics", "chroma", "phrases", "beat_phase")
     }
     complete = sum(1 for g in gaps.values() if all(g.values()))
     return {
@@ -296,7 +306,8 @@ def enrichment_status(playlist_path: Path = DEFAULT_PLAYLIST_JSON) -> dict:
         "message": (
             f"{complete}/{len(tracks)} fully enriched · "
             f"missing bpm/key {len(need['bpm_key'])}, lyrics {len(need['lyrics'])}, "
-            f"chroma {len(need['chroma'])}, phrases {len(need['phrases'])}"
+            f"chroma {len(need['chroma'])}, phrases {len(need['phrases'])}, "
+            f"beat_phase {len(need['beat_phase'])}"
         ),
     }
 
@@ -310,6 +321,7 @@ def run_enrich(
     skip_chroma: bool = False,
     skip_phrases: bool = False,
     skip_timelines: bool = False,
+    skip_beat_phase: bool = False,
     force_lyrics: bool = False,
     progress: Callable[[str], None] | None = None,
 ) -> dict:
@@ -338,6 +350,7 @@ def run_enrich(
         "chroma_stored": 0,
         "phrases_analyzed": 0,
         "phrases_exported": 0,
+        "beat_phase_analyzed": 0,
         "complete": 0,
         "incomplete": [],
         "log": [],
@@ -351,7 +364,7 @@ def run_enrich(
         gaps = status(db, ids)
         need = {
             field: [t for t in tracks if not gaps[t["track_id"]][field]]
-            for field in ("bpm_key", "lyrics", "chroma", "phrases", "timeline")
+            for field in ("bpm_key", "lyrics", "chroma", "phrases", "timeline", "beat_phase")
         }
         for field, rows in need.items():
             note(f"missing {field}: {len(rows)}")
@@ -401,6 +414,19 @@ def run_enrich(
         else:
             note("[phrases] skipped")
 
+        if not skip_beat_phase:
+            # Depends on phrases (bpm/first_beat_seconds come from there) --
+            # tracks phrases just filled above are immediately eligible.
+            gaps = status(db, ids)
+            targets = [t for t in tracks if not gaps[t["track_id"]]["beat_phase"]]
+            if targets:
+                note(f"[beat_phase] real onset/waveform analysis for {len(targets)} tracks…")
+                done = fill_beat_phase(db, targets, progress=note)
+                summary["beat_phase_analyzed"] = done
+                note(f"beat_phase: {done} analyzed")
+        else:
+            note("[beat_phase] skipped")
+
         if not skip_timelines:
             from brain.lyric_timeline import build_for_tracks
 
@@ -441,6 +467,13 @@ def run_enrich(
                 if "chroma" in holes and not is_m4a:
                     hints.append("chroma: re-run may help")
                     retryable += 1
+                if "beat_phase" in holes and "phrases" in holes:
+                    hints.append("beat_phase: depends on phrases (bpm/grid) — "
+                                 "will fill once phrases succeeds, same re-run")
+                elif "beat_phase" in holes:
+                    hints.append("beat_phase: re-run Analyze — should fill "
+                                 "now that phrases exist")
+                    retryable += 1
                 row = {
                     "artist": track.get("artist"),
                     "title": track.get("title"),
@@ -470,6 +503,7 @@ def main() -> None:
     parser.add_argument("--skip-chroma", action="store_true")
     parser.add_argument("--skip-phrases", action="store_true")
     parser.add_argument("--skip-timelines", action="store_true")
+    parser.add_argument("--skip-beat-phase", action="store_true")
     parser.add_argument("--force-lyrics", action="store_true")
     args = parser.parse_args()
 
@@ -489,6 +523,7 @@ def main() -> None:
         skip_chroma=args.skip_chroma,
         skip_phrases=args.skip_phrases,
         skip_timelines=args.skip_timelines,
+        skip_beat_phase=args.skip_beat_phase,
         force_lyrics=args.force_lyrics,
     )
 

@@ -19,6 +19,43 @@ has its own diverged edits. Imports are merges (fill-missing only), scans
 are incremental (unchanged files are skipped), and re-running any step is a
 no-op the second time.
 
+## Prerequisites (one-time, before any of this)
+
+None of these come from `git clone`/`git pull` on claw-dj — they're
+separate installs. Skipping them doesn't break the setup below, but each
+gap silently degrades one specific thing:
+
+- **The patched Mixxx fork.** Required for ANY live analysis or mix
+  playback (`brain.analyze_via_mixxx`, `hands.run_mix_plan`,
+  `brain.enrich_set`'s bpm/key step). Stock Mixxx (`brew install mixxx`)
+  does NOT have the control API — you must build the fork. Full recipe:
+  `docs/BUILD_MIXXX.md`. Verify it's the right build by launching with
+  `--control-api-port 9995` and confirming `scripts/start.sh` reports
+  "Mixxx control API is up." A scan/import alone (goal 1) does not need
+  this at all — only goal 2 (analyze/enrich/build a mix) does.
+- **ffmpeg** (`brew install ffmpeg`). Used directly by
+  `brain.preview_transitions` (render transitions to listenable audio —
+  the main iteration tool for tuning a mix) and `brain.convert_m4a`
+  (fixes the m4a chroma-decode gap). Nothing else in the core pipeline
+  needs it, but both of those silently fail without it.
+- **Rust toolchain** (`rustup`/`cargo` on PATH) — optional but
+  recommended. `brain.enrich_set`'s chroma step auto-builds
+  `core-rust/target/.../clawdj` on first use if missing; the same binary
+  drives brake/spinback/stutter/censor gestures in `hands.run_mix_plan`
+  (juggle_brake_intro, echo_tease_drop, etc. — several openers/exits in
+  the current R&B mix use these). Without it, both features print a
+  one-time message and gracefully degrade to plain blends/fades instead
+  of erroring.
+- **Echo effect loaded in the Mixxx GUI** (one-time, per Mixxx install,
+  not a file that travels with the repo or the USB stick — it's local
+  Mixxx application state). Only matters if the set uses
+  `exit_style=echo_out` transitions. Load the Echo effect into any
+  effect unit slot once via the GUI, then match
+  `hands/run_mix_plan.py`'s `ECHO_UNIT`/`ECHO_SLOT` constants to wherever
+  it landed (see `docs/MIXXX_CONTROL_SURFACE.md`) if it differs from Unit
+  2 slot 3. Missing this just falls back to a plain crossfade — no error,
+  no silence (fixed 2026-07-19), just a less dramatic exit.
+
 ## Step 0 — on the machine you are LEAVING (MacBook Pro)
 
 Before unplugging the USB stick, copy the current library index onto it:
@@ -116,13 +153,43 @@ incremental scan with the same live progress counter.
 bpm/key for tracks that were never analyzed anywhere requires the patched
 Mixxx build running with `--control-api-port 9995` (see PROGRESS.md "How
 to run everything"). Everything already analyzed on the MacBook came over
-in Step 3 — only genuinely new tracks need this. Lyrics/chroma/phrases for
-a finalized set:
+in Step 3 — only genuinely new tracks need this. Lyrics/chroma/phrases/
+beat_phase (real onset-analysis snare-parity — powers the auto beat-match
+correction in `build_mix_plan.py`) for a finalized set, in one pass:
 
 ```sh
 uv run python -m brain.enrich_set --status   # report gaps, change nothing
 uv run python -m brain.enrich_set            # fill what's missing
 ```
+
+beat_phase depends on phrases (bpm/first_beat_seconds come from there),
+so it runs right after phrases in the same command — no separate step,
+and this was a real gap fixed 2026-07-21 (the function existed but was
+never wired into this pipeline before, so beat_phase silently never
+populated on a fresh enrichment run).
+
+## Step 7 — (optional) build a mix and preview it
+
+`brain/data/playlist.json` (the finalized, ordered set) is deliberately
+NOT carried by Step 3/4 above — see "What does NOT travel" below — so
+build a fresh one first: either the GUI's `#curate` → select tracks →
+"Finalize for Mixxx" (Step 5), or `brain.curate_playlist` from the CLI
+(see PROGRESS.md "How to run everything"). Once a `playlist.json` exists:
+
+```sh
+uv run python -m brain.build_mix_plan --tracks N --profile dj-showcase
+uv run python -m brain.preview_transitions
+open brain/data/previews/index.html
+```
+
+Renders every planned transition as a short listenable audio file (real
+cue points, fades, tempo treatment) — this is the actual iteration loop
+for tuning a mix; a full live Mixxx run is only needed to hear the whole
+set end to end (`uv run python -m hands.run_mix_plan`). Requires ffmpeg
+(see Prerequisites). `dj_notes` and its directive syntax are covered in
+`docs/DJ_STYLE_GUIDE.md`; the five-transitions reference (long blend,
+bass swap, drop mix, echo out, crossfader cut) is in
+`docs/DJ_TRANSITIONS_PLAYBOOK.md`.
 
 ## Going back the other way
 
