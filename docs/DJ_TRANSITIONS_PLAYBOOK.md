@@ -74,12 +74,13 @@ a bigger one.
 
 ## 4. Echo out — effect tail as the exit ramp
 
-Apply a 1-beat echo, pull the volume fader down, let the echo tail ring,
-then play the incoming clean — even into a **breakdown** rather than a
-drop, for energy management. Works with tempo gaps up to ~10 BPM without
-sounding wrong, because nothing rhythmic overlaps. The most-used effect
-exit in DJing, but explicitly warned: **don't overuse it** — as an exit
-strategy when needed, not a habit.
+Feed a beat-synced echo for one beat, pull the dry volume fader down on the
+next beat, and leave the post-fader effect routed while its tail rings under
+the clean incoming track — even into a **breakdown** rather than a drop, for
+energy management. The tail, not a gradual volume fade, is the exit ramp.
+Works with tempo gaps up to ~10 BPM without sounding wrong, because the dry
+rhythms do not overlap. Do not overuse it: it is an exit strategy when
+needed, not a habit.
 
 - claw-dj mapping: we have `echo_tease_drop` as an *opener* style and
   brake/spinback as dramatic exits, but **no echo-out transition exit** —

@@ -1,7 +1,7 @@
 """Execute a continuous mix plan against Mixxx's control API.
 
 Plays Mixxx like an instrument: loads tracks, rides EQ/filter/rate, beat-syncs,
-crossfades, optional scratch-ins — all from brain/data/mix_plan.json.
+crossfades, effects and beat juggles — all from brain/data/mix_plan.json.
 
 Requires Mixxx launched with the patched control API:
     mixxx --developer --control-api-port 9995
@@ -187,6 +187,59 @@ def set_bpm_target(mixxx: MixxxControl, deck: int, target_bpm: float) -> None:
     )
 
 
+def ramp_bpm_target(
+    mixxx: MixxxControl,
+    deck: int,
+    *,
+    native_bpm: float,
+    target_bpm: float,
+    beats: int,
+) -> None:
+    """Glide a playing deck to ``target_bpm`` over whole musical beats.
+
+    Unlike ``set_bpm_target``, this never reasserts playposition and never
+    auditions the full target in both slider directions. It makes one tiny
+    orientation probe, then advances the rate once per beat so a substantial
+    tempo bridge sounds intentional instead of jumping at the transition.
+    """
+    if native_bpm <= 0 or target_bpm <= 0 or beats <= 0:
+        raise ValueError("tempo ramp requires positive BPMs and beat count")
+    group = deck_group(deck)
+    start_bpm = mixxx.get(group, "bpm") or native_bpm
+    start_rate = mixxx.get(group, "rate")
+    if abs(start_bpm - target_bpm) <= 0.2:
+        return
+
+    delta = target_bpm / native_bpm - 1.0
+    rate_range = max(0.08, min(1.0, abs(delta) * 1.25))
+    mixxx.set(group, "rateRange", rate_range)
+
+    # Mixxx rate-slider orientation can differ by configuration. A 2% knob
+    # probe is only about 0.2 BPM at this range and establishes direction
+    # without the audible full-speed trials used by set_bpm_target().
+    probe_rate = max(-1.0, min(1.0, start_rate + 0.02))
+    mixxx.set(group, "rate", probe_rate)
+    time.sleep(0.08)
+    probe_bpm = mixxx.get(group, "bpm")
+    orientation = 1.0 if probe_bpm >= start_bpm else -1.0
+    mixxx.set(group, "rate", start_rate)
+
+    target_rate = orientation * delta / rate_range
+    target_rate = max(-1.0, min(1.0, target_rate))
+    for step in range(1, beats + 1):
+        progress = smoothstep(step / beats)
+        rate = start_rate + (target_rate - start_rate) * progress
+        mixxx.set(group, "rate", rate)
+        expected_bpm = start_bpm + (target_bpm - start_bpm) * progress
+        time.sleep(60.0 / max(60.0, min(200.0, expected_bpm)))
+
+    actual_bpm = mixxx.get(group, "bpm")
+    print(
+        f"  deck {deck} tempo ramp: {start_bpm:.2f} -> {actual_bpm:.2f} BPM "
+        f"over {beats} beats (target {target_bpm:.2f})"
+    )
+
+
 def cue_deck(
     mixxx: MixxxControl,
     deck: int,
@@ -337,7 +390,7 @@ def ensure_deck_playing(mixxx: MixxxControl, deck: int) -> None:
 
 
 def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[str]) -> None:
-    """Pre-transition instrument gestures (EQ/filter/scratch)."""
+    """Pre-transition instrument gestures (EQ/filter/rate)."""
     out_g, in_g = deck_group(from_deck), deck_group(to_deck)
     for move in moves:
         if move == "eq_kill_out_low":
@@ -390,22 +443,6 @@ def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[s
                     pass
         elif move == "rate_nudge_in":
             mixxx.set(in_g, "rate", 0.05)
-        elif move == "optional_scratch_in":
-            # Briefly reveal a rate-wiggle, then restore the analyzed cue.
-            cue = mixxx.get(in_g, "playposition")
-            start_cf = mixxx.get("[Master]", "crossfader")
-            preview_cf = start_cf + 0.28 * (crossfader_target(to_deck) - start_cf)
-            mixxx.set(in_g, "keylock", 0)
-            mixxx.set(in_g, "play", 1)
-            for i in range(6):
-                mixxx.set(in_g, "rate", -0.6 if i % 2 == 0 else 0.7)
-                mixxx.set("[Master]", "crossfader", preview_cf if i % 2 else start_cf)
-                time.sleep(0.07)
-            mixxx.set("[Master]", "crossfader", start_cf)
-            mixxx.set(in_g, "rate", 0.0)
-            mixxx.set(in_g, "keylock", 1)
-            mixxx.set(in_g, "play", 0)
-            mixxx.set(in_g, "playposition", cue)
         elif move == "optional_loop_roll_out":
             try:
                 mixxx.set(out_g, "beatloop_4_activate", 1)
@@ -430,6 +467,11 @@ def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[s
 # interaction or index guessing is ever needed.
 ECHO_UNIT = "[EffectRack1_EffectUnit2]"
 ECHO_SLOT = "[EffectRack1_EffectUnit2_Effect3]"
+ECHO_DELAY_BEATS = 0.5
+ECHO_FEEDBACK = 0.68
+ECHO_SEND = 0.75
+ECHO_WET_MIX = 0.5
+ECHO_TAIL_BEATS = 4.0
 
 
 def echo_ready(mixxx: MixxxControl) -> bool:
@@ -440,19 +482,13 @@ def echo_ready(mixxx: MixxxControl) -> bool:
 
 
 def echo_out_exit(mixxx: MixxxControl, deck: int, *, to_deck: int | None = None) -> None:
-    """Echo-out: route the outgoing deck through the reserved Echo unit,
-    ring the tail in as its volume drops, then leave the unit routed off.
+    """Perform a post-fader, beat-synced echo throw into the next track.
 
-    `to_deck`, when given, starts the incoming deck playing and crossfades
-    to it DURING the same ramp instead of after — found live 2026-07-19:
-    the original sequential version (ramp fully to silence, THEN stop the
-    outgoing deck, THEN start the incoming one) left a real gap of dead
-    air, the opposite of the "keep the beat going" the echo-out is
-    supposed to deliver. With `to_deck` there is always something audible:
-    the incoming track's own sound is already under the echo tail the
-    whole time. Without `to_deck` (the opener-tease use, `echo_tease_drop`)
-    the original behavior is unchanged on purpose — that context wants a
-    real, brief silence before replaying the SAME track's cue.
+    Feed a quantized half-beat Echo for one beat, pull the outgoing dry
+    signal on the next beat, and keep the routed effect alive while four
+    beats of repeats decay. The previous implementation immediately
+    unrouted the effect after its volume ramp, which killed Mixxx's delay
+    buffer and made an "echo out" sound like a plain cut.
 
     No-ops (with a one-time note) if Echo hasn't been loaded into the
     configured unit/slot — see ECHO_UNIT/ECHO_SLOT above.
@@ -466,38 +502,63 @@ def echo_out_exit(mixxx: MixxxControl, deck: int, *, to_deck: int | None = None)
         return
     group = deck_group(deck)
     route_key = f"group_{group}_enable"
+    bpm = mixxx.get(group, "bpm") or 100.0
+    beat_seconds = 60.0 / max(60.0, min(200.0, bpm))
+
+    # Echo's knob order is fixed by its Mixxx manifest:
+    # Time, Feedback, Ping Pong, Send; Quantize is button parameter 1.
+    mixxx.set(ECHO_SLOT, "parameter1", ECHO_DELAY_BEATS)
+    mixxx.set(ECHO_SLOT, "parameter2", ECHO_FEEDBACK)
+    mixxx.set(ECHO_SLOT, "parameter3", 0.0)
+    mixxx.set(ECHO_SLOT, "parameter4", ECHO_SEND)
+    mixxx.set(ECHO_SLOT, "button_parameter1", 1)
+    mixxx.set(ECHO_SLOT, "button_parameter2", 0)
     mixxx.set(ECHO_SLOT, "enabled", 1)
     mixxx.set(ECHO_UNIT, route_key, 1)
-    mixxx.set(ECHO_UNIT, "mix", 0.0)
+    mixxx.set(ECHO_UNIT, "mix", ECHO_WET_MIX)
+
+    # Give the delay buffer one complete beat of musical material before
+    # the fader pull. This is the audible "throw", not a volume fade.
+    time.sleep(beat_seconds)
+
     in_group = deck_group(to_deck) if to_deck is not None else None
     start_cf = mixxx.get("[Master]", "crossfader") if in_group else None
     end_cf = crossfader_target(to_deck) if in_group else None
     if in_group:
         mixxx.set(in_group, "play", 1)
-    steps = 20
+
+    # A quick dry cut on the beat lets the buffered repeats remain distinct.
+    # Mixxx processes effects post-fader, so the echo continues after both
+    # the channel fader and crossfader have moved away from the source deck.
+    steps = 5
     for i in range(steps + 1):
         progress = i / steps
-        mixxx.set(ECHO_UNIT, "mix", progress)
         mixxx.set(group, "volume", 1.0 - progress)
         if in_group:
             mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * progress)
-        time.sleep(0.05)
-    # Deck volume restored on its next load; echo unit unrouted so it
-    # doesn't color whatever plays through this effect unit next.
-    mixxx.set(group, "volume", 1.0)
+        time.sleep(beat_seconds * 0.04)
+    mixxx.set(group, "play", 0)
+
+    # Crucially, leave the effect routed while its delay buffer decays.
+    tail_beats = ECHO_TAIL_BEATS if in_group else 1.0
+    time.sleep(tail_beats * beat_seconds)
+
+    # Clean up only after the tail; the outgoing deck is already stopped,
+    # so restoring its fader cannot leak audio before its next load.
     mixxx.set(ECHO_UNIT, route_key, 0)
     mixxx.set(ECHO_UNIT, "mix", 0.0)
+    mixxx.set(group, "volume", 1.0)
 
 
 _echo_missing_noted = False
 
 
 def perform_juggle_intro(mixxx: MixxxControl, event: dict) -> None:
-    """Cool DJ-intro juggle: load a second copy of the opener on the other
-    deck, chop the crossfader back and forth between the two identical
-    copies over the first few bars, then land cleanly on the opener deck
-    and let it continue playing straight through -- nothing in the
-    beginning gets skipped, it's just presented as a flashy juggle first.
+    """Beat-juggle the opener cue between two copies of the same track.
+
+    Each chop is a fresh cue drop, rather than two copies running freely at
+    different positions. After the repeated fragment, rewind deck 1 once
+    more and let the opener continue cleanly from that cue.
 
     The other deck is borrowed temporarily; the plan's following `load`
     event reloads the real second track onto it afterward.
@@ -512,30 +573,45 @@ def perform_juggle_intro(mixxx: MixxxControl, event: dict) -> None:
         mixxx.set(group, "play", 1)
         return
 
-    mixxx.set(group, "volume", 1.0)
-    mixxx.set(group, "play", 1)
     bpm = mixxx.get(group, "bpm") or 95.0
     period = 60.0 / max(60.0, min(200.0, bpm))
+    cue_position = mixxx.get(group, "playposition")
 
-    load_deck(mixxx, other, track_id, cue_seconds=0.0, expected_bpm=bpm)
+    load_deck(
+        mixxx,
+        other,
+        track_id,
+        cue_fraction=float(event.get("cue_fraction", cue_position)),
+        cue_seconds=event.get("cue_seconds"),
+        expected_bpm=bpm,
+    )
+    mixxx.set(group, "volume", 1.0)
     mixxx.set(other_group, "volume", 1.0)
-    mixxx.set(other_group, "play", 1)
+    for candidate in (group, other_group):
+        mixxx.set(candidate, "play", 0)
+        mixxx.set(candidate, "playposition", cue_position)
 
     chops = max(2, int(event.get("juggle_chops", 6)))
     hold_beats = float(event.get("juggle_hold_beats", 1.0))
-    print(f"  juggle_intro: {chops} chops between deck {deck} and deck {other} "
+    print(f"  juggle_intro: {chops} repeated cue drops between deck {deck} and deck {other} "
           f"on {event.get('track')}")
     for i in range(chops):
         active = deck if i % 2 == 0 else other
+        inactive = other if active == deck else deck
+        active_group = deck_group(active)
+        mixxx.set(deck_group(inactive), "play", 0)
+        mixxx.set(active_group, "play", 0)
+        mixxx.set(active_group, "playposition", cue_position)
         mixxx.set("[Master]", "crossfader", crossfader_target(active))
+        mixxx.set(active_group, "play", 1)
         time.sleep(hold_beats * period)
 
-    # Land on the opener deck, kill the borrowed copy -- deck plays on
-    # uninterrupted from wherever the juggle left it (no rewind: the point
-    # is nothing gets skipped overall).
-    mixxx.set("[Master]", "crossfader", crossfader_target(deck))
     mixxx.set(other_group, "play", 0)
-    print(f"  juggle landed on deck {deck}; playing straight through")
+    mixxx.set(group, "play", 0)
+    mixxx.set(group, "playposition", cue_position)
+    mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+    mixxx.set(group, "play", 1)
+    print(f"  juggle landed on deck {deck}; cue replayed cleanly")
 
 
 def perform_juggle_brake_intro(mixxx: MixxxControl, event: dict, *, port: int) -> None:
@@ -727,20 +803,42 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             "censor", "--deck", str(from_deck), "--beats", "2", port=port):
         print("  censor fill (slip reverse)")
 
-    # Echo-out exit (docs/DJ_TRANSITIONS_PLAYBOOK.md #4): the outgoing deck
-    # fades under a rising echo tail (~1s ramp, live-validated 2026-07-14),
-    # then the incoming starts clean at its own tempo — the gentle
-    # large-gap exit, no tempo bridging at all. Falls back to a plain
-    # quick fade when the reserved Echo slot isn't loaded in the GUI.
+    # Large tempo reset without an echo or platter gesture: progressively
+    # remove the outgoing track's syncopated drums, then land the incoming
+    # track clean on the next phrase. No attempt is made to overlap two
+    # incompatible grids or stretch either song to the other's BPM.
+    if "filter_drop_exit" in moves:
+        sweep_beats = 2.0
+        steps = 16
+        beat_seconds = 60.0 / bpm
+        for step in range(steps + 1):
+            progress = smoothstep(step / steps)
+            try:
+                mixxx.set(filter_group(from_deck), "super1", 0.5 - 0.4 * progress)
+            except Exception:
+                pass
+            time.sleep(sweep_beats * beat_seconds / steps)
+        wait_for_next_beat(port, out_g)
+        mixxx.set(in_g, "play", 1)
+        mixxx.set("[Master]", "crossfader", crossfader_target(to_deck))
+        mixxx.set(out_g, "play", 0)
+        try:
+            mixxx.set(filter_group(from_deck), "super1", 0.5)
+        except Exception:
+            pass
+        print(f"  filtered phrase drop -> deck {to_deck} (native tempo)")
+        return
+
+    # Echo-out exit (docs/DJ_TRANSITIONS_PLAYBOOK.md #4): throw one beat
+    # into a quantized delay, cut the dry deck on the beat, then leave the
+    # post-fader tail alive under the incoming track. This is the gentle
+    # large-gap exit, with no tempo bridging at all.
     if "echo_out_exit" in moves:
         wait_for_next_beat(port, out_g)
         if echo_ready(mixxx):
-            # to_deck starts playing and the crossfader moves DURING the
-            # ramp -- see echo_out_exit's docstring for why the old
-            # sequential (ramp, then stop, then start) version left dead
-            # air, the opposite of "keep the beat going".
+            # The incoming first beat lands with the fader pull; the effect
+            # remains routed for four more beats before cleanup.
             echo_out_exit(mixxx, from_deck, to_deck=to_deck)
-            mixxx.set(out_g, "play", 0)
         else:
             # No Echo loaded: same fix applies to the plain-fade fallback
             # -- crossfade to the already-playing incoming deck instead of
@@ -993,10 +1091,21 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
             print(f"  hints: {event.get('instrument_hints')}")
             ensure_deck_playing(mixxx, int(event["deck"]))
             if beats is not None:
+                ramp_beats = min(int(beats), int(event.get("tempo_ramp_beats") or 0))
+                steady_beats = int(beats) - ramp_beats
                 # timeout scales with the ride: full verses (verse tour) can outlast
                 # the old fixed 90s at slower tempos
-                wait_for_beats(port, deck_group(int(event["deck"])), int(beats),
-                               timeout_s=max(90.0, int(beats) * 1.5))
+                if steady_beats:
+                    wait_for_beats(port, deck_group(int(event["deck"])), steady_beats,
+                                   timeout_s=max(90.0, steady_beats * 1.5))
+                if ramp_beats:
+                    ramp_bpm_target(
+                        mixxx,
+                        int(event["deck"]),
+                        native_bpm=float(event["native_bpm"]),
+                        target_bpm=float(event["exit_bpm_target"]),
+                        beats=ramp_beats,
+                    )
             else:
                 time.sleep(seconds)
         elif op == "preload_after_transition":
@@ -1011,7 +1120,6 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
             print(f"  notes: {event.get('notes')}")
             # Ensure incoming is loaded (may already be)
             preview_moves = {
-                "optional_scratch_in",
                 "optional_loop_roll_out",
                 "rate_nudge_in",
                 "eq_boost_in_mid",

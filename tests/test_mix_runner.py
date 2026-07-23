@@ -5,7 +5,9 @@ from hands.run_mix_plan import (
     _run_events,
     load_deck,
     perform_juggle_brake_intro,
+    perform_juggle_intro,
     perform_transition,
+    ramp_bpm_target,
     run_plan,
     set_bpm_target,
 )
@@ -46,6 +48,31 @@ class MixRunnerTests(TestCase):
         mixxx = RateMixxx()
         set_bpm_target(mixxx, 2, 100.0)
         self.assertAlmostEqual(mixxx.get("[Channel2]", "bpm"), 100.0, delta=0.5)
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_playing_tempo_ramp_reaches_target_without_recueing(self, _sleep) -> None:
+        class RampMixxx(FakeMixxx):
+            def __init__(self) -> None:
+                super().__init__()
+                self.values[("[Channel1]", "bpm")] = 92.86
+                self.values[("[Channel1]", "rate")] = 0.0
+                self.values[("[Channel1]", "rateRange")] = 0.08
+
+            def get(self, group: str, key: str) -> float:
+                if (group, key) == ("[Channel1]", "bpm"):
+                    return 92.86 * (
+                        1.0
+                        + self.values[(group, "rate")]
+                        * self.values[(group, "rateRange")]
+                    )
+                return super().get(group, key)
+
+        mixxx = RampMixxx()
+        ramp_bpm_target(
+            mixxx, 1, native_bpm=92.86, target_bpm=100.0, beats=8
+        )
+        self.assertAlmostEqual(mixxx.get("[Channel1]", "bpm"), 100.0, delta=0.1)
+        self.assertFalse(any(key == "playposition" for _, key, _ in mixxx.writes))
 
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")
@@ -291,6 +318,43 @@ class JuggleBrakeIntroTests(TestCase):
         self.assertEqual(mixxx.writes[-1], ("[Channel1]", "play", 1))
 
 
+class JuggleIntroTests(TestCase):
+    @patch("hands.run_mix_plan.load_deck")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_repeats_cue_drops_then_replays_cleanly(self, _sleep, load) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "playposition")] = 0.08
+        perform_juggle_intro(
+            mixxx,
+            {
+                "deck": 1,
+                "track": "Nas — If I Ruled The World",
+                "track_id": "/music/nas.mp3",
+                "cue_fraction": 0.08,
+                "juggle_chops": 4,
+            },
+        )
+
+        load.assert_called_once_with(
+            mixxx, 2, "/music/nas.mp3",
+            cue_fraction=0.08, cue_seconds=None, expected_bpm=120.0,
+        )
+        deck_one_drops = [
+            value for group, key, value in mixxx.writes
+            if (group, key) == ("[Channel1]", "playposition")
+        ]
+        deck_two_drops = [
+            value for group, key, value in mixxx.writes
+            if (group, key) == ("[Channel2]", "playposition")
+        ]
+        self.assertGreaterEqual(deck_one_drops.count(0.08), 3)
+        self.assertGreaterEqual(deck_two_drops.count(0.08), 3)
+        self.assertAlmostEqual(mixxx.get("[Channel1]", "playposition"), 0.08)
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 1)
+        self.assertEqual(mixxx.get("[Channel2]", "play"), 0)
+        self.assertEqual(mixxx.get("[Master]", "crossfader"), -1.0)
+
+
 class VerseLandingMissTests(TestCase):
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")
@@ -333,6 +397,10 @@ class EchoOutExitTests(TestCase):
         )
         self.assertIn(("[EffectRack1_EffectUnit2_Effect3]", "enabled", 1), mixxx.writes)
         self.assertIn(("[EffectRack1_EffectUnit2]", "group_[Channel1]_enable", 1), mixxx.writes)
+        self.assertIn(("[EffectRack1_EffectUnit2_Effect3]", "parameter1", 0.5), mixxx.writes)
+        self.assertIn(("[EffectRack1_EffectUnit2_Effect3]", "parameter2", 0.68), mixxx.writes)
+        self.assertIn(("[EffectRack1_EffectUnit2_Effect3]", "parameter4", 0.75), mixxx.writes)
+        self.assertIn(("[EffectRack1_EffectUnit2_Effect3]", "button_parameter1", 1), mixxx.writes)
         # Outgoing stopped, incoming started clean; no sync of any kind.
         self.assertEqual(mixxx.get("[Channel1]", "play"), 0)
         self.assertEqual(mixxx.get("[Channel2]", "play"), 1)
@@ -385,6 +453,34 @@ class EchoOutExitTests(TestCase):
         # And the incoming starts before the outgoing deck is stopped.
         stop_index = mixxx.writes.index(("[Channel1]", "play", 0))
         self.assertLess(play_index, stop_index)
+        # The delay stays routed after the dry deck stops, so Mixxx can
+        # render its buffered repeats instead of cutting the tail off.
+        unroute_index = mixxx.writes.index(
+            ("[EffectRack1_EffectUnit2]", "group_[Channel1]_enable", 0)
+        )
+        self.assertLess(stop_index, unroute_index)
+        _sleep.assert_any_call(2.0)  # four beats at FakeMixxx's 120 BPM
+
+
+class FilterDropExitTests(TestCase):
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_filter_drop_cuts_on_phrase_without_echo_or_sync(self, _sleep, _wait) -> None:
+        mixxx = FakeMixxx()
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1, "to_deck": 2, "transition_beats": 4,
+                "technique": "filter_drop_exit", "moves": ["filter_drop_exit"],
+            },
+            port=9995,
+        )
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 0)
+        self.assertEqual(mixxx.get("[Channel2]", "play"), 1)
+        self.assertEqual(mixxx.get("[Master]", "crossfader"), 1.0)
+        self.assertIn(("[QuickEffectRack1_[Channel1]]", "super1", 0.5), mixxx.writes)
+        self.assertFalse(any(group.startswith("[EffectRack1") for group, _, _ in mixxx.writes))
+        self.assertNotIn(("[Channel2]", "beatsync", 1), mixxx.writes)
 
 
 class RunPlanInterruptTests(TestCase):

@@ -147,18 +147,20 @@ requires no further GUI interaction or index guessing:
 - `[EffectRack1_EffectUnit2_Effect3],loaded` — readback to confirm it's
   there (code checks this and no-ops with a one-time note if not)
 - `[EffectRack1_EffectUnit2_Effect3],enabled`
+- `[EffectRack1_EffectUnit2_Effect3],parameter1..4` — Echo Time,
+  Feedback, Ping Pong, and Send, in manifest order
+- `[EffectRack1_EffectUnit2_Effect3],button_parameter1` — beat quantize
 - `[EffectRack1_EffectUnit2],mix` (dry/wet)
 - `[EffectRack1_EffectUnit2],group_[Channel1]_enable` (route a deck through it)
 
 Implemented in `hands/run_mix_plan.py` (`echo_out_exit`, `echo_ready`,
-`ECHO_UNIT`/`ECHO_SLOT`): ramps mix 0→1 while the outgoing deck's volume
-ramps 1→0 over ~1s, then un-routes the deck so Echo doesn't color whatever
-plays through the unit next. **Live-fired 2026-07-14** against a real
-playing deck (G'd Up, deck 1): end state confirmed correct via readback
-(volume restored to 1.0, mix reset to 0, routing disabled) **and
-confirmed by ear** — Ernest heard the fade + rising echo tail. First
-gesture in this batch to clear both bars (spinback/fade are still
-readback-only). Same pattern would extend to Reverb in a second reserved
+`ECHO_UNIT`/`ECHO_SLOT`): explicitly configures a quantized half-beat Echo,
+feeds it for one beat, cuts the dry deck as the incoming track starts, and
+keeps the post-fader effect routed for four beats so the buffer can decay.
+Only then does it unroute the deck and reset the wet mix. The earlier
+implementation unrouted immediately after its one-second volume ramp,
+which killed the delay buffer and sounded like a plain cut despite the
+nominal Echo move. Same pattern would extend to Reverb in a second reserved
 slot for a wash-out variant.
 
 ## Rust: controlling the whole board (`core-rust` plan)

@@ -207,7 +207,7 @@ class MixPlanTest(TestCase):
             {
                 "dj_notes": (
                     "Skip the spoken intro. cue_seconds=113.428; "
-                    "ride_phrases=2; full_track"
+                    "ride_phrases=2; juggle_chops=3; full_track"
                 )
             }
         )
@@ -217,6 +217,7 @@ class MixPlanTest(TestCase):
         self.assertIsNone(directives["play_bpm"])
         self.assertIsNone(directives["entry_style"])
         self.assertIsNone(directives["opener_style"])
+        self.assertEqual(directives["juggle_chops"], 3)
         self.assertIsNone(directives["landing_seconds"])
         self.assertIsNone(directives["landing_beats"])
         self.assertTrue(directives["full_track"])
@@ -245,7 +246,7 @@ class MixPlanTest(TestCase):
         self.assertTrue(directives["no_flourish"])
 
         # At index=1 the flourish rotation would normally land on
-        # "scratch_preview" (rotation[1]) -- a track with no_flourish must
+        # "stutter_fill" (rotation[1]) -- a track with no_flourish must
         # fall back to the plain "bass_swap" default instead.
         tracks = [
             {"track_id": "/music/a.mp3", "artist": "A", "title": "A", "bpm": 100.0, "key": "Am"},
@@ -261,7 +262,7 @@ class MixPlanTest(TestCase):
         plan = build_plan(tracks, count=3, seconds_per_track=20.0, affinity_lookup={}, profile=profile)
         transitions = [e for e in plan["events"] if e["op"] == "transition"]
         self.assertEqual(transitions[1]["showcase_move"], "bass_swap")
-        self.assertNotIn("optional_scratch_in", transitions[1]["moves"])
+        self.assertNotIn("stutter_fill", transitions[1]["moves"])
 
     def test_track_entry_directives_override_transition(self) -> None:
         tracks = [
@@ -313,7 +314,7 @@ class MixPlanTest(TestCase):
                 "title": "Iconic Intro",
                 "bpm": 93.4,
                 "key": "Bbm",
-                "dj_notes": "cue_seconds=0; opener_style=echo_tease_drop",
+                "dj_notes": "cue_seconds=0; opener_style=juggle_intro; juggle_chops=3",
             },
             {
                 "track_id": "/music/verse.mp3",
@@ -335,6 +336,8 @@ class MixPlanTest(TestCase):
         )
         ops = [event["op"] for event in plan["events"]]
         self.assertIn("opener_effect", ops)
+        opener = next(event for event in plan["events"] if event["op"] == "opener_effect")
+        self.assertEqual(opener["juggle_chops"], 3)
         # juggle_intro-style openers reuse deck 2 to juggle a second copy of
         # the opener track and leave it loaded there — a bare recue can only
         # re-seek whatever's currently loaded, not reload it, so this must be
@@ -460,6 +463,79 @@ class MixPlanTest(TestCase):
         body = next(event for event in plan["events"] if event["op"] == "play_body")
         self.assertEqual(body["beats"], 10)
 
+    def test_tempo_ramp_exit_shapes_outgoing_before_native_bpm_blend(self) -> None:
+        tracks = [
+            {
+                "track_id": "/m/fiesta.mp3", "artist": "R. Kelly", "title": "Fiesta",
+                "bpm": 92.86, "key": "Bbm",
+                "dj_notes": (
+                    "ride_beats=72; trust_ride_beats; "
+                    "exit_style=tempo_ramp_blend; exit_bpm=100; tempo_ramp_beats=32"
+                ),
+            },
+            {
+                "track_id": "/m/me-u.mp3", "artist": "Cassie", "title": "Me&U",
+                "bpm": 100.0, "key": "G#m",
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        body = next(event for event in plan["events"] if event["op"] == "play_body")
+        transition = next(event for event in plan["events"] if event["op"] == "transition")
+        self.assertEqual(body["beats"], 72)
+        self.assertEqual(body["exit_bpm_target"], 100.0)
+        self.assertEqual(body["tempo_ramp_beats"], 32)
+        self.assertEqual(transition["technique"], "tempo_ramp_blend")
+        self.assertIn("sync", transition["moves"])
+        self.assertNotIn("incoming_bpm_target", transition)
+
+    def test_new_transition_features_are_opt_in_for_ordinary_tracks(self) -> None:
+        tracks = [
+            {
+                "track_id": "/m/a.mp3", "artist": "A", "title": "A",
+                "bpm": 100.0, "key": "Am", "dj_notes": "ride_beats=32",
+            },
+            {
+                "track_id": "/m/b.mp3", "artist": "B", "title": "B",
+                "bpm": 101.0, "key": "Am", "dj_notes": "",
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        body = next(event for event in plan["events"] if event["op"] == "play_body")
+        transition = next(event for event in plan["events"] if event["op"] == "transition")
+        self.assertNotIn("exit_bpm_target", body)
+        self.assertNotIn("tempo_ramp_beats", body)
+        self.assertNotIn(
+            transition["technique"],
+            {"tempo_ramp_blend", "halftime_backbeat_blend", "filter_drop_exit"},
+        )
+        self.assertNotIn("filter_drop_exit", transition["moves"])
+
+    def test_halftime_backbeat_blend_and_filter_drop_directives(self) -> None:
+        tracks = [
+            {
+                "track_id": "/m/original.mp3", "artist": "Aaliyah", "title": "Original",
+                "bpm": 121.93, "key": "A", "dj_notes": "ride_beats=40; trust_ride_beats",
+            },
+            {
+                "track_id": "/m/dark.mp3", "artist": "Aaliyah", "title": "Dark Child",
+                "bpm": 121.97, "key": "A",
+                "dj_notes": (
+                    "entry_style=halftime_blend; ride_beats=80; trust_ride_beats; "
+                    "exit_style=filter_drop"
+                ),
+            },
+            {
+                "track_id": "/m/top.mp3", "artist": "Big Pun", "title": "Top",
+                "bpm": 100.83, "key": "G#m",
+            },
+        ]
+        plan = build_plan(tracks, count=3, seconds_per_track=20.0, affinity_lookup={})
+        transitions = [event for event in plan["events"] if event["op"] == "transition"]
+        self.assertEqual(transitions[0]["technique"], "halftime_backbeat_blend")
+        self.assertIn("sync", transitions[0]["moves"])
+        self.assertEqual(transitions[1]["technique"], "filter_drop_exit")
+        self.assertEqual(transitions[1]["moves"], ["filter_drop_exit"])
+
     def test_beat_phase_match_leaves_ride_beats_untouched(self) -> None:
         tracks = [
             {
@@ -529,7 +605,6 @@ class MixPlanTest(TestCase):
             profile=profile,
         )
         forbidden = {
-            "optional_scratch_in",
             "optional_loop_roll_out",
             "optional_transformer_cuts",
             "stutter_fill",

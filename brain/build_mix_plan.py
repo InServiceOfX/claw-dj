@@ -2,7 +2,7 @@
 
 Turns the curated/enriched ordered set into an executable sequence of Mixxx
 "instrument" moves: load, cue, play, sync, EQ kills, filter sweeps, rate
-nudges, crossfades, optional scratch-ins and beat juggles.
+nudges, crossfades, effects and beat juggles.
 
 Does not play audio by itself — write brain/data/mix_plan.json, then:
     uv run python -m hands.run_mix_plan
@@ -197,9 +197,12 @@ def track_directives(track: dict) -> dict:
         "ride_phrases": int(value) if (value := number("ride_phrases")) is not None else None,
         "ride_beats": int(value) if (value := number("ride_beats")) is not None else None,
         "play_bpm": number("play_bpm"),
+        "exit_bpm": number("exit_bpm"),
+        "tempo_ramp_beats": int(value) if (value := number("tempo_ramp_beats")) is not None else None,
         "entry_style": word("entry_style"),
         "exit_style": word("exit_style"),
         "opener_style": word("opener_style"),
+        "juggle_chops": int(value) if (value := number("juggle_chops")) is not None else None,
         "landing_seconds": number("landing_seconds"),
         "landing_beats": int(value) if (value := number("landing_beats")) is not None else None,
         "full_track": bool(re.search(r"\bfull_track\b", notes, re.I)),
@@ -306,17 +309,6 @@ def pick_technique(
         beats = 16
         notes = "Default instrument path: sync, mid scoop, longer crossfade."
         moves = ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"]
-
-    # Showcase spice every few transitions when compatibility is high —
-    # scratch preview only, never upgrades a blend into a hard cut.
-    if score >= 0.75 and technique in {
-        "smooth_blend",
-        "sample_callback_blend",
-        "chroma_matched_blend",
-        "standard_blend",
-    }:
-        moves = ["optional_scratch_in", *moves]
-        notes += " Optional scratch-in on the incoming deck before the fade."
 
     result = {
         "technique": technique,
@@ -464,6 +456,7 @@ def build_plan(
             "cue_source": source,
         })
     # Instrument reset
+    first_cue = cue_fields(selected[0], 0.08, 0)
     events.append(
         {
             "op": "reset_instrument",
@@ -479,7 +472,7 @@ def build_plan(
             "track_id": selected[0]["track_id"],
             "artist": selected[0]["artist"],
             "title": selected[0]["title"],
-            **cue_fields(selected[0], 0.08, 0),
+            **first_cue,
         }
     )
     events.append(
@@ -502,7 +495,17 @@ def build_plan(
                 "tease_beats": 4,
                 "track": f"{selected[0]['artist']} — {selected[0]['title']}",
                 "track_id": selected[0]["track_id"],
-                "detail": "Tease the iconic opening, echo it out, rewind, then drop clean.",
+                **first_cue,
+                **(
+                    {"juggle_chops": opener_directive["juggle_chops"]}
+                    if opener_directive["juggle_chops"] is not None
+                    else {}
+                ),
+                "detail": (
+                    "Beat-juggle repeated cue drops between two copies, then land clean."
+                    if opener_directive["opener_style"] == "juggle_intro"
+                    else "Tease the iconic opening, rewind, then drop clean."
+                ),
             }
         )
         # juggle_intro/juggle_brake_intro reuse deck 2 to juggle a second
@@ -554,7 +557,6 @@ def build_plan(
         if profile.transition_scale != 1.0:
             scaled = tech["transition_beats"] * profile.transition_scale
             tech["transition_beats"] = max(4, int(round(scaled / 4)) * 4)
-        tech["moves"] = [move for move in tech["moves"] if move != "optional_scratch_in"]
         flourish = "bass_swap"
         if profile.flourish_every and index % profile.flourish_every == 0 and not incoming_directive["no_flourish"]:
             # Rotation includes the Rust slip gestures (stutter/censor);
@@ -562,16 +564,13 @@ def build_plan(
             # binary is missing, so plans stay portable.
             rotation = (
                 "bass_swap",
-                "scratch_preview",
                 "stutter_fill",
                 "loop_roll",
                 "censor_fill",
                 "transformer_cut",
             )
             flourish = rotation[(index // profile.flourish_every) % len(rotation)]
-        if flourish == "scratch_preview" and tech["score"] >= 0.7:
-            tech["moves"].insert(0, "optional_scratch_in")
-        elif flourish == "loop_roll":
+        if flourish == "loop_roll":
             tech["moves"].insert(0, "optional_loop_roll_out")
         elif flourish == "transformer_cut":
             tech["moves"].insert(0, "optional_transformer_cuts")
@@ -584,7 +583,7 @@ def build_plan(
             tech["moves"] = [
                 move for move in tech["moves"]
                 if move not in {
-                    "optional_scratch_in", "optional_loop_roll_out",
+                    "optional_loop_roll_out",
                     "optional_transformer_cuts", "stutter_fill", "censor_fill",
                     "brake_out", "spinback_out", "hard_cut",
                 }
@@ -625,6 +624,19 @@ def build_plan(
                 notes=(
                     "Human DJ note: use a gentle, longer synced blend from "
                     "the outgoing track's held bridge tempo."
+                ),
+            )
+        elif incoming_directive["entry_style"] == "halftime_blend":
+            tech.update(
+                technique="halftime_backbeat_blend",
+                transition_beats=max(24, tech["transition_beats"]),
+                moves=["sync", "eq_dip_out_mid", "crossfade", "eq_restore"],
+                showcase_move="halftime_backbeat_blend",
+                notes=(
+                    "Human DJ note: both tracks expose a fast subdivision "
+                    "grid, but the groove reads in half-time. Their pinned "
+                    "cues/exit align the prominent snare backbeats before "
+                    "Mixxx phase-syncs the otherwise near-identical tempos."
                 ),
             )
         elif incoming_directive["entry_style"] == "verse_landing":
@@ -683,6 +695,35 @@ def build_plan(
                     "at its own tempo. No tempo bridging."
                 ),
             )
+        elif directive["exit_style"] == "tempo_ramp_blend":
+            exit_bpm = directive["exit_bpm"] or incoming.get("bpm")
+            tech.update(
+                technique="tempo_ramp_blend",
+                transition_beats=16,
+                moves=[
+                    "sync", "eq_dip_out_mid", "filter_sweep_out",
+                    "crossfade", "filter_reset", "eq_restore",
+                ],
+                showcase_move="tempo_ramp_blend",
+                notes=(
+                    "Human DJ note: gradually raise the outgoing track to "
+                    f"{exit_bpm:.2f} BPM before the phrase boundary, then "
+                    "phase-sync the incoming track at its native tempo for "
+                    "a normal EQ/filter blend."
+                ),
+            )
+        elif directive["exit_style"] == "filter_drop":
+            tech.update(
+                technique="filter_drop_exit",
+                transition_beats=4,
+                moves=["filter_drop_exit"],
+                showcase_move="filter_drop",
+                notes=(
+                    "Human DJ note: remove the outgoing percussion with a "
+                    "short low-pass sweep, then drop the incoming track clean "
+                    "on the phrase boundary at its native tempo."
+                ),
+            )
         if directive["ride_phrases"] is not None:
             ride_phrases = max(1, min(8, directive["ride_phrases"]))
         out_phrase = phrase_lookup.get(outgoing["track_id"]) or {}
@@ -729,8 +770,7 @@ def build_plan(
                 ride_beats += shift
 
         # Play body of outgoing track
-        events.append(
-            {
+        body_event = {
                 "op": "play_body",
                 "deck": out_deck,
                 "seconds": play_s,
@@ -743,7 +783,14 @@ def build_plan(
                     "Optional: beatloop_4_toggle for a loop-roll fill",
                 ],
             }
-        )
+        if directive["exit_bpm"] is not None:
+            body_event["exit_bpm_target"] = directive["exit_bpm"]
+            body_event["tempo_ramp_beats"] = max(
+                4,
+                min(ride_beats, directive["tempo_ramp_beats"] or 16),
+            )
+            body_event["native_bpm"] = outgoing.get("bpm")
+        events.append(body_event)
 
         # Prefetch next-next track onto free deck after transition starts planning
         if index + 2 < len(selected):

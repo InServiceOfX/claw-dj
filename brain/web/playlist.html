@@ -28,6 +28,9 @@
     section { min-width:0; }
     section + section { border-left:1px solid var(--line); }
     .section-head { height:48px; padding:0 14px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); }
+    .clear-set-actions { display:flex; align-items:center; gap:10px; }
+    .clear-set-option { display:flex; align-items:center; gap:6px; color:var(--muted); cursor:pointer; white-space:nowrap; }
+    .clear-set-option input { width:16px; min-height:16px; margin:0; accent-color:var(--green); }
     h2 { margin:0; font-size:15px; letter-spacing:0; }
     .count,.meta { color:var(--muted); font-variant-numeric:tabular-nums; }
     .rows { height:600px; overflow:auto; }
@@ -159,7 +162,10 @@
         </section>
         <section>
           <div class="section-head"><span><h2 style="display:inline">Enabled set</h2> <span class="count" id="set-count"></span></span>
-            <button type="button" id="clear-set" title="Archive the current playlist.json + mix_plan.json, then empty the enabled set to start a new mix">Clear set&hellip;</button>
+            <div class="clear-set-actions">
+              <label class="clear-set-option" title="Save the current finalized playlist and mix plan before clearing"><input type="checkbox" id="archive-before-clear" checked> Archive first</label>
+              <button type="button" id="clear-set" title="Empty the enabled set to start a new mix">Clear set&hellip;</button>
+            </div>
           </div>
           <div class="rows" id="selected"></div>
         </section>
@@ -304,22 +310,32 @@
     el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('clear-set').addEventListener('click', async () => {
       const count = state.meta ? state.meta.selected_count : 0;
-      if (!confirm(`Archive the current playlist.json + mix_plan.json, then clear all ${count} enabled tracks to start a new mix?`)) return;
+      const archive = el('archive-before-clear').checked;
+      const prompt = archive
+        ? `Archive the current finalized playlist + mix plan, then clear all ${count} enabled tracks to start a new mix?`
+        : `Clear all ${count} enabled tracks WITHOUT archiving first? This cannot be undone.`;
+      if (!confirm(prompt)) return;
       el('clear-set').disabled = true;
+      el('archive-before-clear').disabled = true;
       try {
         const result = await api('/api/selection/clear', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({archive: true}),
+          body: JSON.stringify({archive}),
         });
-        el('notice').textContent = result.archived_path
-          ? `Archived to ${result.archived_path}. Cleared ${result.cleared_count} tracks — enabled set is empty.`
-          : `Nothing to archive (no finalized playlist/mix plan yet). Cleared ${result.cleared_count} tracks — enabled set is empty.`;
+        if (!archive) {
+          el('notice').textContent = `Cleared ${result.cleared_count} tracks without archiving — enabled set is empty.`;
+        } else {
+          el('notice').textContent = result.archived_path
+            ? `Archived to ${result.archived_path}. Cleared ${result.cleared_count} tracks — enabled set is empty.`
+            : `Nothing to archive (no finalized playlist/mix plan yet). Cleared ${result.cleared_count} tracks — enabled set is empty.`;
+        }
         await Promise.all([loadMeta(), loadLibrary(), loadSelected()]);
       } catch (error) {
         el('notice').textContent = error.message;
       } finally {
         el('clear-set').disabled = false;
+        el('archive-before-clear').disabled = false;
       }
     });
     el('nav-curate').addEventListener('click', () => showPage('curate'));

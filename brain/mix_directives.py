@@ -48,10 +48,14 @@ keys must match exactly):
   ride_phrases=<int>         how many 32-beat phrases to ride before the next transition
   ride_beats=<int>           exact beat count to ride (overrides ride_phrases when set)
   play_bpm=<number>          play this track at a specific BPM instead of its native one
-  entry_style=beat_drop | gentle_blend | verse_landing
+  exit_bpm=<number>          gradually bring this track to a target BPM before its exit
+  tempo_ramp_beats=<int>     number of final ride beats used for the exit_bpm glide
+  entry_style=beat_drop | gentle_blend | halftime_blend | verse_landing
+  exit_style=echo_out | filter_drop | tempo_ramp_blend
   landing_seconds=<number>   (with entry_style=verse_landing) exact second the vocal/verse lands
   landing_beats=<int>        (with entry_style=verse_landing) beat count to land on
   opener_style=echo_tease_drop | juggle_intro | juggle_brake_intro   (only meaningful on the first track)
+  juggle_chops=<int>          number of alternating cue drops for a juggle opener
   full_track                 bare flag — play the whole track, no cut
 
 Real examples written by hand this project (style + precision to match):

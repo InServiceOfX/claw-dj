@@ -126,7 +126,7 @@ def apply_brief(profile: MixProfile, brief: str) -> tuple[MixProfile, list[str]]
     if has("no scratch", "no tricks", "clean", "minimal"):
         profile = replace(profile, flourish_every=0)
         notes.append("flourishes off (clean/minimal)")
-    elif has("more scratch", "show off", "tricks", "juggle"):
+    elif has("show off", "tricks", "juggle"):
         profile = replace(profile, flourish_every=1)
         notes.append("flourish on every transition (show off)")
     if has("intro", "from the top", "full songs"):
