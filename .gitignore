@@ -27,6 +27,9 @@ __pycache__/
 .python-version
 *.egg-info/
 
+# macOS
+.DS_Store
+
 # secrets
 .env
 *.pem

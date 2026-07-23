@@ -20,6 +20,9 @@ beat-critical, because a screenshot-loop agent is too slow for that.
 - **Picking up this project on a new machine?** Start with
   [docs/HANDOFF.md](docs/HANDOFF.md) — full environment setup, what's built,
   what's in progress, known gaps.
+- **Recreating the dedicated Hermes `clawdj` agent?** Use the lightweight,
+  Git-based [docs/HERMES_AGENT_SETUP.md](docs/HERMES_AGENT_SETUP.md) rather
+  than copying private session databases, caches, logs, or credentials.
 - **Hackathon context** (event rules, links, submission requirements):
   [docs/HACKATHON.md](docs/HACKATHON.md).
 

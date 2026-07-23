@@ -14,6 +14,27 @@ Written 2026-07-11 mid-hackathon so work can resume on a different machine
 
 Both goals point at the same architecture, so there's one codebase.
 
+## Portable Hermes agent and publishing state (2026-07-23)
+
+The dedicated `clawdj` Hermes agent is now reproducible from a small reviewed
+Git kit instead of a full personal-profile export:
+
+- `AGENTS.md` — canonical cross-agent repository rules;
+- `agent/hermes-profile/SOUL.md` — TARS/clawdj identity template;
+- `agent/hermes-skill/SKILL.md` plus `references/` — operational workflows;
+- `agent/hermes-skill/scripts/` — deterministic 9:16 teaser rendering;
+- `docs/HERMES_AGENT_SETUP.md` — exact new-Mac bootstrap.
+
+This intentionally excludes Hermes history/state databases, caches, logs,
+binaries, credentials, personal media, and Mixxx application state. Those are
+machine-local and must be installed, transferred, or reauthorized separately.
+
+YouTube OAuth is still open work. Ernest is creating the Google Cloud project
+and Desktop OAuth client for `https://www.youtube.com/@claw-dj`. Continue from
+`agent/hermes-skill/references/youtube-channel-oauth.md`; the currently verified
+channel ID is `UClafA-9ft1J1iAKo1JMZmwQ`. The first API upload must be private,
+and publication or other public writes require explicit confirmation.
+
 ### Synced-lyric timelines (2026-07-13, `brain/lyric_timeline.py`)
 
 First slice of the post-hackathon arc is live. `brain/lyrics.py` now keeps

@@ -1,5 +1,8 @@
 # CLAUDE.md — claw-dj
 
+Read and follow `AGENTS.md`. It is the canonical cross-agent instruction file
+for Hermes, Claude Code, Codex, and other coding harnesses in this repository.
+
 Before doing anything else in this repo, read `PROGRESS.md` (current
 state, run commands, prioritized next steps — kept agent-agnostic for any
 harness) and `docs/HANDOFF.md` — the deep context: it links to

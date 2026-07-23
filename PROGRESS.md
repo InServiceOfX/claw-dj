@@ -6,6 +6,23 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
+## Active cross-machine priorities (2026-07-23)
+
+- [ ] **YouTube OAuth/API access for `@claw-dj`.** Ernest is creating the
+      Google Cloud project and Desktop OAuth client. Continue from
+      `agent/hermes-skill/references/youtube-channel-oauth.md`; verify
+      `channels.list(mine=true)` returns `UClafA-9ft1J1iAKo1JMZmwQ` before
+      any write. Start with read/upload scopes, default the first upload to
+      private, and confirmation-gate all public actions.
+- [x] **Lightweight Hermes reconstruction kit.** `AGENTS.md`,
+      `agent/hermes-profile/SOUL.md`, `agent/hermes-skill/`, and
+      `docs/HERMES_AGENT_SETUP.md` reproduce the project agent's reviewed
+      identity and workflows without exporting profile databases, caches,
+      histories, binaries, or credentials.
+- [x] **Reusable social-teaser workflow.** The repository skill now includes
+      verified 9:16 media instructions plus a Swift/AppKit card renderer and
+      FFmpeg orchestration/verification script.
+
 ## How to run everything (quick reference)
 
 ```bash
