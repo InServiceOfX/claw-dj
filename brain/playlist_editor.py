@@ -53,6 +53,7 @@ class PlaylistApp:
             "enriching": 0,
             "error": None,
             "profile": None,
+            "dj_format": None,
             "mix_brief": None,
             "order_engine": None,
             "summary": None,
@@ -1039,6 +1040,7 @@ class PlaylistApp:
         return self.mix_status()
 
     def mix_status(self) -> dict:
+        from brain.dj_formats import FORMATS
         from brain.mix_profiles import PROFILES
 
         status = dict(self.mix_state)
@@ -1047,11 +1049,30 @@ class PlaylistApp:
                 status["summary"] = self._load_plan_summary()
             except Exception as error:  # surface corrupt plan without crashing the UI
                 status["error"] = status.get("error") or f"could not read existing plan: {error}"
+        if not status.get("dj_format"):
+            status["dj_format"] = (
+                ((status.get("summary") or {}).get("dj_format") or {}).get("name")
+                or "none"
+            )
         finalized = self.finalized_snapshot()
         status["finalized"] = finalized
         status["profiles"] = [
             {"name": name, "description": profile.description}
             for name, profile in PROFILES.items()
+        ]
+        status["dj_formats"] = [
+            {
+                "name": name,
+                "label": dj_format.label,
+                "description": dj_format.description,
+                "strict": dj_format.strict,
+                "enforcement": (
+                    "strict"
+                    if dj_format.strict
+                    else ("guided" if dj_format.planner else "off")
+                ),
+            }
+            for name, dj_format in FORMATS.items()
         ]
         status["plan_ready"] = bool(status.get("summary")) and not self._plan_stale(
             status.get("summary"), finalized
@@ -1072,17 +1093,23 @@ class PlaylistApp:
         mix_brief: str,
         tracks: int | None = None,
         order_engine: str = "nemoclaw",
+        dj_format: str = "none",
     ) -> dict:
-        """Build a mix plan in the background (profile + free-text brief).
+        """Build a mix plan in the background (profile + DJ format + brief).
 
         Mirrors `brain.build_mix_plan --profile … --mix-brief … --order-engine …`.
         When the brief mentions pairings / placement / a short subset and
         order_engine is nemoclaw or h-agent, the agent shapes the order first.
         """
+        from brain.dj_formats import FORMATS
         from brain.mix_profiles import PROFILES
 
         if profile not in PROFILES:
             raise ValueError(f"unknown profile {profile!r}; choose from {sorted(PROFILES)}")
+        if dj_format not in FORMATS:
+            raise ValueError(
+                f"unknown DJ format {dj_format!r}; choose from {sorted(FORMATS)}"
+            )
         if order_engine not in ("none", "nemoclaw", "h-agent"):
             raise ValueError(f"unknown order engine {order_engine!r}")
         if self.mix_thread and self.mix_thread.is_alive():
@@ -1106,6 +1133,7 @@ class PlaylistApp:
             "enriching": 0,
             "error": None,
             "profile": profile,
+            "dj_format": dj_format,
             "mix_brief": mix_brief,
             "order_engine": engine,
             "summary": None,
@@ -1124,6 +1152,7 @@ class PlaylistApp:
                 plan = compose_mix_plan(
                     playlist=DEFAULT_PLAYLIST_JSON,
                     profile_name=profile,
+                    dj_format_name=dj_format,
                     mix_brief=mix_brief or "",
                     order_engine=engine,
                     tracks=tracks,
@@ -1135,6 +1164,7 @@ class PlaylistApp:
                     error=None,
                     summary=summary,
                     profile=profile,
+                    dj_format=dj_format,
                     mix_brief=mix_brief,
                     order_engine=engine,
                 )
@@ -1311,6 +1341,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                             str(payload.get("mix_brief", "")),
                             int(tracks) if tracks is not None else None,
                             str(payload.get("order_engine", "nemoclaw")),
+                            str(payload.get("dj_format", "none")),
                         ),
                         HTTPStatus.ACCEPTED,
                     )

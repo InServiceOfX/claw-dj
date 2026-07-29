@@ -326,6 +326,7 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `brain/analyze_bpm.py` / `brain/analyze_via_mixxx.py` | Provisional librosa BPM analysis and deterministic Mixxx analysis for the lineage set |
 | `brain/playlist_editor.py` | Local browser UI for searching the crate, enabling/disabling tracks, applying the researched R&B/West Coast hit seed, exporting a Mixxx playlist without dropping BPM/key metadata, "Ask the DJ brain", and post-finalize **Create the mix** (profile + brief → plan → confirmed live start) |
 | `brain/mix_profiles.py` | Named mix-feel presets + free-text brief → profile overrides |
+| `brain/dj_formats.py` | Versioned expert transition grammars, strict phrase requirements, and format provenance |
 | `brain/mix_order_brief.py` | Free-text order intent → agent constraints → greedy + forced adjacency/regions |
 | `brain/build_mix_plan.py` | Continuous mix plan builder; `compose_mix_plan` / `plan_summary` shared by CLI and editor |
 | `brain/playlist.py` | Playlist selection persistence, normalized seed matching, and JSON/`.m3u8` export logic |
@@ -752,6 +753,68 @@ engine. Every adjustment is named in the plan's `profile` provenance
 block. Gotcha fixed: negation keywords ("no tricks") must be checked
 exclusively before positives ("tricks"). Only knobs validated by real
 runs get added — grow one at a time.
+
+### DJ formats (2026-07-24, `brain/dj_formats.py`)
+
+DJ formats are a second, independent planning axis:
+
+- **mix profile** = feel/pacing/performance density;
+- **DJ format** = allowed transition grammar and hard phrase rules.
+
+The first format, `hiphop-rnb-8bar`, records advice Ernest obtained from a
+practicing hip-hop/R&B DJ. The canonical, human-readable source is
+`docs/dj-formats/HIP_HOP_RNB_8_BAR.md`; the typed registry is
+`brain/dj_formats.py`. It can be paired with any existing profile in the
+`#mix` UI or CLI:
+
+```bash
+uv run python -m brain.build_mix_plan \
+  --profile club-set \
+  --dj-format hiphop-rnb-8bar
+```
+
+This format is strict and optional: the default is `--dj-format none`.
+Incoming cues and outgoing chorus/hook anchors must
+resolve to beat 1 of a four-beat bar, its intro/chorus phrase is 8 bars
+(32 beats), and missing evidence raises a build error. `chorus_to_intro`
+can use beatgrid + lyric-timeline evidence. `acapella_hook_swap` requires
+human `hook_acapella_seconds`; lyrics alone cannot prove “no music.”
+`intro_loop_under_entry` jumps the outgoing deck to its verified intro,
+engages `beatloop_32_activate`, starts the incoming deck on beat 1, and
+hands off over the loop. Format-specific annotations live in persistent
+`dj_notes`; the full vocabulary is in the spec.
+
+The separate `hiphop-rnb-guided` format is the practical library-scale
+option. It keeps the expert's universal “everything enters on the 1” rule
+hard, uses the strict recipe when intro+chorus evidence is actually present,
+and otherwise retains a tempo-safe ordinary technique at analyzed downbeats.
+Every transition carries `format_compliance=expert_recipe` or
+`format_compliance=guided_fallback`; a fallback also records its reason and
+is never presented as expert-certified. Its spec is
+`docs/dj-formats/HIP_HOP_RNB_GUIDED.md`.
+
+The 2026-07-24 15-track playlist builds in guided mode and dry-runs 47 events
+with all 14 transitions honestly labeled as guided fallbacks. Party And
+Bullshit initially lacked a persisted beatgrid; loading it and then a second
+track through `brain.analyze_via_mixxx --apply`, followed by
+`brain.enrich_set`, produced its phrase and beat-phase rows. The strict mode
+still correctly stops on Ten Crack Commandments because that album recording
+does not have a provable conventional 8-bar incoming intro. CLI structural
+failures are now concise `mix plan build stopped: …` messages rather than
+tracebacks.
+
+A four-track strict proving set (Who Shot Ya → Give It To Me - Remix → Young
+Wild And Free → I Love The Dough) and six exact 32-beat audition clips are
+described in `docs/dj-formats/STRICT_PILOT_2026-07-24.md`. The local ignored
+playlist is `brain/data/strict_pilot_playlist.json`; clips are under
+`brain/data/strict_pilot_auditions/`. The proposed annotations were tested
+only in a temporary simulation: they build three 32-beat
+`dj_format_chorus_to_intro` transitions and dry-run 14 events. Do not persist
+those annotations until Ernest confirms each clip by ear.
+
+When adding another expert recommendation, add another spec under
+`docs/dj-formats/` and a separate registry entry. Do not overload the three
+mix-feel profiles or weaken an existing strict format with silent fallback.
 
 ### Post-finalize enrichment (2026-07-12, `brain/enrich_set.py`)
 

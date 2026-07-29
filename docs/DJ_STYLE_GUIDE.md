@@ -6,6 +6,11 @@ Claude, or by an LLM engine driving `brain.mix_directives`/
 `brain.pick_candidates`), and grown over time as more feedback comes in —
 add to it, don't just re-derive these lessons from scratch each session.
 
+This guide is advisory craft knowledge. Versioned expert transition
+grammars with hard, machine-enforced rules live separately under
+`docs/dj-formats/` and in `brain/dj_formats.py`; see
+`docs/dj-formats/HIP_HOP_RNB_8_BAR.md` for the first one.
+
 ## Universal principles (any genre)
 
 - **Never start a cue mid-word.** The beatgrid/energy phrase-picker has no

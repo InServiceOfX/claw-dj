@@ -44,6 +44,10 @@ uv run python -m brain.enrich_set            # --status to just report
 # Order + plan + perform:
 uv run python -m brain.curate_playlist --mode selection --planner mix-graph
 uv run python -m brain.build_mix_plan --tracks N --profile dj-showcase --mix-brief "..."
+# Optional strict expert grammar (fails closed when phrase evidence is missing):
+uv run python -m brain.build_mix_plan --tracks N --profile club-set --dj-format hiphop-rnb-8bar
+# Practical format: beat-1 remains hard; unverified structure is visibly labeled:
+uv run python -m brain.build_mix_plan --tracks N --profile club-set --dj-format hiphop-rnb-guided
 uv run python -m hands.run_mix_plan          # --dry-run first
 uv run python -m hands.run_mix_plan --record # also records WAV via Mixxx's own recorder
 
@@ -67,6 +71,29 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
 
 ## Done (post-hackathon arc, 2026-07-13)
 
+- [x] **Versioned DJ formats, first practicing-DJ hip-hop/R&B grammar
+      (2026-07-24).** Mix feel (`dj-showcase` / `club-set` /
+      `mix-to-listen`) and transition grammar are independent axes.
+      `brain/dj_formats.py` registers `hiphop-rnb-8bar`; the `#mix` UI and
+      `build_mix_plan --dj-format` expose it. Its source spec is
+      `docs/dj-formats/HIP_HOP_RNB_8_BAR.md`. The builder enforces beat-1
+      bar parity, 32-beat phrases, verified chorus/hook exits, and verified
+      incoming intros; it fails closed rather than disguising a generic
+      blend as expert-format compliance. All three recorded recipes are
+      declarative/executable, including the 8-bar outgoing-intro loop.
+      Music-free hooks require human `hook_acapella_seconds` evidence.
+- [x] **Strict + guided deployment and strict pilot (2026-07-24).**
+      `hiphop-rnb-8bar` remains fail-closed. The separate optional
+      `hiphop-rnb-guided` format keeps every incoming cue on beat 1, promotes
+      transitions to `expert_recipe` only when the same strict evidence is
+      present, and otherwise records `guided_fallback` plus its reason while
+      preserving tempo-safe transition selection. The current 15-track set
+      builds and dry-runs in guided mode (47 events, 14 visibly labeled
+      fallbacks) after recovering Party And Bullshit's missing Mixxx grid.
+      A four-song strict pilot, six exact 32-beat audition clips, and the
+      unverified review checklist are documented in
+      `docs/dj-formats/STRICT_PILOT_2026-07-24.md`; annotations remain blank
+      until Ernest confirms them by ear. 147/147 Python tests pass.
 - [x] Hackathon: **finalist** (no top-3/NVIDIA). Focus now: transitions & mix quality.
 - [x] **Synced-lyric timelines** — `brain/lyric_timeline.py`: LRC parsing,
       chorus-by-repetition, verse onsets snapped to beatgrid bars; SQLite

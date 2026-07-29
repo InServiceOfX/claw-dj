@@ -197,7 +197,15 @@
           <div class="finalized-rows" id="finalized-rows"></div>
         </div>
         <div class="banner" id="plan-stale-banner" hidden>The dry-run plan below is <strong>stale</strong> — it does not match the current finalized set (e.g. you added a track). Rebuild the mix plan.</div>
+        <div class="ingest-detail" style="margin-top:10px"><strong>Mix feel</strong> — pacing and performance density</div>
         <div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div>
+        <div class="mix-form" style="grid-template-columns:240px minmax(260px,1fr);align-items:center">
+          <label>
+            <span class="ingest-detail"><strong>DJ transition format</strong></span>
+            <select id="dj-format" aria-label="DJ transition format"></select>
+          </label>
+          <div class="ingest-detail" id="dj-format-detail">No expert transition grammar selected.</div>
+        </div>
         <div class="mix-form" style="grid-template-columns:minmax(200px,1fr) 170px auto auto">
           <input id="mix-brief" type="text" placeholder='e.g. put Parce Que Tu Crois next to What&apos;s The Difference in the first half; smooth, no tricks' aria-label="Free-text mix description">
           <select id="order-engine" aria-label="Order engine for the brief">
@@ -459,7 +467,7 @@
     });
 
     // --- Create the mix ---
-    const mixState = { profile: 'dj-showcase', pollTimer: null };
+    const mixState = { profile: 'dj-showcase', djFormat: 'none', pollTimer: null };
     const PROFILE_LABELS = {
       'dj-showcase': 'DJ showcase',
       'club-set': 'Club set',
@@ -474,6 +482,21 @@
       el('mix-presets').innerHTML = list.map(p =>
         `<button type="button" data-profile="${esc(p.name)}" title="${esc(p.description || '')}" class="${p.name===mixState.profile?'active':''}">${esc(PROFILE_LABELS[p.name] || p.name)}</button>`
       ).join('');
+    }
+    function renderDjFormats(formats) {
+      const list = formats && formats.length ? formats : [
+        {name:'none', label:'No expert format', description:'Use the selected mix profile and per-track DJ notes.'},
+        {name:'hiphop-rnb-8bar', label:'Hip-hop / R&B · strict 8-bar', description:'Strict beat-1 chorus/hook → 8-bar intro grammar.', strict:true},
+        {name:'hiphop-rnb-guided', label:'Hip-hop / R&B · guided', description:'Beat 1 stays hard; verified recipes plus labeled phrase-aligned fallbacks.', enforcement:'guided'},
+      ];
+      const select = el('dj-format');
+      select.innerHTML = list.map(f =>
+        `<option value="${esc(f.name)}">${esc(f.label || f.name)}${f.strict ? ' · strict' : (f.enforcement === 'guided' ? ' · adaptive' : '')}</option>`
+      ).join('');
+      select.value = list.some(f => f.name === mixState.djFormat) ? mixState.djFormat : 'none';
+      const chosen = list.find(f => f.name === select.value) || list[0];
+      el('dj-format-detail').textContent = chosen.description || '';
+      select.dataset.formats = JSON.stringify(list);
     }
     function renderFinalized(finalized, enrichment) {
       if (!finalized || !finalized.count) {
@@ -507,8 +530,10 @@
       if (!summary) { el('mix-summary').hidden = true; el('start-mix').disabled = true; return; }
       el('mix-summary').hidden = false;
       const profile = summary.profile || {};
+      const djFormat = summary.dj_format || {};
       const adjustments = (profile.brief_adjustments || []).join('; ') || 'none';
       const tech = Object.entries(summary.techniques || {}).map(([k,v]) => `${k}×${v}`).join(' · ') || '—';
+      const compliance = Object.entries(summary.format_compliance || {}).map(([k,v]) => `${k.replaceAll('_',' ')}×${v}`).join(' · ');
       const cues = Object.entries(summary.cue_sources || {}).map(([k,v]) => `${k}×${v}`).join(' · ') || '—';
       const engine = summary.order_engine || profile.order_engine || 'none';
       el('mix-stats').innerHTML =
@@ -516,9 +541,11 @@
         `<span><strong>${summary.event_count}</strong> events</span>` +
         `<span><strong>${summary.segment_count}</strong> transitions</span>` +
         `<span>profile <strong>${esc(profile.name || mixState.profile)}</strong></span>` +
+        `<span>DJ format <strong>${esc(djFormat.label || djFormat.name || 'none')}</strong></span>` +
         `<span>order engine <strong>${esc(engine)}</strong></span>` +
         `<span>brief tweaks: ${esc(adjustments)}</span>` +
         `<span>${esc(tech)}</span>` +
+        (compliance ? `<span>format: ${esc(compliance)}</span>` : '') +
         `<span>cues: ${esc(cues)}</span>` +
         `<span>${esc(summary.dry_run_note || 'dry-run ok')}</span>` +
         (stale ? '<span class="warn">STALE vs finalized set</span>' : '');
@@ -530,7 +557,7 @@
         ? segments.map(seg =>
             `<div class="mix-seg"><span>${String(seg.index+1).padStart(2,'0')}</span>` +
             `<span class="title">${esc(seg.from)} → ${esc(seg.to)}</span>` +
-            `<span class="tech">${esc(seg.technique)}${seg.showcase_move ? ' · '+esc(seg.showcase_move) : ''}</span>` +
+            `<span class="tech">${esc(seg.technique)}${seg.showcase_move ? ' · '+esc(seg.showcase_move) : ''}${seg.format_compliance ? ' · '+esc(seg.format_compliance.replaceAll('_',' ')) : ''}</span>` +
             `<span class="bpm">${seg.beats}b · ${seg.score}</span></div>`
           ).join('')
         : '<div class="empty">No transitions in this plan.</div>';
@@ -538,8 +565,10 @@
     async function pollMix() {
       const data = await api('/api/mix');
       if (data.profile) mixState.profile = data.profile;
+      if (data.dj_format) mixState.djFormat = data.dj_format;
       if (data.order_engine) el('order-engine').value = data.order_engine;
       renderPresets(data.profiles);
+      renderDjFormats(data.dj_formats);
       renderFinalized(data.finalized, data.enrichment);
       el('plan-stale-banner').hidden = !data.plan_stale;
       const busy = Boolean(data.building) || Boolean(data.running) || Boolean(data.enriching);
@@ -574,7 +603,8 @@
         const eng = data.order_engine && data.order_engine !== 'none'
           ? ` · ordering via ${data.order_engine} (can take 1–7 min)`
           : '';
-        el('mix-detail').textContent = `Building mix plan (${PROFILE_LABELS[data.profile] || data.profile || '…'}${data.mix_brief ? ' · “'+data.mix_brief+'”' : ''}${eng})…`;
+        const fmt = data.dj_format && data.dj_format !== 'none' ? ` · ${data.dj_format}` : '';
+        el('mix-detail').textContent = `Building mix plan (${PROFILE_LABELS[data.profile] || data.profile || '…'}${fmt}${data.mix_brief ? ' · “'+data.mix_brief+'”' : ''}${eng})…`;
       } else if (data.error) {
         el('mix-detail').textContent = `Build failed: ${data.error}`;
       } else if (data.plan_stale && data.summary) {
@@ -695,6 +725,13 @@
       mixState.profile = button.dataset.profile;
       el('mix-presets').querySelectorAll('button').forEach(b => b.classList.toggle('active', b === button));
     });
+    el('dj-format').addEventListener('change', event => {
+      mixState.djFormat = event.target.value;
+      let formats = [];
+      try { formats = JSON.parse(event.target.dataset.formats || '[]'); } catch (_) {}
+      const chosen = formats.find(f => f.name === mixState.djFormat);
+      el('dj-format-detail').textContent = chosen?.description || '';
+    });
     el('build-mix').addEventListener('click', async () => {
       el('build-mix').disabled = true;
       el('mix-detail').textContent = 'Starting build…';
@@ -704,6 +741,7 @@
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({
             profile: mixState.profile,
+            dj_format: mixState.djFormat,
             mix_brief: el('mix-brief').value.trim(),
             order_engine: el('order-engine').value,
           }),
