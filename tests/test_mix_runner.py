@@ -30,6 +30,38 @@ class FakeMixxx:
 
 
 class MixRunnerTests(TestCase):
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 16.0])
+    def test_strict_intro_loop_jumps_loops_and_enters_together(
+        self, _monotonic, _sleep, _wait_for_next_beat
+    ) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "duration")] = 240.0
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 32,
+                "technique": "dj_format_intro_loop_under_entry",
+                "moves": [
+                    "outgoing_intro_loop_8_bars",
+                    "sync",
+                    "crossfade",
+                ],
+                "outgoing_loop_seconds": 24.0,
+                "outgoing_loop_beats": 32,
+            },
+            port=9995,
+        )
+        self.assertIn(("[Channel1]", "playposition", 0.1), mixxx.writes)
+        self.assertIn(("[Channel1]", "beatloop_32_activate", 1), mixxx.writes)
+        self.assertIn(("[Channel2]", "play", 1), mixxx.writes)
+        self.assertIn(("[Channel2]", "beatsync", 1), mixxx.writes)
+        self.assertIn(("[Channel1]", "reloop_toggle", 1), mixxx.writes)
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 0)
+
     @patch("hands.run_mix_plan.time.sleep")
     def test_bpm_target_uses_rate_readback(self, _sleep) -> None:
         class RateMixxx(FakeMixxx):

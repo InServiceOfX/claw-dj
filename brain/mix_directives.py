@@ -56,7 +56,18 @@ keys must match exactly):
   landing_beats=<int>        (with entry_style=verse_landing) beat count to land on
   opener_style=echo_tease_drop | juggle_intro | juggle_brake_intro   (only meaningful on the first track)
   juggle_chops=<int>          number of alternating cue drops for a juggle opener
+  format_recipe=chorus_to_intro | acapella_hook_swap | intro_loop_under_entry
+  intro_seconds=<number>      human-verified beat 1 of an 8-bar incoming intro
+  chorus_seconds=<number>     human-verified beat 1 of the outgoing exit chorus
+  hook_acapella_seconds=<number>  human-verified beat 1 of a hook with no music
+  intro_loop_seconds=<number> human-verified beat 1 of Song A's intro loop
   full_track                 bare flag — play the whole track, no cut
+
+The strict hiphop-rnb-8bar DJ format uses the format_* / intro / chorus /
+hook tokens above. Synced lyrics can suggest chorus wording and timing, but
+they CANNOT prove that a hook has no music or that an intro is exactly 8
+bars. Never invent those annotations; add them only when the human's brief
+explicitly verifies them.
 
 Real examples written by hand this project (style + precision to match):
   "Pre-roll during the blend and land exactly on Kurupt first verse; protect \

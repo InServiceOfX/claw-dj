@@ -870,7 +870,22 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         # No binary: fall through to the anchored hard cut below.
 
     print(f"  anchoring on {out_g} beat ({bpm:.2f} BPM)")
+    looped_intro = "outgoing_intro_loop_8_bars" in moves
     wait_for_next_beat(port, out_g)
+    if looped_intro:
+        duration = mixxx.get(out_g, "duration")
+        loop_seconds = float(event["outgoing_loop_seconds"])
+        if duration <= 0:
+            raise RuntimeError(f"{out_g} reports no duration for intro-loop jump")
+        # At Song A's chorus downbeat, jump back to its verified intro beat 1
+        # and engage one 32-beat (8-bar) loop. Song B starts immediately on
+        # its own verified beat 1 while that loop is active.
+        mixxx.set(out_g, "playposition", max(0.0, min(1.0, loop_seconds / duration)))
+        mixxx.set(out_g, "beatloop_32_activate", 1)
+        print(
+            f"  Song A intro loop armed at {loop_seconds:.3f}s "
+            f"for {int(event.get('outgoing_loop_beats', 32))} beats"
+        )
     mixxx.set(in_g, "play", 1)
     if sync:
         mixxx.set(in_g, "beatsync", 1)
@@ -937,6 +952,12 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         time.sleep(0.02)
 
     mixxx.set("[Master]", "crossfader", end_cf)
+    if looped_intro:
+        # Deactivate the outgoing loop before stopping/freeing that deck.
+        try:
+            mixxx.set(out_g, "reloop_toggle", 1)
+        except Exception:
+            pass
     if key_shift:
         mixxx.set(in_g, "pitch_adjust", 0.0)
     mixxx.set(out_g, "play", 0)

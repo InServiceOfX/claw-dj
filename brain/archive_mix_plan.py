@@ -16,6 +16,7 @@ DEFAULT_PLAYLIST = REPO_ROOT / "brain" / "data" / "playlist.json"
 DEFAULT_ARCHIVES = REPO_ROOT / "brain" / "data" / "archives"
 RUNTIME_SOURCES = (
     REPO_ROOT / "brain" / "build_mix_plan.py",
+    REPO_ROOT / "brain" / "dj_formats.py",
     REPO_ROOT / "brain" / "mix_profiles.py",
     REPO_ROOT / "hands" / "run_mix_plan.py",
     REPO_ROOT / "hands" / "transition.py",

@@ -129,6 +129,25 @@ def load_lyric_line_lookup() -> dict[str, list[float]]:
     return out
 
 
+def load_lyric_segment_lookup() -> dict[str, list[dict]]:
+    """Detected verse/chorus segments used by strict DJ formats."""
+    from brain.library_index import connect
+
+    with closing(connect()) as db:
+        rows = db.execute(
+            "SELECT track_id, segments FROM lyric_timelines WHERE segments != '[]'"
+        ).fetchall()
+    out: dict[str, list[dict]] = {}
+    for row in rows:
+        try:
+            segments = json.loads(row["segments"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(segments, list) and segments:
+            out[row["track_id"]] = segments
+    return out
+
+
 def load_beat_phase_lookup() -> dict[str, dict]:
     """Cached real onset/waveform snare-parity analysis (brain.onset_analysis),
     keyed by track_id -- {"snare_parity": 0|1, "confidence": float, "bpm":
@@ -202,9 +221,14 @@ def track_directives(track: dict) -> dict:
         "entry_style": word("entry_style"),
         "exit_style": word("exit_style"),
         "opener_style": word("opener_style"),
+        "format_recipe": word("format_recipe"),
         "juggle_chops": int(value) if (value := number("juggle_chops")) is not None else None,
         "landing_seconds": number("landing_seconds"),
         "landing_beats": int(value) if (value := number("landing_beats")) is not None else None,
+        "intro_seconds": number("intro_seconds"),
+        "chorus_seconds": number("chorus_seconds"),
+        "hook_acapella_seconds": number("hook_acapella_seconds"),
+        "intro_loop_seconds": number("intro_loop_seconds"),
         "full_track": bool(re.search(r"\bfull_track\b", notes, re.I)),
         "no_flourish": bool(re.search(r"\bno_flourish\b", notes, re.I)),
         # Ear override: the human certified this exact ride length by
@@ -334,6 +358,62 @@ def pick_technique(
     return result
 
 
+def beat_index_for_seconds(
+    track: dict,
+    seconds: float,
+    *,
+    phrase_lookup: dict[str, dict],
+    beat_phase_lookup: dict[str, dict],
+) -> int:
+    """Resolve an absolute time onto this track's analyzed beatgrid.
+
+    Strict DJ-format annotations are allowed only when they are close to a
+    real beat.  The returned index is later checked for bar-downbeat parity.
+    """
+    grid = phrase_lookup.get(track["track_id"]) or beat_phase_lookup.get(
+        track["track_id"]
+    )
+    if not grid or not grid.get("bpm") or grid.get("first_beat_seconds") is None:
+        raise ValueError(
+            f"{track['artist']} — {track['title']}: strict DJ format needs "
+            "an analyzed beatgrid (run Analyze & enrich missing)"
+        )
+    bpm = float(grid["bpm"])
+    first = float(grid["first_beat_seconds"])
+    raw_index = (float(seconds) - first) / (60.0 / bpm)
+    beat_index = round(raw_index)
+    # Timestamps from synced lyrics are approximate, so allow one fifth of a
+    # beat; anything further away is not defensible as a beat-1 annotation.
+    if abs(raw_index - beat_index) > 0.20:
+        raise ValueError(
+            f"{track['artist']} — {track['title']}: {seconds:.3f}s is not "
+            "close enough to an analyzed beat for strict on-the-1 mixing"
+        )
+    return beat_index
+
+
+def seconds_for_beat(
+    track: dict,
+    beat_index: int,
+    *,
+    phrase_lookup: dict[str, dict],
+    beat_phase_lookup: dict[str, dict],
+) -> float:
+    grid = phrase_lookup.get(track["track_id"]) or beat_phase_lookup.get(
+        track["track_id"]
+    )
+    if not grid or not grid.get("bpm") or grid.get("first_beat_seconds") is None:
+        raise ValueError(
+            f"{track['artist']} — {track['title']}: strict DJ format needs "
+            "an analyzed beatgrid"
+        )
+    return round(
+        float(grid["first_beat_seconds"])
+        + beat_index * 60.0 / float(grid["bpm"]),
+        3,
+    )
+
+
 def build_plan(
     tracks: list[dict],
     *,
@@ -342,26 +422,41 @@ def build_plan(
     affinity_lookup: dict[tuple[str, str], dict],
     phrase_lookup: dict[str, dict] | None = None,
     lyric_line_lookup: dict[str, list[float]] | None = None,
+    lyric_segment_lookup: dict[str, list[dict]] | None = None,
     beat_phase_lookup: dict[str, dict] | None = None,
     phrase_beats: int = 32,
     profile: "MixProfile | None" = None,
+    dj_format: "DjFormat | None" = None,
     provenance: dict | None = None,
 ) -> dict:
+    from brain.dj_formats import format_provenance, get_format
     from brain.mix_profiles import PROFILES
     from brain.onset_analysis import count_shift_beats
 
     profile = profile or PROFILES["dj-showcase"]
+    dj_format = dj_format or get_format("none")
+    if dj_format.planner not in (
+        None,
+        "hiphop_rnb_8bar",
+        "hiphop_rnb_guided",
+    ):
+        raise ValueError(
+            f"DJ format {dj_format.name!r} names unsupported planner "
+            f"{dj_format.planner!r}"
+        )
     selected = tracks[:count]
     if len(selected) < 2:
         raise SystemExit("need at least 2 tracks in the filtered playlist")
 
     phrase_lookup = phrase_lookup or {}
     lyric_line_lookup = lyric_line_lookup or {}
+    lyric_segment_lookup = lyric_segment_lookup or {}
     beat_phase_lookup = beat_phase_lookup or {}
     # Populated by cue_fields() below every time it resolves an absolute
     # cue_seconds for a track -- lets the phase-parity check (further down)
     # look up each track's OWN entry beat_index without re-deriving it.
     cue_beat_index_cache: dict[str, int] = {}
+    format_cue_evidence_cache: dict[str, dict] = {}
     events: list[dict] = []
 
     def _remember_cue_beat_index(track_id: str, result: dict) -> dict:
@@ -369,16 +464,212 @@ def build_plan(
         check further down can find each track's OWN entry beat_index
         without re-deriving it (needed once this track later becomes the
         OUTGOING side of a transition)."""
+        if "format_intro_verified" in result:
+            format_cue_evidence_cache[track_id] = {
+                "verified": bool(result["format_intro_verified"]),
+                "source": result.get("cue_source"),
+                "reason": result.get("format_intro_reason"),
+            }
+        if result.get("cue_beat_index") is not None:
+            cue_beat_index_cache[track_id] = int(result["cue_beat_index"])
+            return result
         cue_seconds = result.get("cue_seconds")
-        phase = beat_phase_lookup.get(track_id)
-        if cue_seconds is not None and phase:
-            period = 60.0 / phase["bpm"]
+        phase = beat_phase_lookup.get(track_id) or phrase_lookup.get(track_id)
+        if cue_seconds is not None and phase and phase.get("bpm"):
+            period = 60.0 / float(phase["bpm"])
             cue_beat_index_cache[track_id] = round(
-                (cue_seconds - phase["first_beat_seconds"]) / period
+                (cue_seconds - float(phase["first_beat_seconds"])) / period
             )
         return result
 
+    def strict_intro_cue(track: dict) -> dict:
+        """Verified beat-1 cue for the incoming side of the 8-bar format."""
+        directive = track_directives(track)
+        explicit = directive["intro_seconds"]
+        phrase = phrase_lookup.get(track["track_id"]) or {}
+        intro = phrase.get("intro") or {}
+        if explicit is not None:
+            cue_seconds = explicit
+            beat_index = beat_index_for_seconds(
+                track,
+                cue_seconds,
+                phrase_lookup=phrase_lookup,
+                beat_phase_lookup=beat_phase_lookup,
+            )
+            source = "dj_format_human_intro"
+        elif intro.get("cue_seconds") is not None:
+            cue_seconds = float(intro["cue_seconds"])
+            beat_index = (
+                int(intro["beat_index"])
+                if intro.get("beat_index") is not None
+                else beat_index_for_seconds(
+                    track,
+                    cue_seconds,
+                    phrase_lookup=phrase_lookup,
+                    beat_phase_lookup=beat_phase_lookup,
+                )
+            )
+            # Inference is accepted only when the lyric map leaves a full
+            # eight-bar runway after the candidate intro downbeat.
+            segments = lyric_segment_lookup.get(track["track_id"]) or []
+            starts = [
+                int(segment["beat_index"])
+                for segment in segments
+                if segment.get("beat_index") is not None
+            ]
+            if not starts or min(starts) - beat_index < dj_format.phrase_beats:
+                raise ValueError(
+                    f"{track['artist']} — {track['title']}: cannot prove an "
+                    f"{dj_format.phrase_bars}-bar intro; add a verified "
+                    "intro_seconds=<seconds> DJ note"
+                )
+            source = "dj_format_inferred_intro"
+        else:
+            raise ValueError(
+                f"{track['artist']} — {track['title']}: strict DJ format "
+                "needs an 8-bar intro; add intro_seconds=<seconds>"
+            )
+        if beat_index % dj_format.beats_per_bar:
+            raise ValueError(
+                f"{track['artist']} — {track['title']}: intro cue resolves "
+                f"to beat index {beat_index}, not beat 1 of a bar"
+            )
+        return _remember_cue_beat_index(
+            track["track_id"],
+            {
+                "cue_seconds": round(float(cue_seconds), 3),
+                "cue_beat_index": beat_index,
+                "cue_confidence": 1.0 if explicit is not None else intro.get("confidence"),
+                "cue_source": source,
+                "format_intro_verified": True,
+                "format_intro_reason": (
+                    "human-verified 8-bar intro"
+                    if explicit is not None
+                    else "beatgrid + timeline show at least 8 bars of intro runway"
+                ),
+                **(
+                    {"dj_notes": track.get("dj_notes") or ""}
+                    if explicit is not None
+                    else {}
+                ),
+            },
+        )
+
+    def guided_intro_cue(track: dict) -> dict:
+        """Best analyzed bar-downbeat cue, with honest evidence provenance."""
+        directive = track_directives(track)
+        if directive["intro_seconds"] is not None:
+            # Human verification is sufficient for the guided format too,
+            # but it remains subject to beatgrid/downbeat validation.
+            return strict_intro_cue(track)
+        if directive["cue_seconds"] is not None:
+            cue_seconds = directive["cue_seconds"]
+            beat_index = beat_index_for_seconds(
+                track,
+                cue_seconds,
+                phrase_lookup=phrase_lookup,
+                beat_phase_lookup=beat_phase_lookup,
+            )
+            if beat_index % dj_format.beats_per_bar:
+                raise ValueError(
+                    f"{track['artist']} — {track['title']}: cue_seconds "
+                    f"resolves to beat index {beat_index}, not beat 1"
+                )
+            return _remember_cue_beat_index(
+                track["track_id"],
+                {
+                    "cue_seconds": round(float(cue_seconds), 3),
+                    "cue_beat_index": beat_index,
+                    "cue_confidence": 1.0,
+                    "cue_source": "guided_human_downbeat",
+                    "format_intro_verified": False,
+                    "format_intro_reason": (
+                        "human cue is on beat 1 but is not annotated as a "
+                        "verified 8-bar intro"
+                    ),
+                    "dj_notes": track.get("dj_notes") or "",
+                },
+            )
+
+        phrase = phrase_lookup.get(track["track_id"]) or {}
+        intro = phrase.get("intro") or {}
+        if intro.get("cue_seconds") is not None:
+            cue_seconds = float(intro["cue_seconds"])
+            beat_index = (
+                int(intro["beat_index"])
+                if intro.get("beat_index") is not None
+                else beat_index_for_seconds(
+                    track,
+                    cue_seconds,
+                    phrase_lookup=phrase_lookup,
+                    beat_phase_lookup=beat_phase_lookup,
+                )
+            )
+            source = "guided_phrase_intro_downbeat"
+            reason = (
+                "analyzed intro-region downbeat; 8-bar intro structure is "
+                "not human-verified"
+            )
+        elif phrase.get("cue_seconds") is not None:
+            cue_seconds = float(phrase["cue_seconds"])
+            beat_index = (
+                int(phrase["beat_index"])
+                if phrase.get("beat_index") is not None
+                else beat_index_for_seconds(
+                    track,
+                    cue_seconds,
+                    phrase_lookup=phrase_lookup,
+                    beat_phase_lookup=beat_phase_lookup,
+                )
+            )
+            source = "guided_analyzed_downbeat"
+            reason = "analyzed bar downbeat; no verified 8-bar intro"
+        else:
+            phase = beat_phase_lookup.get(track["track_id"]) or {}
+            if phase.get("first_beat_seconds") is None:
+                raise ValueError(
+                    f"{track['artist']} — {track['title']}: guided DJ format "
+                    "still needs a beatgrid to guarantee beat 1; run Analyze "
+                    "& enrich missing or remove this track"
+                )
+            cue_seconds = float(phase["first_beat_seconds"])
+            beat_index = 0
+            source = "guided_first_beat"
+            reason = "first analyzed beat; no verified 8-bar intro"
+
+        if beat_index % dj_format.beats_per_bar:
+            # Move forward to the next bar downbeat rather than accepting an
+            # arbitrary beat. The beatgrid remains the authority.
+            beat_index += dj_format.beats_per_bar - (
+                beat_index % dj_format.beats_per_bar
+            )
+            cue_seconds = seconds_for_beat(
+                track,
+                beat_index,
+                phrase_lookup=phrase_lookup,
+                beat_phase_lookup=beat_phase_lookup,
+            )
+        return _remember_cue_beat_index(
+            track["track_id"],
+            {
+                "cue_seconds": round(float(cue_seconds), 3),
+                "cue_beat_index": beat_index,
+                "cue_confidence": intro.get("confidence"),
+                "cue_source": source,
+                "format_intro_verified": False,
+                "format_intro_reason": reason,
+            },
+        )
+
     def cue_fields(track: dict, fallback_fraction: float, slot: int = 0) -> dict:
+        if dj_format.planner == "hiphop_rnb_8bar":
+            return (
+                strict_intro_cue(track)
+                if slot > 0
+                else guided_intro_cue(track)
+            )
+        if dj_format.planner == "hiphop_rnb_guided" and slot > 0:
+            return guided_intro_cue(track)
         directive = track_directives(track)
         if directive["cue_seconds"] is not None:
             return _remember_cue_beat_index(track["track_id"], {
@@ -455,6 +746,214 @@ def build_plan(
             "cue_confidence": pick.get("confidence"),
             "cue_source": source,
         })
+
+    def strict_exit_anchor(
+        track: dict,
+        *,
+        directive: dict,
+        recipe: str,
+        after_beat: int,
+    ) -> tuple[int, float, str]:
+        """Find the verified beat-1 hook/chorus where a format transition starts."""
+        if recipe == "acapella_hook_swap":
+            seconds = directive["hook_acapella_seconds"]
+            if seconds is None:
+                raise ValueError(
+                    f"{track['artist']} — {track['title']}: "
+                    "acapella_hook_swap requires a human-verified "
+                    "hook_acapella_seconds=<seconds> DJ note"
+                )
+            beat_index = beat_index_for_seconds(
+                track,
+                seconds,
+                phrase_lookup=phrase_lookup,
+                beat_phase_lookup=beat_phase_lookup,
+            )
+            source = "dj_notes_hook_acapella"
+        elif directive["chorus_seconds"] is not None:
+            seconds = directive["chorus_seconds"]
+            beat_index = beat_index_for_seconds(
+                track,
+                seconds,
+                phrase_lookup=phrase_lookup,
+                beat_phase_lookup=beat_phase_lookup,
+            )
+            source = "dj_notes_chorus"
+        else:
+            candidates: list[tuple[int, float]] = []
+            timeline = lyric_segment_lookup.get(track["track_id"]) or []
+            for segment_index, segment in enumerate(timeline):
+                if segment.get("kind") != "chorus" or segment.get("beat_index") is None:
+                    continue
+                start_beat = int(segment["beat_index"])
+                if start_beat <= after_beat:
+                    continue
+                next_segment = (
+                    timeline[segment_index + 1]
+                    if segment_index + 1 < len(timeline)
+                    else None
+                )
+                if next_segment and next_segment.get("beat_index") is not None:
+                    end_beat = int(next_segment["beat_index"])
+                else:
+                    end_seconds = segment.get("end")
+                    if end_seconds is None:
+                        continue
+                    # The last lyric timestamp is not guaranteed to be on a
+                    # beat. Round it only for phrase-length evidence; the
+                    # START anchor remains subject to strict beat validation.
+                    grid = phrase_lookup.get(track["track_id"]) or (
+                        beat_phase_lookup.get(track["track_id"]) or {}
+                    )
+                    if not grid.get("bpm") or grid.get("first_beat_seconds") is None:
+                        continue
+                    end_beat = round(
+                        (float(end_seconds) - float(grid["first_beat_seconds"]))
+                        / (60.0 / float(grid["bpm"]))
+                    )
+                if end_beat - start_beat < dj_format.phrase_beats:
+                    continue
+                start_seconds = (
+                    float(segment["bar_start"])
+                    if segment.get("bar_start") is not None
+                    else seconds_for_beat(
+                        track,
+                        start_beat,
+                        phrase_lookup=phrase_lookup,
+                        beat_phase_lookup=beat_phase_lookup,
+                    )
+                )
+                candidates.append((start_beat, start_seconds))
+            if not candidates:
+                raise ValueError(
+                    f"{track['artist']} — {track['title']}: cannot prove an "
+                    f"{dj_format.phrase_bars}-bar chorus after the current "
+                    "play position; add a verified chorus_seconds=<seconds> "
+                    "DJ note"
+                )
+            beat_index, seconds = min(candidates)
+            source = "lyric_timeline_chorus"
+
+        if beat_index <= after_beat:
+            raise ValueError(
+                f"{track['artist']} — {track['title']}: format exit at beat "
+                f"{beat_index} is not after the current beat {after_beat}"
+            )
+        if beat_index % dj_format.beats_per_bar:
+            raise ValueError(
+                f"{track['artist']} — {track['title']}: format exit resolves "
+                f"to beat index {beat_index}, not beat 1 of a bar"
+            )
+        return beat_index, round(float(seconds), 3), source
+
+    def strict_intro_loop_point(track: dict, directive: dict) -> tuple[int, float, str]:
+        explicit = directive["intro_loop_seconds"]
+        phrase = phrase_lookup.get(track["track_id"]) or {}
+        intro = phrase.get("intro") or {}
+        if explicit is not None:
+            seconds = explicit
+            beat_index = beat_index_for_seconds(
+                track,
+                seconds,
+                phrase_lookup=phrase_lookup,
+                beat_phase_lookup=beat_phase_lookup,
+            )
+            source = "dj_notes_intro_loop"
+        elif intro.get("cue_seconds") is not None:
+            seconds = float(intro["cue_seconds"])
+            beat_index = (
+                int(intro["beat_index"])
+                if intro.get("beat_index") is not None
+                else beat_index_for_seconds(
+                    track,
+                    seconds,
+                    phrase_lookup=phrase_lookup,
+                    beat_phase_lookup=beat_phase_lookup,
+                )
+            )
+            source = "phrase_intro_loop"
+        else:
+            raise ValueError(
+                f"{track['artist']} — {track['title']}: "
+                "intro_loop_under_entry requires intro_loop_seconds=<seconds>"
+            )
+        if beat_index % dj_format.beats_per_bar:
+            raise ValueError(
+                f"{track['artist']} — {track['title']}: intro loop resolves "
+                f"to beat index {beat_index}, not beat 1 of a bar"
+            )
+        return beat_index, round(float(seconds), 3), source
+
+    def guided_exit_anchor(
+        track: dict,
+        *,
+        directive: dict,
+        recipe: str,
+        after_beat: int,
+    ) -> tuple[int, float, str, bool, str | None]:
+        """Prefer a strict exit, then fall back without hiding why."""
+        try:
+            beat_index, seconds, source = strict_exit_anchor(
+                track,
+                directive=directive,
+                recipe=recipe,
+                after_beat=after_beat,
+            )
+            return beat_index, seconds, source, True, None
+        except ValueError as strict_error:
+            reason = str(strict_error)
+
+        # A shorter/unverified detected chorus is still a musically useful
+        # downbeat in guided mode; it just cannot carry the expert-certified
+        # 8-bar claim.
+        chorus_candidates = [
+            (
+                int(segment["beat_index"]),
+                (
+                    float(segment["bar_start"])
+                    if segment.get("bar_start") is not None
+                    else seconds_for_beat(
+                        track,
+                        int(segment["beat_index"]),
+                        phrase_lookup=phrase_lookup,
+                        beat_phase_lookup=beat_phase_lookup,
+                    )
+                ),
+            )
+            for segment in (lyric_segment_lookup.get(track["track_id"]) or [])
+            if (
+                segment.get("kind") == "chorus"
+                and segment.get("beat_index") is not None
+                and int(segment["beat_index"]) > after_beat
+                and int(segment["beat_index"]) % dj_format.beats_per_bar == 0
+            )
+        ]
+        if chorus_candidates:
+            beat_index, seconds = min(chorus_candidates)
+            return (
+                beat_index,
+                round(seconds, 3),
+                "guided_detected_chorus_downbeat",
+                False,
+                reason,
+            )
+
+        target = (
+            (after_beat // dj_format.phrase_beats) + 1
+        ) * dj_format.phrase_beats
+        return (
+            target,
+            seconds_for_beat(
+                track,
+                target,
+                phrase_lookup=phrase_lookup,
+                beat_phase_lookup=beat_phase_lookup,
+            ),
+            "guided_next_32_beat_boundary",
+            False,
+            reason,
+        )
+
     # Instrument reset
     first_cue = cue_fields(selected[0], 0.08, 0)
     events.append(
@@ -734,6 +1233,199 @@ def build_plan(
         if directive["ride_beats"] is not None:
             ride_beats = max(0, min(512, directive["ride_beats"]))
 
+        if dj_format.planner == "hiphop_rnb_8bar":
+            recipe = (
+                directive["format_recipe"]
+                or (
+                    "acapella_hook_swap"
+                    if directive["hook_acapella_seconds"] is not None
+                    else dj_format.default_recipe
+                )
+            )
+            if recipe not in dj_format.recipes:
+                raise ValueError(
+                    f"{outgoing['artist']} — {outgoing['title']}: unsupported "
+                    f"format_recipe={recipe!s}; choose from "
+                    f"{', '.join(dj_format.recipes)}"
+                )
+            outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
+            if outgoing_entry_beat is None:
+                raise ValueError(
+                    f"{outgoing['artist']} — {outgoing['title']}: could not "
+                    "resolve its current cue onto the beatgrid"
+                )
+            current_beat = outgoing_entry_beat + elapsed_in_phrase
+            exit_beat, exit_seconds, exit_source = strict_exit_anchor(
+                outgoing,
+                directive=directive,
+                recipe=recipe,
+                after_beat=current_beat,
+            )
+            # play_body waits N beat ticks and perform_transition anchors on
+            # the next one, hence the -1. Both the exit and every incoming
+            # cue are separately validated as bar downbeats.
+            ride_beats = exit_beat - current_beat - 1
+            format_moves = ["sync", "crossfade"]
+            tech.update(
+                technique=f"dj_format_{recipe}",
+                transition_beats=dj_format.phrase_beats,
+                moves=format_moves,
+                showcase_move=recipe,
+                notes=(
+                    f"Strict {dj_format.label}: Song A exits at "
+                    f"{exit_source} beat 1; Song B enters on beat 1 of its "
+                    f"{dj_format.phrase_bars}-bar intro."
+                ),
+                dj_format=dj_format.name,
+                format_recipe=recipe,
+                format_exit_beat_index=exit_beat,
+                format_exit_seconds=exit_seconds,
+                format_exit_source=exit_source,
+                format_entry_beat_index=cue_beat_index_cache.get(
+                    incoming["track_id"]
+                ),
+                format_entry_source="8_bar_intro",
+                format_phrase_bars=dj_format.phrase_bars,
+                format_compliance="expert_recipe",
+                format_reason="strict 8-bar intro + chorus/hook evidence",
+            )
+            if recipe == "intro_loop_under_entry":
+                loop_beat, loop_seconds, loop_source = strict_intro_loop_point(
+                    outgoing, directive
+                )
+                tech["moves"] = [
+                    "outgoing_intro_loop_8_bars",
+                    "sync",
+                    "crossfade",
+                ]
+                tech.update(
+                    outgoing_loop_beat_index=loop_beat,
+                    outgoing_loop_seconds=loop_seconds,
+                    outgoing_loop_source=loop_source,
+                    outgoing_loop_beats=dj_format.phrase_beats,
+                )
+        elif dj_format.planner == "hiphop_rnb_guided":
+            recipe = (
+                directive["format_recipe"]
+                or (
+                    "acapella_hook_swap"
+                    if directive["hook_acapella_seconds"] is not None
+                    else dj_format.default_recipe
+                )
+            )
+            if recipe not in dj_format.recipes:
+                raise ValueError(
+                    f"{outgoing['artist']} — {outgoing['title']}: unsupported "
+                    f"format_recipe={recipe!s}; choose from "
+                    f"{', '.join(dj_format.recipes)}"
+                )
+            outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
+            incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
+            if outgoing_entry_beat is None or incoming_entry_beat is None:
+                raise ValueError(
+                    f"{outgoing['artist']} — {outgoing['title']} → "
+                    f"{incoming['artist']} — {incoming['title']}: guided "
+                    "format could not resolve both cues onto beatgrids"
+                )
+            if incoming_entry_beat % dj_format.beats_per_bar:
+                raise ValueError(
+                    f"{incoming['artist']} — {incoming['title']}: guided "
+                    f"entry beat {incoming_entry_beat} is not beat 1"
+                )
+            current_beat = outgoing_entry_beat + elapsed_in_phrase
+            (
+                exit_beat,
+                exit_seconds,
+                exit_source,
+                strict_exit,
+                fallback_reason,
+            ) = guided_exit_anchor(
+                outgoing,
+                directive=directive,
+                recipe=recipe,
+                after_beat=current_beat,
+            )
+            ride_beats = exit_beat - current_beat - 1
+            entry_evidence = format_cue_evidence_cache.get(
+                incoming["track_id"]
+            ) or {}
+            intro_verified = bool(entry_evidence.get("verified"))
+            expert_recipe = strict_exit and intro_verified
+            loop_fields: dict = {}
+            if expert_recipe and recipe == "intro_loop_under_entry":
+                try:
+                    (
+                        loop_beat,
+                        loop_seconds,
+                        loop_source,
+                    ) = strict_intro_loop_point(outgoing, directive)
+                    loop_fields = {
+                        "outgoing_loop_beat_index": loop_beat,
+                        "outgoing_loop_seconds": loop_seconds,
+                        "outgoing_loop_source": loop_source,
+                        "outgoing_loop_beats": dj_format.phrase_beats,
+                    }
+                except ValueError as loop_error:
+                    expert_recipe = False
+                    fallback_reason = str(loop_error)
+
+            if expert_recipe:
+                moves = ["sync", "crossfade"]
+                if recipe == "intro_loop_under_entry":
+                    moves.insert(0, "outgoing_intro_loop_8_bars")
+                tech.update(
+                    technique=f"dj_format_{recipe}",
+                    transition_beats=dj_format.phrase_beats,
+                    moves=moves,
+                    showcase_move=recipe,
+                    notes=(
+                        f"Guided format found complete strict evidence: "
+                        f"Song A exits at {exit_source} beat 1; Song B "
+                        f"enters on verified beat 1 of its "
+                        f"{dj_format.phrase_bars}-bar intro."
+                    ),
+                    format_recipe=recipe,
+                    format_compliance="expert_recipe",
+                    format_reason=(
+                        "verified 8-bar intro + chorus/hook evidence"
+                    ),
+                    **loop_fields,
+                )
+            else:
+                reasons = [
+                    part
+                    for part in (
+                        fallback_reason,
+                        (
+                            entry_evidence.get("reason")
+                            if not intro_verified
+                            else None
+                        ),
+                    )
+                    if part
+                ]
+                tech.update(
+                    format_recipe="phrase_aligned_fallback",
+                    format_requested_recipe=recipe,
+                    format_compliance="guided_fallback",
+                    format_reason="; ".join(reasons)
+                    or "strict 8-bar evidence incomplete",
+                )
+                tech["notes"] += (
+                    " Guided format: transition and incoming cue remain on "
+                    "beat 1, but incomplete 8-bar evidence makes this an "
+                    "explicit fallback rather than an expert-certified recipe."
+                )
+            tech.update(
+                dj_format=dj_format.name,
+                format_exit_beat_index=exit_beat,
+                format_exit_seconds=exit_seconds,
+                format_exit_source=exit_source,
+                format_entry_beat_index=incoming_entry_beat,
+                format_entry_source=entry_evidence.get("source"),
+                format_phrase_bars=dj_format.phrase_bars,
+            )
+
         # Real onset/waveform check (brain.onset_analysis): a standard
         # backbeat puts the snare on every OTHER beat, so which beat-in-bar
         # the transition anchors on (kick vs. snare position) is a real,
@@ -751,6 +1443,8 @@ def build_plan(
         outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
         incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
         if (
+            dj_format.planner is None
+            and
             not directive["trust_ride_beats"]
             and outgoing_phase and incoming_phase
             and outgoing_entry_beat is not None and incoming_entry_beat is not None
@@ -827,6 +1521,17 @@ def build_plan(
                 "showcase_move": tech["showcase_move"],
                 **(
                     {
+                        "dj_format": tech["dj_format"],
+                        "format_recipe": tech["format_recipe"],
+                        "format_exit_seconds": tech["format_exit_seconds"],
+                        "format_compliance": tech.get("format_compliance"),
+                        "format_reason": tech.get("format_reason"),
+                    }
+                    if "dj_format" in tech
+                    else {}
+                ),
+                **(
+                    {
                         "pitch_adjust_semitones": tech["pitch_adjust_semitones"],
                         "pitch_adjust_target": tech["pitch_adjust_target"],
                     }
@@ -868,6 +1573,7 @@ def build_plan(
         "track_count": len(selected),
         "seconds_per_track": seconds_per_track,
         "profile": provenance or {"name": profile.name},
+        "dj_format": format_provenance(dj_format),
         "phrase_interval_beats": phrase_beats,
         "tracks": [
             {
@@ -930,6 +1636,7 @@ def compose_mix_plan(
     *,
     playlist: Path = DEFAULT_PLAYLIST,
     profile_name: str = "dj-showcase",
+    dj_format_name: str = "none",
     mix_brief: str = "",
     order_engine: str = "none",
     tracks: int | None = None,
@@ -951,10 +1658,21 @@ def compose_mix_plan(
     constraints (see `brain.mix_order_brief`). `none` keeps playlist order
     and only maps feel keywords onto the profile.
     """
+    from brain.dj_formats import get_format
     from brain.mix_profiles import PROFILES, apply_brief, profile_provenance
 
     if profile_name not in PROFILES:
         raise ValueError(f"unknown profile {profile_name!r}; choose from {sorted(PROFILES)}")
+    dj_format = get_format(dj_format_name)
+    if (
+        dj_format.planner
+        and phrase_beats is not None
+        and phrase_beats != dj_format.phrase_beats
+    ):
+        raise ValueError(
+            f"{dj_format.label} requires {dj_format.phrase_beats}-beat "
+            f"phrases; --phrase-beats={phrase_beats} conflicts"
+        )
     if not playlist.exists():
         raise FileNotFoundError(
             f"missing {playlist} — finalize a set first (playlist editor → Finalize for Mixxx)"
@@ -1003,9 +1721,15 @@ def compose_mix_plan(
         affinity_lookup=load_affinity_lookup(),
         phrase_lookup=load_phrase_lookup(phrase_analysis),
         lyric_line_lookup=load_lyric_line_lookup(),
+        lyric_segment_lookup=load_lyric_segment_lookup(),
         beat_phase_lookup=load_beat_phase_lookup(),
-        phrase_beats=phrase_beats if phrase_beats is not None else profile.phrase_beats,
+        phrase_beats=(
+            dj_format.phrase_beats
+            if dj_format.planner
+            else (phrase_beats if phrase_beats is not None else profile.phrase_beats)
+        ),
         profile=profile,
+        dj_format=dj_format,
         provenance=provenance,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1018,9 +1742,15 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
     segments = plan.get("segments") or []
     events = plan.get("events") or []
     techniques: dict[str, int] = {}
+    format_compliance: dict[str, int] = {}
     for seg in segments:
         name = seg.get("technique") or "unknown"
         techniques[name] = techniques.get(name, 0) + 1
+        compliance = seg.get("format_compliance")
+        if compliance:
+            format_compliance[compliance] = (
+                format_compliance.get(compliance, 0) + 1
+            )
     cue_sources: dict[str, int] = {}
     for track in plan.get("tracks") or []:
         source = track.get("cue_source") or "unknown"
@@ -1035,9 +1765,11 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
         "seconds_per_track": plan.get("seconds_per_track"),
         "phrase_interval_beats": plan.get("phrase_interval_beats"),
         "profile": profile,
+        "dj_format": plan.get("dj_format") or {"name": "none"},
         "order_engine": profile.get("order_engine"),
         "order_notes": profile.get("order_notes") or [],
         "techniques": techniques,
+        "format_compliance": format_compliance,
         "cue_sources": cue_sources,
         "tracks": [
             {
@@ -1057,6 +1789,7 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
 
 
 def main() -> None:
+    from brain.dj_formats import FORMATS
     from brain.mix_profiles import PROFILES
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1067,6 +1800,12 @@ def main() -> None:
         choices=sorted(PROFILES),
         default="dj-showcase",
         help="how the set should feel; explicit flags below still win",
+    )
+    parser.add_argument(
+        "--dj-format",
+        choices=sorted(FORMATS),
+        default="none",
+        help="optional transition grammar, independent of the mix-feel profile",
     )
     parser.add_argument(
         "--mix-brief",
@@ -1088,28 +1827,43 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_PLAN)
     args = parser.parse_args()
 
-    plan = compose_mix_plan(
-        playlist=args.playlist,
-        profile_name=args.profile,
-        mix_brief=args.mix_brief,
-        order_engine=args.order_engine,
-        tracks=args.tracks,
-        seconds_per_track=args.seconds_per_track,
-        phrase_analysis=args.phrase_analysis,
-        phrase_beats=args.phrase_beats,
-        out=args.out,
-    )
+    try:
+        plan = compose_mix_plan(
+            playlist=args.playlist,
+            profile_name=args.profile,
+            dj_format_name=args.dj_format,
+            mix_brief=args.mix_brief,
+            order_engine=args.order_engine,
+            tracks=args.tracks,
+            seconds_per_track=args.seconds_per_track,
+            phrase_analysis=args.phrase_analysis,
+            phrase_beats=args.phrase_beats,
+            out=args.out,
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise SystemExit(f"mix plan build stopped: {error}") from None
     profile = plan.get("profile") or {}
+    dj_format = plan.get("dj_format") or {}
     print(f"profile: {profile.get('name')} — {(profile.get('values') or {}).get('description', '')}")
+    print(
+        f"DJ format: {dj_format.get('name')} — "
+        f"{dj_format.get('description', '')}"
+    )
     for note in profile.get("brief_adjustments") or []:
         print(f"  brief adjustment: {note}")
     for note in profile.get("order_notes") or []:
         print(f"  order: {note}")
     print(f"mix plan: {plan['track_count']} tracks -> {args.out}")
     for seg in plan["segments"]:
+        compliance = (
+            f" [{seg['format_compliance']}]"
+            if seg.get("format_compliance")
+            else ""
+        )
         print(
             f"  {seg['index']+1:02d}. [{seg['technique']:22}] {seg['beats']:2} beats  "
             f"{seg['from']} → {seg['to']}  (score {seg['score']})"
+            f"{compliance}"
         )
     print("\nMixxx instrument controls used are listed in plan['instrument_map'].")
     print("Run: uv run python -m hands.run_mix_plan --dry-run")

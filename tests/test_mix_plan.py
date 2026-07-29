@@ -12,12 +12,259 @@ from brain.build_mix_plan import (
     snap_to_lyric_line,
     track_directives,
 )
+from brain.dj_formats import get_format
 from brain.lyrics import lyric_overlap, title_search_variants, tokens
 from brain.mix_graph import key_compatibility
 from brain.mix_profiles import PROFILES, apply_brief
 
 
 class MixPlanTest(TestCase):
+    def test_hiphop_rnb_format_lands_chorus_and_intro_on_the_one(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/a.mp3",
+                "artist": "Song A",
+                "title": "Outgoing",
+                "bpm": 120.0,
+                "key": "Am",
+                "dj_notes": "cue_seconds=0",
+            },
+            {
+                "track_id": "/music/b.mp3",
+                "artist": "Song B",
+                "title": "Incoming",
+                "bpm": 120.0,
+                "key": "Am",
+                "dj_notes": "intro_seconds=0",
+            },
+        ]
+        phrases = {
+            track["track_id"]: {
+                "bpm": 120.0,
+                "first_beat_seconds": 0.0,
+                "intro": {
+                    "cue_seconds": 0.0,
+                    "beat_index": 0,
+                    "confidence": 1.0,
+                },
+            }
+            for track in tracks
+        }
+        timeline = {
+            "/music/a.mp3": [
+                {
+                    "kind": "chorus",
+                    "start": 32.0,
+                    "end": 48.0,
+                    "bar_start": 32.0,
+                    "beat_index": 64,
+                }
+            ]
+        }
+        plan = build_plan(
+            tracks,
+            count=2,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+            phrase_lookup=phrases,
+            lyric_segment_lookup=timeline,
+            dj_format=get_format("hiphop-rnb-8bar"),
+        )
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        body = next(e for e in plan["events"] if e["op"] == "play_body")
+        self.assertEqual(plan["dj_format"]["name"], "hiphop-rnb-8bar")
+        self.assertEqual(transition["technique"], "dj_format_chorus_to_intro")
+        self.assertEqual(transition["transition_beats"], 32)
+        self.assertEqual(transition["format_exit_beat_index"] % 4, 0)
+        self.assertEqual(transition["format_entry_beat_index"] % 4, 0)
+        self.assertEqual(body["beats"], 63)
+        self.assertEqual(plan["tracks"][1]["cue_source"], "dj_format_human_intro")
+
+    def test_hiphop_rnb_format_fails_closed_without_acapella_hook_marker(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/a.mp3",
+                "artist": "Song A",
+                "title": "Outgoing",
+                "bpm": 120.0,
+                "key": "Am",
+                "dj_notes": (
+                    "cue_seconds=0; format_recipe=acapella_hook_swap"
+                ),
+            },
+            {
+                "track_id": "/music/b.mp3",
+                "artist": "Song B",
+                "title": "Incoming",
+                "bpm": 120.0,
+                "key": "Am",
+                "dj_notes": "intro_seconds=0",
+            },
+        ]
+        phrases = {
+            track["track_id"]: {
+                "bpm": 120.0,
+                "first_beat_seconds": 0.0,
+                "intro": {"cue_seconds": 0.0, "beat_index": 0},
+            }
+            for track in tracks
+        }
+        with self.assertRaisesRegex(ValueError, "hook_acapella_seconds"):
+            build_plan(
+                tracks,
+                count=2,
+                seconds_per_track=20.0,
+                affinity_lookup={},
+                phrase_lookup=phrases,
+                dj_format=get_format("hiphop-rnb-8bar"),
+            )
+
+    def test_hiphop_rnb_intro_loop_recipe_is_declarative_and_8_bars(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/a.mp3",
+                "artist": "Song A",
+                "title": "Outgoing",
+                "bpm": 120.0,
+                "key": "Am",
+                "dj_notes": (
+                    "cue_seconds=0; chorus_seconds=32; "
+                    "format_recipe=intro_loop_under_entry; "
+                    "intro_loop_seconds=0"
+                ),
+            },
+            {
+                "track_id": "/music/b.mp3",
+                "artist": "Song B",
+                "title": "Incoming",
+                "bpm": 120.0,
+                "key": "Am",
+                "dj_notes": "intro_seconds=0",
+            },
+        ]
+        phrases = {
+            track["track_id"]: {
+                "bpm": 120.0,
+                "first_beat_seconds": 0.0,
+                "intro": {"cue_seconds": 0.0, "beat_index": 0},
+            }
+            for track in tracks
+        }
+        plan = build_plan(
+            tracks,
+            count=2,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+            phrase_lookup=phrases,
+            dj_format=get_format("hiphop-rnb-8bar"),
+        )
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        self.assertEqual(
+            transition["technique"],
+            "dj_format_intro_loop_under_entry",
+        )
+        self.assertEqual(transition["outgoing_loop_beats"], 32)
+        self.assertIn("outgoing_intro_loop_8_bars", transition["moves"])
+
+    def test_guided_format_keeps_beat_one_and_labels_fallback(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/a.mp3",
+                "artist": "Song A",
+                "title": "No Detected Chorus",
+                "bpm": 120.0,
+                "key": "Am",
+            },
+            {
+                "track_id": "/music/b.mp3",
+                "artist": "Song B",
+                "title": "Unverified Intro",
+                "bpm": 120.0,
+                "key": "Am",
+            },
+        ]
+        phrases = {
+            "/music/a.mp3": {
+                "bpm": 120.0,
+                "first_beat_seconds": 0.0,
+                "intro": {
+                    "cue_seconds": 8.0,
+                    "beat_index": 16,
+                    "confidence": 0.6,
+                },
+            },
+            "/music/b.mp3": {
+                "bpm": 120.0,
+                "first_beat_seconds": 0.0,
+                "intro": {
+                    "cue_seconds": 11.0,
+                    "beat_index": 22,
+                    "confidence": 0.5,
+                },
+            },
+        }
+        plan = build_plan(
+            tracks,
+            count=2,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+            phrase_lookup=phrases,
+            dj_format=get_format("hiphop-rnb-guided"),
+        )
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        incoming = plan["tracks"][1]
+        self.assertEqual(plan["dj_format"]["enforcement"], "guided")
+        self.assertEqual(transition["format_compliance"], "guided_fallback")
+        self.assertEqual(transition["format_recipe"], "phrase_aligned_fallback")
+        self.assertEqual(transition["format_exit_beat_index"] % 4, 0)
+        self.assertEqual(transition["format_entry_beat_index"] % 4, 0)
+        # The raw intro candidate was beat 22 (not a downbeat); guided mode
+        # moves forward to beat 24 and derives the corresponding time.
+        self.assertEqual(incoming["cue_beat_index"], 24)
+        self.assertEqual(incoming["cue_seconds"], 12.0)
+
+    def test_guided_format_promotes_complete_evidence_to_expert_recipe(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/a.mp3",
+                "artist": "Song A",
+                "title": "Verified Chorus",
+                "bpm": 120.0,
+                "key": "Am",
+                "dj_notes": "cue_seconds=0; chorus_seconds=32",
+            },
+            {
+                "track_id": "/music/b.mp3",
+                "artist": "Song B",
+                "title": "Verified Intro",
+                "bpm": 120.0,
+                "key": "Am",
+                "dj_notes": "intro_seconds=0",
+            },
+        ]
+        phrases = {
+            track["track_id"]: {
+                "bpm": 120.0,
+                "first_beat_seconds": 0.0,
+                "intro": {"cue_seconds": 0.0, "beat_index": 0},
+            }
+            for track in tracks
+        }
+        plan = build_plan(
+            tracks,
+            count=2,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+            phrase_lookup=phrases,
+            dj_format=get_format("hiphop-rnb-guided"),
+        )
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        self.assertEqual(transition["format_compliance"], "expert_recipe")
+        self.assertEqual(transition["format_recipe"], "chorus_to_intro")
+        self.assertEqual(transition["technique"], "dj_format_chorus_to_intro")
+        summary = plan_summary(plan)
+        self.assertEqual(summary["format_compliance"], {"expert_recipe": 1})
+
     def test_lyric_overlap_finds_shared_hooks(self) -> None:
         a = "it was all a dream I used to read word up magazine"
         b = "all a dream nothing but a g thang baby"
