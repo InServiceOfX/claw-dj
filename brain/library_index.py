@@ -42,6 +42,20 @@ CREATE TABLE IF NOT EXISTS roots (
     added_at REAL NOT NULL,
     last_scan_at REAL
 );
+-- The music collection (normally one external drive) and where it is mounted
+-- on THIS machine. `collection_id` is a UUID carried in a marker file on the
+-- collection itself, so every machine derives the same id for the same drive
+-- -- it is deliberately not the volume label, which is renameable. Recorded
+-- as data so the portable-database location is re-derivable without reading
+-- code. See brain/collection.py and docs/SETUP_NEW_MACHINE.md.
+CREATE TABLE IF NOT EXISTS collections (
+    collection_id TEXT PRIMARY KEY,
+    mount_base TEXT NOT NULL,
+    data_dir TEXT NOT NULL,
+    volume_label TEXT,
+    created_at REAL NOT NULL,
+    last_seen_at REAL
+);
 -- Per-track enrichment, filled only for curated/finalized sets (never the
 -- full crate) and only when missing — see brain/enrich_set.py.
 CREATE TABLE IF NOT EXISTS lyrics (
@@ -117,6 +131,13 @@ def connect(path: Path = DEFAULT_INDEX) -> sqlite3.Connection:
     scan_columns = {row[1] for row in db.execute("PRAGMA table_info(scan_state)")}
     if "warnings" not in scan_columns:
         db.execute("ALTER TABLE scan_state ADD COLUMN warnings TEXT NOT NULL DEFAULT ''")
+    # Additive migration for indexes whose `collections` table predates the
+    # separately-recorded data directory. Defaults to empty rather than to
+    # `<mount_base>/clawdj`, so a stale row can never silently point the
+    # portable database at the wrong place — re-register to repopulate it.
+    collection_columns = {row[1] for row in db.execute("PRAGMA table_info(collections)")}
+    if collection_columns and "data_dir" not in collection_columns:
+        db.execute("ALTER TABLE collections ADD COLUMN data_dir TEXT NOT NULL DEFAULT ''")
     return db
 
 

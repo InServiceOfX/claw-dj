@@ -11,10 +11,23 @@ happens to be in.
 
 Track identity is the absolute file path, and macOS mounts the same USB
 volume at the same `/Volumes/<name>` on every Mac — so rows carry over
-between Macs as-is. (Linux mounts differ; that's still an open item, see
-PROGRESS.md.)
+between Macs as-is. That makes the volume LABEL part of the collection
+contract: a replacement drive must be named identically, or every track_id
+(and every human dj_notes annotation keyed to one) orphans.
+
+Linux mounts elsewhere (`/media/<user>/<label>`), so rows do not carry over
+to Linux while identity is the absolute path. Where the database itself
+lives is no longer hardcoded — see `brain/collection.py`, which records the
+collection's id and this machine's mount base in the index — but making the
+track rows themselves portable across platforms is a separate, deferred
+change (see tests/test_music_collection_identity.py for what would have to
+move atomically).
 
 Usage (see docs/SETUP_NEW_MACHINE.md for the full walkthrough):
+
+    # Once per machine: record where the collection is mounted here. Derives
+    # the location from the configured scan roots when given no argument.
+    uv run python -m brain.collection register
 
     # Machine A (source of truth), before unplugging the stick:
     uv run python -m brain.portable_library export
@@ -39,9 +52,12 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from brain.collection import CollectionNotConfiguredError, resolve_portable_db
 from brain.library_index import DEFAULT_INDEX, connect
 
-DEFAULT_USB_DB = Path("/Volumes/USB322FD/clawdj/library.sqlite3")
+# No hardcoded volume label: the portable database's location is derived from
+# the collection registered in the index (brain/collection.py), resolved at
+# call time so a differently-mounted drive or a different machine works.
 
 _TRACK_COLUMNS = (
     "track_id", "root", "size_bytes", "mtime_ns", "title", "artist", "album",
@@ -65,20 +81,30 @@ _CACHE_TABLES = {
 }
 
 
-def export_db(local: Path = DEFAULT_INDEX, usb: Path = DEFAULT_USB_DB) -> Path:
+def export_db(local: Path = DEFAULT_INDEX, usb: Path | None = None) -> Path:
     """Copy the local index onto the USB stick (sqlite backup API — safe
-    even while the playlist-editor GUI holds the database open)."""
+    even while the playlist-editor GUI holds the database open).
+
+    `usb` defaults to the registered collection's portable-database path,
+    resolved at call time rather than from a hardcoded volume label.
+    """
     if not local.exists():
         raise FileNotFoundError(f"no local library index at {local} — nothing to export")
+    usb = usb if usb is not None else resolve_portable_db(local)
     usb.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(local)) as src, closing(sqlite3.connect(usb)) as dst:
         src.backup(dst)
     return usb
 
 
-def import_db(usb: Path = DEFAULT_USB_DB, local: Path = DEFAULT_INDEX) -> dict:
+def import_db(usb: Path | None = None, local: Path = DEFAULT_INDEX) -> dict:
     """Merge the USB copy into the local index. Fill-missing only — see
-    module docstring for the exact per-table policy."""
+    module docstring for the exact per-table policy.
+
+    `usb` defaults to the registered collection's portable-database path,
+    resolved at call time rather than from a hardcoded volume label.
+    """
+    usb = usb if usb is not None else resolve_portable_db(local)
     if not usb.exists():
         raise FileNotFoundError(
             f"no database on the USB stick at {usb} — run "
@@ -172,21 +198,30 @@ def _refresh_crate(local: Path = DEFAULT_INDEX) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("export", "import"))
-    parser.add_argument("--usb-db", type=Path, default=DEFAULT_USB_DB,
-                        help="database path on the USB stick")
+    parser.add_argument("--usb-db", type=Path, default=None,
+                        help="database path on the USB stick; defaults to the "
+                             "registered collection's location")
     parser.add_argument("--index", type=Path, default=DEFAULT_INDEX,
                         help="local library index path")
     args = parser.parse_args()
 
+    try:
+        usb_db = (
+            args.usb_db if args.usb_db is not None
+            else resolve_portable_db(args.index)
+        )
+    except CollectionNotConfiguredError as error:
+        raise SystemExit(str(error)) from None
+
     if args.action == "export":
-        destination = export_db(args.index, args.usb_db)
+        destination = export_db(args.index, usb_db)
         print(f"exported {args.index} -> {destination}")
         return
 
-    summary = import_db(args.usb_db, args.index)
+    summary = import_db(usb_db, args.index)
     count = _refresh_crate(args.index)
     print(
-        f"merged {args.usb_db} -> {args.index}: "
+        f"merged {usb_db} -> {args.index}: "
         f"{summary['tracks_added']} tracks added, "
         f"{summary['fields_filled']} missing bpm/key/energy/duration filled, "
         f"{summary['notes_imported']} dj_notes imported, "

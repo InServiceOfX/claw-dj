@@ -10,8 +10,35 @@ lyric timelines, and beat-phase analysis.
 **Why this works across Macs**: a track's identity is its absolute file
 path, and macOS mounts the same USB volume at the same
 `/Volumes/USB322FD/...` on every Mac. Nothing path-related needs
-translating. (Linux mounts differ — that is still an open item, see
-PROGRESS.md.)
+translating.
+
+> ### The volume-label contract
+>
+> Because identity is the absolute path, **the volume label is part of the
+> data**, not a cosmetic detail:
+>
+> - **A replacement drive must be named identically.** If this stick dies and
+>   you restore the music to a new one, name the new volume `USB322FD` before
+>   scanning. Otherwise every `track_id` changes, and all the bpm/key, lyrics,
+>   chroma, phrases, beat-phase rows and — worst — every hand-verified
+>   `dj_notes` annotation is orphaned. Renaming the volume is a one-line fix;
+>   recreating those annotations is not.
+> - **Watch for a name collision.** macOS appends a suffix (`USB322FD 1`) when
+>   another volume of the same name is already mounted — e.g. a backup clone.
+>   Scanning under that path would index a second copy of everything.
+> - **Linux mounts elsewhere** (`/media/<user>/<label>`), so rows do not carry
+>   over to Linux while identity is the absolute path.
+>
+> This is a deliberate trade, not an oversight: making identity independent of
+> the mount point is a stored-key migration across the index and several JSON
+> sidecars, deferred until there is a real trigger (Linux, or moving the
+> collection to internal/NAS storage). See
+> `tests/test_music_collection_identity.py` for what would have to change
+> together, and `docs/PRODUCT_INTENT.md` for the recorded decision.
+>
+> What is **not** hardcoded any more is where claw-dj's own files live on the
+> drive — that is recorded per machine (`brain/collection.py`), so registering
+> the collection is a one-time step below rather than an edit to source code.
 
 **Robust against any local state**: every step below is safe to run whether
 the other machine has never seen claw-dj, has a stale months-old clone, or
@@ -62,8 +89,20 @@ Before unplugging the USB stick, copy the current library index onto it:
 
 ```sh
 cd ~/.openclaw/workspace/repos/claw-dj
+
+# One-time per machine: record where the collection is mounted here. With no
+# argument it derives the location from your configured scan roots, and reuses
+# an existing clawdj/ directory on the drive rather than creating a second one.
+uv run python -m brain.collection register
+uv run python -m brain.collection status   # check it before relying on it
+
 uv run python -m brain.portable_library export
 ```
+
+`export`/`import` now resolve the database location from that registration
+instead of a hardcoded path, so `--usb-db` is only needed for a one-off
+override. If nothing is registered they refuse with an actionable message
+rather than guessing a drive.
 
 This writes `/Volumes/USB322FD/clawdj/library.sqlite3` using sqlite's
 backup API, so it is safe even while the playlist-editor GUI is running.
@@ -98,6 +137,11 @@ fix the collision by ejecting whatever claimed the name first.
 ## Step 3 — import the index from the stick
 
 ```sh
+# Same one-time registration on this machine. The collection id comes from the
+# marker already on the drive, so both machines agree on which collection this
+# is; only the mount base is recorded per machine.
+uv run python -m brain.collection register
+
 uv run python -m brain.portable_library import
 ```
 
