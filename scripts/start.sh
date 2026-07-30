@@ -15,6 +15,18 @@ EDITOR_PORT=8787
 EDITOR_URL="http://127.0.0.1:${EDITOR_PORT}"
 
 if ! nc -z 127.0.0.1 "$MIXXX_PORT" 2>/dev/null; then
+  # `open -a Mixxx --args ...` SILENTLY DROPS the args when Mixxx is already
+  # running: macOS just focuses the existing instance. So a Mixxx that was
+  # launched from the Dock (or that crashed its API and got relaunched) can
+  # never gain the control API this way, and the old failure message blamed
+  # the wrong thing entirely. Detect it and say what actually needs doing.
+  if pgrep -f "Mixxx.app/Contents/MacOS/Mixxx" >/dev/null 2>&1; then
+    echo "Mixxx is already running, but WITHOUT the control API on port ${MIXXX_PORT}." >&2
+    echo "macOS ignores --args for an app that is already open, so this script" >&2
+    echo "cannot add the API to that instance." >&2
+    echo "Quit Mixxx completely (Cmd+Q) and re-run this script." >&2
+    exit 1
+  fi
   echo "Starting Mixxx with the control API on port ${MIXXX_PORT}..."
   open -a Mixxx --args --control-api-port "$MIXXX_PORT"
   n=0

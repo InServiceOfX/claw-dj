@@ -81,6 +81,52 @@ def key_from_control(value: float) -> str | None:
     return _CHROMATIC_KEY.get(code)
 
 
+def pending_grid_ids(track_ids: list[str]) -> list[str] | None:
+    """Which of these tracks have no persisted BeatGrid-2.0 in mixxxdb yet.
+
+    Returns None when the check could not run at all (no mixxxdb, unreadable
+    database) — deliberately distinct from an empty list, which asserts that
+    every track's grid IS written. A safety report must never let "could not
+    check" look like "all clear".
+
+    A live control-API bpm reading does NOT mean Mixxx wrote a beatgrid to
+    its own database, and phrase/beat-phase analysis needs the written grid
+    (brain/phrase_analysis.py requires beats_version='BeatGrid-2.0' AND
+    beats IS NOT NULL). Per docs/HANDOFF.md the write lands minutes later on
+    Mixxx's own schedule.
+
+    Paths are matched EXACTLY. A convenience pattern like '%01. Intro.mp3'
+    matches nine different albums in this library, which is precisely how a
+    manual check of this behaviour was once read off the wrong track.
+    """
+    if not track_ids:
+        return []
+    try:
+        from shared.mixxx_db import connect_readonly
+
+        conn = connect_readonly()
+    except Exception:
+        return None
+    try:
+        persisted = set()
+        for track_id in track_ids:
+            row = conn.execute(
+                """SELECT 1 FROM library
+                   JOIN track_locations ON library.location = track_locations.id
+                   WHERE track_locations.location = ?
+                     AND library.beats_version = 'BeatGrid-2.0'
+                     AND library.beats IS NOT NULL""",
+                (track_id,),
+            ).fetchone()
+            if row:
+                persisted.add(track_id)
+    except Exception:
+        return None
+    finally:
+        conn.close()
+    return [track_id for track_id in track_ids if track_id not in persisted]
+
+
 def analyze_tracks(
     records: list[dict],
     *,
@@ -115,8 +161,15 @@ def analyze_tracks(
             emit(label)
             # Eject so the bpm control drops to 0 before the next load — a
             # stale non-zero reading otherwise satisfies wait_for_bpm
-            # immediately and the track never gets analyzed. Ejecting also
-            # forces Mixxx to flush the previous track's analysis to the DB.
+            # immediately and the track never gets analyzed.
+            #
+            # Ejecting does NOT flush the previous track's analysis to
+            # mixxxdb, despite what this comment used to claim. Measured
+            # 2026-07-30: eject alone leaves beats NULL indefinitely, and so
+            # does reloading the same track; only LOADING A DIFFERENT track
+            # persists the pending grid. That is why the loop below is
+            # followed by an explicit flush pass — otherwise the final track
+            # of every batch is left unpersisted.
             mixxx.set(group, "eject", 1)
             time.sleep(1.0)
             mixxx.set(group, "eject", 0)
@@ -156,6 +209,26 @@ def analyze_tracks(
     ok = sum(1 for row in results if row["ok"])
     print(f"\n{ok}/{len(records)} analyzed via control API (live reading).")
     print("Persist with brain.enrich_set / apply_analysis — Mixxx DB flush is lazy.")
+
+    # bpm/key are safe (we persist the live reading ourselves), but phrases and
+    # beat_phase need Mixxx's WRITTEN grid, which lands on its own schedule.
+    # Say which tracks are still waiting instead of letting the gap surface
+    # later as a silently skipped track in enrich_set.
+    pending = pending_grid_ids([row["track_id"] for row in results if row["ok"]])
+    if pending is None:
+        print("\ncould not read mixxxdb to check which beatgrids were written.")
+    elif pending:
+        print(
+            f"\n{len(pending)} of {ok} track(s) have no written Mixxx beatgrid yet "
+            "— bpm/key are saved, but phrases/beat_phase will skip them:"
+        )
+        for track_id in pending:
+            print(f"    pending: {Path(track_id).name}")
+        print(
+            "  Mixxx writes the grid minutes later on its own schedule; a clean "
+            "quit does not force it. Re-run Analyze & enrich later to pick them "
+            "up, or right-click → Analyze in Mixxx, which always persists."
+        )
     return results
 
 
