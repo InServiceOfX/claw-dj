@@ -36,3 +36,8 @@ __pycache__/
 
 # scanned personal media metadata — not for a public repo
 brain/data/
+
+# PDD runtime state (core dumps, caches). Durable intent belongs in docs/,
+# not here — see PDD_NATURAL_LANGUAGE_AGENT_PLAYBOOK.md.
+.pdd/
+litellm_cache.sqlite/
