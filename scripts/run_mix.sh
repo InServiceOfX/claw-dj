@@ -1,28 +1,35 @@
 #!/usr/bin/env bash
-# One command to run the last mix plan built by `brain.build_mix_plan` (the
-# same file the playlist editor's "Build mix plan" writes and "Start mix"
-# reads) — so you don't have to remember `python -m hands.run_mix_plan
-# --plan brain/data/mix_plan.json --port 9995`.
-#
-# Usage:
-#   scripts/run_mix.sh              # dry run (default — no Mixxx moves)
-#   scripts/run_mix.sh --live       # actually drives Mixxx
-#   scripts/run_mix.sh --live --record
-#   scripts/run_mix.sh --live --max-events 10
-#
-# Requires Mixxx running with the control API (scripts/start.sh) for --live;
-# --dry-run never needs it.
+# See usage() below (also: scripts/run_mix.sh --help).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+usage() {
+  cat <<'EOF'
+Run the last mix plan built by `brain.build_mix_plan` (the same file the
+playlist editor's "Build mix plan" writes and "Start mix" reads) — so you
+don't have to remember `python -m hands.run_mix_plan --plan
+brain/data/mix_plan.json --port 9995`.
+
+Defaults to LIVE — this drives Mixxx. Pass --dry-run to only rehearse.
+
+Usage:
+  scripts/run_mix.sh                # live — drives Mixxx (needs scripts/start.sh running)
+  scripts/run_mix.sh --dry-run      # rehearse only, no Mixxx connection needed
+  scripts/run_mix.sh --record
+  scripts/run_mix.sh --max-events 10
+  scripts/run_mix.sh --help
+EOF
+}
+
 PLAN="brain/data/mix_plan.json"
 PORT=9995
-LIVE=0
+DRY_RUN=0
 EXTRA_ARGS=()
 
 for arg in "$@"; do
   case "$arg" in
-    --live) LIVE=1 ;;
+    -h|--help) usage; exit 0 ;;
+    --dry-run) DRY_RUN=1 ;;
     *) EXTRA_ARGS+=("$arg") ;;
   esac
 done
@@ -48,14 +55,14 @@ if s.get('format_compliance'):
     print(f\"  format compliance: {s['format_compliance']}\")
 "
 
-if [ "$LIVE" -eq 1 ]; then
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "Dry run (no Mixxx moves):"
+  uv run python -m hands.run_mix_plan --plan "$PLAN" --dry-run ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+else
   if ! nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
     echo "Mixxx control API is not up on port $PORT — run scripts/start.sh first." >&2
     exit 1
   fi
   echo "Running LIVE — this will drive Mixxx."
   uv run python -m hands.run_mix_plan --plan "$PLAN" --port "$PORT" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
-else
-  echo "Dry run (pass --live to actually drive Mixxx):"
-  uv run python -m hands.run_mix_plan --plan "$PLAN" --dry-run ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 fi
