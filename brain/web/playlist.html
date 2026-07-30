@@ -111,6 +111,7 @@
     <div class="page" id="page-curate">
       <div class="ingest">
         <div><h2>New music</h2><div class="ingest-detail" id="ingest-detail">Checking the library index…</div>
+          <div class="banner" id="scan-warnings" style="margin-top:6px" hidden></div>
           <div class="ingest-detail" id="roots-detail" style="margin-top:4px"></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
@@ -289,6 +290,10 @@
       else if (data.running) el('ingest-detail').textContent = `Scanning ${roots || 'configured folders'}… ${data.processed || 0}/${data.discovered || '?'} files`;
       else if (data.finished_at) el('ingest-detail').textContent = `${data.new_count} new · ${data.changed_count} changed · ${data.unchanged_count} unchanged · ${data.untagged_count} need tags`;
       else el('ingest-detail').textContent = roots ? `Ready to scan ${roots}` : 'No folders configured yet — add one below.';
+      // A warning is not a failure: the scan finished but deliberately skipped
+      // a suspicious availability update, so it must stay visible afterwards.
+      el('scan-warnings').textContent = data.warnings || '';
+      el('scan-warnings').hidden = !data.warnings;
       el('roots-detail').textContent = (data.roots || []).length ? `Scanned folders: ${(data.roots || []).join(', ')}` : '';
       el('scan').disabled = Boolean(data.running);
       el('add-root-btn').disabled = Boolean(data.running);
@@ -447,7 +452,8 @@
           await Promise.all([loadMeta(), loadLibrary(), loadSelected()]);
           el('notice').textContent = status.error
             ? `Scan failed: ${status.error}`
-            : `Found ${status.new_count} new and ${status.changed_count} changed tracks.`;
+            : `Found ${status.new_count} new and ${status.changed_count} changed tracks.`
+              + (status.warnings ? ' Some folders looked suspect — see the warning above.' : '');
         }
       }, 750);
     }

@@ -110,6 +110,13 @@ def connect(path: Path = DEFAULT_INDEX) -> sqlite3.Connection:
     columns = {row[1] for row in db.execute("PRAGMA table_info(tracks)")}
     if "dj_notes" not in columns:
         db.execute("ALTER TABLE tracks ADD COLUMN dj_notes TEXT NOT NULL DEFAULT ''")
+    # Additive migration for non-fatal scan warnings. Distinct from `error`,
+    # which means the scan failed: a warning means the scan finished and
+    # deliberately skipped something (e.g. a suspect availability flip), so
+    # the GUI can surface it without reporting a failure.
+    scan_columns = {row[1] for row in db.execute("PRAGMA table_info(scan_state)")}
+    if "warnings" not in scan_columns:
+        db.execute("ALTER TABLE scan_state ADD COLUMN warnings TEXT NOT NULL DEFAULT ''")
     return db
 
 

@@ -40,6 +40,25 @@ INCOMPLETE_MARKER_SUFFIXES = (".part", ".crdownload", ".!qB", ".aria2")
 
 DEFAULT_SKIPPED_REPORT = DEFAULT_CRATE_CACHE.parent / "scan_skipped.json"
 
+# Availability guard. A root that suddenly stops returning most of its files
+# is far more likely to be a flaky or partially mounted volume than a real
+# bulk deletion — ExFAT on USB does this. Marking those tracks unavailable
+# orphans the lyrics/chroma/phrases/beat_phase/lyric_timelines rows and the
+# human dj_notes keyed to their track_ids, which is expensive-to-impossible
+# to recreate.
+#
+# The scan stays deliberately forgiving: it skips only the suspicious
+# availability flip, keeps indexing everything else, and says so loudly. A
+# scan that aborted here would block ingesting new music until the mount was
+# fixed, which is worse for the user than a warning plus a retry next time.
+# Pass allow_bulk_removal=True once the deletion is known to be real.
+#
+# The floor exists because a handful of tracks is not a mass-orphan hazard
+# (re-indexing them is trivial), and applying the fraction there would only
+# produce false refusals.
+DEFAULT_MAX_MISSING_FRACTION = 0.5
+DEFAULT_MIN_TRACKS_FOR_GUARD = 20
+
 
 def _first(tags: dict, key: str) -> str | None:
     values = tags.get(key)
@@ -171,6 +190,9 @@ def scan(
 def incremental_scan(
     roots: list[Path], *, index_path: Path = DEFAULT_INDEX,
     min_age_seconds: float = 300, workers: int = 8, progress_every: int = 100,
+    allow_bulk_removal: bool = False,
+    max_missing_fraction: float = DEFAULT_MAX_MISSING_FRACTION,
+    min_tracks_for_guard: int = DEFAULT_MIN_TRACKS_FOR_GUARD,
 ) -> dict:
     """Index only new/changed files and return a user-facing scan summary.
 
@@ -307,12 +329,49 @@ def incremental_scan(
             )
 
         present = set(paths_by_root)
-        scoped = [row["track_id"] for row in db.execute(
-            "SELECT track_id FROM tracks WHERE root IN (%s) AND available=1" %
-            ",".join("?" * len(normalized)), tuple(map(str, normalized)),
-        )] if normalized else []
-        missing = [track_id for track_id in scoped if track_id not in present]
+        # Evaluated per root, not across the whole scan: six genre roots are
+        # scanned together in practice, and averaging the loss over all of
+        # them would hide one volume going bad.
+        missing: list[str] = []
+        suspect_roots: list[dict] = []
+        for root in normalized:
+            known = [row["track_id"] for row in db.execute(
+                "SELECT track_id FROM tracks WHERE root=? AND available=1",
+                (str(root),),
+            )]
+            gone = [track_id for track_id in known if track_id not in present]
+            if (
+                not allow_bulk_removal
+                and gone
+                and len(known) >= min_tracks_for_guard
+                and len(gone) / len(known) > max_missing_fraction
+            ):
+                suspect_roots.append(
+                    {"root": str(root), "known": len(known), "gone": len(gone)}
+                )
+                continue
+            missing.extend(gone)
         db.executemany("UPDATE tracks SET available=0 WHERE track_id=?", ((p,) for p in missing))
+
+        warnings = ""
+        if suspect_roots:
+            lines = [
+                f"    kept {row['gone']} of {row['known']} known tracks available under "
+                f"{row['root']} — it returned too few files to trust as a deletion"
+                for row in suspect_roots
+            ]
+            warnings = (
+                "Skipped the availability update for "
+                f"{len(suspect_roots)} root(s) that returned too few known files "
+                "(likely a partial or flaky mount). Enrichment and dj_notes are "
+                "untouched. Re-run once the volume is healthy, or pass "
+                "allow_bulk_removal=True (CLI: --allow-bulk-removal) if the files "
+                "really are gone."
+            )
+            print("  WARNING: suspect scan root(s) — availability left unchanged:", flush=True)
+            for line in lines:
+                print(line, flush=True)
+            print(f"    {warnings}", flush=True)
         bootstrap_analysis(db)
         finished = time.time()
         db.execute(
@@ -321,14 +380,16 @@ def incremental_scan(
         )
         db.execute(
             """UPDATE scan_state SET running=0,finished_at=?,processed=?,new_count=?,
-            changed_count=?,unchanged_count=?,missing_count=?,skipped_count=? WHERE id=1""",
+            changed_count=?,unchanged_count=?,missing_count=?,skipped_count=?,
+            warnings=? WHERE id=1""",
             (finished, len(paths_by_root), new_count, changed_count, unchanged + migrated_count,
-             len(missing), len(skipped)),
+             len(missing), len(skipped), warnings),
         )
         db.commit()
         return {"tracks": len(paths_by_root), "new": new_count, "changed": changed_count,
                 "unchanged": unchanged + migrated_count, "missing": len(missing), "skipped": len(skipped),
-                "elapsed_seconds": round(finished - started_at, 2), "skipped_records": skipped}
+                "elapsed_seconds": round(finished - started_at, 2), "skipped_records": skipped,
+                "suspect_roots": suspect_roots, "warnings": warnings}
     except Exception as error:
         db.execute(
             "UPDATE scan_state SET running=0,finished_at=?,error=? WHERE id=1",
@@ -364,13 +425,21 @@ def main() -> None:
         default=8,
         help="parallel tag-read threads (I/O bound; raise on fast disks)",
     )
+    parser.add_argument(
+        "--allow-bulk-removal",
+        action="store_true",
+        help=(
+            "mark tracks unavailable even when a root returns almost none of "
+            "its known files; use only when the deletion is real, not a flaky mount"
+        ),
+    )
     args = parser.parse_args()
 
     started = time.perf_counter()
     try:
         summary = incremental_scan(
             args.roots, index_path=args.index, min_age_seconds=args.min_age_seconds,
-            workers=args.workers,
+            workers=args.workers, allow_bulk_removal=args.allow_bulk_removal,
         )
     except FileNotFoundError as error:
         raise SystemExit(str(error)) from error
