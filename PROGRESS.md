@@ -93,7 +93,38 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
       experimental status below is kept because neither format has ever
       been fairly tested, not because either was shown to be bad. A valid
       A/B needs a guided-adaptive rebuild holding the profile at
-      `mix-to-listen` and changing only the format. `brain/dj_formats.py`'s `DjFormat`
+      `mix-to-listen` and changing only the format.
+      **Resolution (2026-07-31, same day): the retraction above was itself
+      an over-correction — there IS a real format bug, found by rebuilding
+      guided at `mix-to-listen` and comparing.** At the identical profile,
+      guided produced ride lengths of 7/15/23/31 beats (mean 29) against
+      none's 63-128 (mean 82). The 8n-1 shape was the tell: both DJ-format
+      exit anchors searched from `current_beat`, so `strict_exit_anchor`'s
+      fallback (`build_mix_plan.py`, `guided_next_32_beat_boundary`)
+      returned the *immediately next* 32-beat phrase boundary and
+      `ride_beats = exit_beat - current_beat - 1` collapsed to whatever
+      remained of the current phrase — as little as 7 beats (~5s) when the
+      cue landed late in one. The profile's `ride_phrases_pattern` was
+      never applied on either format path, so selecting a DJ format
+      silently overrode the mix profile's pacing entirely. (The `-1` is
+      deliberate `play_body` beat-tick semantics, not part of the bug.)
+      Fixed with `format_min_ride_beats()`: both paths now search for an
+      exit only after `(ride_phrases - 1) * phrase_beats` have actually
+      played, mirroring the default path's `next_boundary +=` line. The
+      format still decides *where* a transition may land; the profile
+      decides *how long* a song plays. Rebuild confirms it — rides
+      39-191, mean 83, against none's mean 82. 168/168 tests pass.
+      Method note: three claims were made here in one session (format
+      truncates → no, it's the profile → yes, it's the format, here's the
+      line). Only the same-profile rebuild discriminated. Ride-length
+      arithmetic fits several profiles equally well and should not be
+      used as causal evidence again.
+      **Still open:** all 15 transitions came back `guided_fallback` — zero
+      expert recipes matched, because no track in this set has a verified
+      chorus-exit or 8-bar intro. So guided currently contributes its
+      beat-1/phrase constraints and none of the practicing-DJ recipes, and
+      strict would fail closed on all 15. Whether the format helps at all
+      on this library is still an open ear question. `brain/dj_formats.py`'s `DjFormat`
       gained a `status` field (`active`/`experimental`/`archived`);
       `hiphop-rnb-8bar` is now `archived` (hidden from the GUI dropdown via
       new `visible_formats()`, still selectable through `--dj-format` on the

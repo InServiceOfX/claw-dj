@@ -747,6 +747,17 @@ def build_plan(
             "cue_source": source,
         })
 
+    def format_min_ride_beats(ride_phrases: int) -> int:
+        """Beats a DJ-format ride must cover before an exit may be chosen.
+
+        The format decides *where* a transition may land (a verified bar
+        downbeat); the mix profile still decides *how long* a song plays.
+        Selecting a format used to silently override the profile, because
+        the exit anchors search from the current beat and therefore always
+        returned the next phrase boundary — often only a few beats away.
+        """
+        return max(0, ride_phrases - 1) * dj_format.phrase_beats
+
     def strict_exit_anchor(
         track: dict,
         *,
@@ -1255,11 +1266,18 @@ def build_plan(
                     "resolve its current cue onto the beatgrid"
                 )
             current_beat = outgoing_entry_beat + elapsed_in_phrase
+            # Give the song the profile's ride length BEFORE looking for an
+            # exit, mirroring the default path's `next_boundary +=
+            # (ride_phrases - 1) * phrase_beats`. Without this the anchor
+            # returns the very next phrase boundary, so a cue landing late in
+            # a phrase rides only a handful of beats and mix-to-listen's 2-4
+            # phrases are silently discarded on every format transition.
+            exit_search_from = current_beat + format_min_ride_beats(ride_phrases)
             exit_beat, exit_seconds, exit_source = strict_exit_anchor(
                 outgoing,
                 directive=directive,
                 recipe=recipe,
-                after_beat=current_beat,
+                after_beat=exit_search_from,
             )
             # play_body waits N beat ticks and perform_transition anchors on
             # the next one, hence the -1. Both the exit and every incoming
@@ -1333,6 +1351,9 @@ def build_plan(
                     f"entry beat {incoming_entry_beat} is not beat 1"
                 )
             current_beat = outgoing_entry_beat + elapsed_in_phrase
+            # See the strict path above: search for the exit only after the
+            # profile's ride length has actually been played.
+            exit_search_from = current_beat + format_min_ride_beats(ride_phrases)
             (
                 exit_beat,
                 exit_seconds,
@@ -1343,7 +1364,7 @@ def build_plan(
                 outgoing,
                 directive=directive,
                 recipe=recipe,
-                after_beat=current_beat,
+                after_beat=exit_search_from,
             )
             ride_beats = exit_beat - current_beat - 1
             entry_evidence = format_cue_evidence_cache.get(
