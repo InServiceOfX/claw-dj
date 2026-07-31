@@ -71,6 +71,28 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
 
 ## Done (post-hackathon arc, 2026-07-13)
 
+- [x] **Ear-test finding: both expert DJ formats sound worse than 'none'
+      (2026-07-31).** Ernest A/B'd `hiphop-rnb-8bar` and `hiphop-rnb-guided`
+      against plain `none` + a free-text mix brief on real builds — both
+      expert formats came out worse. `brain/dj_formats.py`'s `DjFormat`
+      gained a `status` field (`active`/`experimental`/`archived`);
+      `hiphop-rnb-8bar` is now `archived` (hidden from the GUI dropdown via
+      new `visible_formats()`, still selectable through `--dj-format` on the
+      CLI — code kept, not deleted), `hiphop-rnb-guided` is `experimental`
+      (still shown, labeled "· experimental, not ready" in red in
+      `brain/web/playlist.html`). Both spec docs under `docs/dj-formats/`
+      got a status banner. Real bug found alongside this: rebuilding the mix
+      plan (`build_mix`) overwrote `brain/data/mix_plan.json` in place with
+      no history — the guided-adaptive plan Ernest had just recorded audio
+      against was already gone (never archived; `brain/data/archives/` last
+      touched 2026-07-24, before this run) by the time this was reported.
+      Fixed structurally, not just for this one loss: `build_mix` now
+      archives whatever plan is already on disk (best-effort, labeled
+      `auto-before-rebuild-{previous dj_format}`) before every overwrite —
+      same pattern `clear_selection` already used. The plan actually
+      recorded this session (`none` format) was manually archived as
+      `recorded-no-format-2026-07-31` before this fix landed. 168/168 tests
+      pass.
 - [x] **Versioned DJ formats, first practicing-DJ hip-hop/R&B grammar
       (2026-07-24).** Mix feel (`dj-showcase` / `club-set` /
       `mix-to-listen`) and transition grammar are independent axes.

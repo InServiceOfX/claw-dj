@@ -490,18 +490,21 @@
       ).join('');
     }
     function renderDjFormats(formats) {
+      // Fallback only fires if the server call fails entirely; archived
+      // formats (e.g. hiphop-rnb-8bar) are deliberately left out here too —
+      // see brain/dj_formats.py's status field for why.
       const list = formats && formats.length ? formats : [
         {name:'none', label:'No expert format', description:'Use the selected mix profile and per-track DJ notes.'},
-        {name:'hiphop-rnb-8bar', label:'Hip-hop / R&B · strict 8-bar', description:'Strict beat-1 chorus/hook → 8-bar intro grammar.', strict:true},
-        {name:'hiphop-rnb-guided', label:'Hip-hop / R&B · guided', description:'Beat 1 stays hard; verified recipes plus labeled phrase-aligned fallbacks.', enforcement:'guided'},
+        {name:'hiphop-rnb-guided', label:'Hip-hop / R&B · guided', description:'Beat 1 stays hard; verified recipes plus labeled phrase-aligned fallbacks.', enforcement:'guided', status:'experimental'},
       ];
       const select = el('dj-format');
       select.innerHTML = list.map(f =>
-        `<option value="${esc(f.name)}">${esc(f.label || f.name)}${f.strict ? ' · strict' : (f.enforcement === 'guided' ? ' · adaptive' : '')}</option>`
+        `<option value="${esc(f.name)}">${esc(f.label || f.name)}${f.status === 'experimental' ? ' · experimental, not ready' : ''}</option>`
       ).join('');
       select.value = list.some(f => f.name === mixState.djFormat) ? mixState.djFormat : 'none';
       const chosen = list.find(f => f.name === select.value) || list[0];
       el('dj-format-detail').textContent = chosen.description || '';
+      el('dj-format-detail').className = chosen.status === 'experimental' ? 'ingest-detail warn' : 'ingest-detail';
       select.dataset.formats = JSON.stringify(list);
     }
     function renderFinalized(finalized, enrichment) {
@@ -737,6 +740,7 @@
       try { formats = JSON.parse(event.target.dataset.formats || '[]'); } catch (_) {}
       const chosen = formats.find(f => f.name === mixState.djFormat);
       el('dj-format-detail').textContent = chosen?.description || '';
+      el('dj-format-detail').className = chosen?.status === 'experimental' ? 'ingest-detail warn' : 'ingest-detail';
     });
     el('build-mix').addEventListener('click', async () => {
       el('build-mix').disabled = true;

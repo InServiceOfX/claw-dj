@@ -1040,7 +1040,7 @@ class PlaylistApp:
         return self.mix_status()
 
     def mix_status(self) -> dict:
-        from brain.dj_formats import FORMATS
+        from brain.dj_formats import visible_formats
         from brain.mix_profiles import PROFILES
 
         status = dict(self.mix_state)
@@ -1066,13 +1066,14 @@ class PlaylistApp:
                 "label": dj_format.label,
                 "description": dj_format.description,
                 "strict": dj_format.strict,
+                "status": dj_format.status,
                 "enforcement": (
                     "strict"
                     if dj_format.strict
                     else ("guided" if dj_format.planner else "off")
                 ),
             }
-            for name, dj_format in FORMATS.items()
+            for name, dj_format in visible_formats().items()
         ]
         status["plan_ready"] = bool(status.get("summary")) and not self._plan_stale(
             status.get("summary"), finalized
@@ -1126,6 +1127,27 @@ class PlaylistApp:
 
         if self.enrich_thread and self.enrich_thread.is_alive():
             raise ValueError("enrichment is still running — wait before building the plan")
+
+        # Rebuilding overwrites mix_plan.json in place — archive whatever's
+        # there first (best-effort) so a plan that was actually played/
+        # recorded is never silently lost to the next build. Mirrors
+        # clear_selection's existing archive-before-destroy pattern.
+        if MIX_PLAN_PATH.exists():
+            from brain.archive_mix_plan import archive_mix_plan
+
+            try:
+                prev_format = "none"
+                try:
+                    prev_format = (
+                        json.loads(MIX_PLAN_PATH.read_text())
+                        .get("dj_format", {})
+                        .get("name", "none")
+                    )
+                except Exception:
+                    pass
+                archive_mix_plan(label=f"auto-before-rebuild-{prev_format}")
+            except FileNotFoundError:
+                pass
 
         self.mix_state = {
             "building": 1,

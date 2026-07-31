@@ -4,6 +4,13 @@ Status: version 1, practical/adaptive. It is derived from—but is not the
 same certification claim as—the practicing-DJ rules in
 `HIP_HOP_RNB_8_BAR.md`.
 
+**Marked experimental 2026-07-31** (`brain/dj_formats.py`, `status:
+"experimental"`) — still shown in the GUI, but visibly labeled "not ready."
+Ear tests through this date preferred plain `none` + a free-text mix brief
+over this format. Not archived (unlike the strict format above) because
+it's still the active development target — see `PROGRESS.md` for the
+comparison finding and next steps.
+
 ## What remains hard
 
 1. Every incoming song starts on beat 1 of a four-beat bar.

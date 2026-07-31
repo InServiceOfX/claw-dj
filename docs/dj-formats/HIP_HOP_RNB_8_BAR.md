@@ -3,6 +3,14 @@
 Status: version 1, strict. Source: working session with a practicing
 hip-hop/R&B DJ, relayed by Ernest on 2026-07-24.
 
+**Archived 2026-07-24 → 2026-07-31.** Live A/B listening against plain
+`none` + a free-text mix brief consistently sounded worse under this
+format. Hidden from the GUI dropdown (`brain/dj_formats.py`, `status:
+"archived"`) but still selectable via `--dj-format hiphop-rnb-8bar` on the
+CLI — the grammar/planner code is intentionally kept, not deleted, in case
+the underlying bug (not this spec) turns out to be fixable. See
+`PROGRESS.md`.
+
 This is a transition grammar, not a mix-feel preset. It can be combined with
 `dj-showcase`, `club-set`, or `mix-to-listen`.
 
