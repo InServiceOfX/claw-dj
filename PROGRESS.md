@@ -72,9 +72,28 @@ core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
 ## Done (post-hackathon arc, 2026-07-13)
 
 - [x] **Ear-test finding: both expert DJ formats sound worse than 'none'
-      (2026-07-31).** Ernest A/B'd `hiphop-rnb-8bar` and `hiphop-rnb-guided`
-      against plain `none` + a free-text mix brief on real builds — both
-      expert formats came out worse. `brain/dj_formats.py`'s `DjFormat`
+      (2026-07-31) — SUPERSEDED SAME DAY, the comparison was confounded.**
+      Ernest A/B'd `hiphop-rnb-8bar` and `hiphop-rnb-guided` against plain
+      `none` + a free-text mix brief on real builds — both expert formats
+      came out worse.
+      **Correction (2026-07-31, later):** the two recorded runs did not
+      differ only by format. Measuring the two Mixxx cue sheets
+      (`2026-07-31_04h27m34s` guided vs `2026-07-31_05h14m20s` none) showed
+      9:02 vs 18:54 total and 33.7s vs 70.7s mean per song — but the ride
+      lengths decode to exactly `dj-showcase`'s ride pattern (32/48/64
+      beats = 1 phrase, or 1 + the 0.60 confidence bonus) on the guided run
+      and exactly `mix-to-listen`'s (80/96/112/144 beats) on the none run.
+      Ernest confirmed he likely picked **dj-showcase** for the guided
+      build. So the entire length/pacing difference is explained by the
+      **mix profile**, not the DJ format, and the ear comparison cannot
+      distinguish the two. An intermediate claim made here — that the
+      guided planner truncates rides to 8-12 bars — was wrong and has been
+      retracted; it was profile pacing, not format enforcement.
+      **The formats remain unvalidated, not disproven.** The archived/
+      experimental status below is kept because neither format has ever
+      been fairly tested, not because either was shown to be bad. A valid
+      A/B needs a guided-adaptive rebuild holding the profile at
+      `mix-to-listen` and changing only the format. `brain/dj_formats.py`'s `DjFormat`
       gained a `status` field (`active`/`experimental`/`archived`);
       `hiphop-rnb-8bar` is now `archived` (hidden from the GUI dropdown via
       new `visible_formats()`, still selectable through `--dj-format` on the
