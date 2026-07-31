@@ -13,6 +13,30 @@ grammars with hard, machine-enforced rules live separately under
 
 ## Universal principles (any genre)
 
+- **Ride length is a judgment, never a rule — in any format or profile.**
+  Ernest, 2026-07-31: "some songs have long interesting parts and should
+  get more play, but some songs have very interesting and exciting parts
+  but are short." How long a song plays should follow where its genuinely
+  interesting material actually is, not a position in a rotation and not a
+  fixed bar count. This is deliberately hard: judging what's worth playing
+  is subjective and aesthetic, and no current signal in this repo measures
+  it directly.
+  Practical consequences:
+  - Any ride number the builder produces is a **default to be overridden**,
+    not an answer. `dj_notes` (`ride_beats`, `ride_phrases`, `full_track`,
+    `trust_ride_beats`) always outrank it — the long by-ear tuning rounds
+    recorded in `PROGRESS.md` are the real product, not a workaround.
+  - `mix_profiles.ride_phrases_pattern` is a rotation indexed by position
+    in the set, so track N gets its length because of *where it sits*, not
+    because of anything in the music. Treat it as a placeholder for
+    judgment, not a model of taste.
+  - Prefer per-song structural evidence over pattern arithmetic when it
+    exists: `lyric_timelines` chorus/verse boundaries say where a hook
+    actually ends, which is a real reason to keep playing or to leave.
+  - Never make a length constraint fail-closed. A format may legitimately
+    constrain *where* a transition lands (bar downbeat, beat 1); it must
+    not dictate *how long* a song plays. Conflating those two is exactly
+    the bug fixed on 2026-07-31 (`format_min_ride_beats`).
 - **Never start a cue mid-word.** The beatgrid/energy phrase-picker has no
   idea where words start — left alone, it can and does land mid-syllable.
   `brain.build_mix_plan.snap_to_lyric_line()` already fixes this
