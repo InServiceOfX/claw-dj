@@ -1,0 +1,144 @@
+<pdd-reason>Every browser view needs the same rev-threading and conflict handling; duplicating it per view guarantees one of them forgets base_rev and silently clobbers an agent's edit.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "listPlans",
+        "signature": "listPlans({status} = {}) -> Promise<Plan[]>"
+      },
+      {
+        "name": "createPlan",
+        "signature": "createPlan(displayName) -> Promise<Plan>"
+      },
+      {
+        "name": "setActivePlan",
+        "signature": "setActivePlan(slug) -> Promise<Plan>",
+        "errors": [
+          "409 while live run"
+        ]
+      },
+      {
+        "name": "renamePlan",
+        "signature": "renamePlan(slug, displayName) -> Promise<Plan>",
+        "sideEffects": "display_name only; slug frozen, no URL change"
+      },
+      {
+        "name": "duplicatePlan",
+        "signature": "duplicatePlan(slug, displayName) -> Promise<Plan>",
+        "returns": "the new plan, born 'wip'"
+      },
+      {
+        "name": "deletePlan",
+        "signature": "deletePlan(slug) -> Promise<void>",
+        "sideEffects": "soft-delete into .trash",
+        "errors": [
+          "409 while live run"
+        ]
+      },
+      {
+        "name": "setStatus",
+        "signature": "setStatus(slug, status) -> Promise<Plan>"
+      },
+      {
+        "name": "refreshPlan",
+        "signature": "refreshPlan(slug, {signal}) -> Promise<Arrange>",
+        "sideEffects": "repaints from response only"
+      },
+      {
+        "name": "fetchJournal",
+        "signature": "fetchJournal(slug, limit) -> Promise<Entry[]>"
+      },
+      {
+        "name": "setOrder",
+        "signature": "setOrder(slug, trackIds) -> Promise<{rev}>"
+      },
+      {
+        "name": "moveBunch",
+        "signature": "moveBunch(slug, bunchId, toIndex) -> Promise<{rev}>"
+      },
+      {
+        "name": "addTracks",
+        "signature": "addTracks(slug, {add, remove}) -> Promise<{rev}>"
+      },
+      {
+        "name": "setNote",
+        "signature": "setNote(slug, trackId, note, author) -> Promise<{rev}>"
+      },
+      {
+        "name": "setTransition",
+        "signature": "setTransition(slug, patch) -> Promise<{rev}>",
+        "sideEffects": "sparse; null means leave unchanged"
+      },
+      {
+        "name": "createAndActivateBunch",
+        "signature": "createAndActivateBunch(slug, {label, track_ids, ordered}) -> Promise<{created, activated, conflict}>",
+        "returns": "discriminated result, 409 body unflattened"
+      },
+      {
+        "name": "deactivateBunch",
+        "signature": "deactivateBunch(slug, bunchId) -> Promise<{rev}>"
+      },
+      {
+        "name": "archiveBunch",
+        "signature": "archiveBunch(bunchId) -> Promise<{affected_slugs}>"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/api/api_plans_collection_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plans_active_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_detail_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_duplicate_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_journal_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_arrange_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_order_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_tracks_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_notes_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_transitions_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_plan_bunches_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_bunches_collection_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api/api_bunch_item_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/web/plan_client.js` as the Vanilla ES module (no framework, no bundler, no node_modules) loaded with <script type="module">. Fetch wrappers that thread base_rev into EVERY mutation body automatically, so a caller cannot forget it. MUST CHECK response.ok: fetch() FULFILLS on a 409 and only rejects on network failure, so a wrapper that does .then(r => r.json()) without checking ok swallows every conflict this design defends with and the banner never fires. A 409 surfaces a 'changed underneath you' banner with Reload and DISCARDS THE LOCAL OPTIMISTIC BUFFER INSTEAD OF RETRYING, because retrying re-applies a decision made against stale state. refreshPlan() re-fetches /arrange and repaints from the response only, never from local state. Uses AbortController to cancel a superseded arrange fetch (an AbortSignal is single-use per request, so allocate a fresh controller each time). createAndActivateBunch posts to /api/bunches then /api/plans/<slug>/bunches and returns a DISCRIMINATED result so the caller can distinguish library-create-failed from activation-conflicted; the activation 409's {conflicting_bunch_id, shared_track_ids} is passed through UNFLATTENED, never collapsed into a message string, or the UI cannot name the conflict. setTransition accepts and sends author.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Vanilla ES module (no framework, no bundler, no node_modules) loaded with <script type="module">. Fetch wrappers that thread base_rev into EVERY mutation body automatically, so a caller cannot forget it. MUST CHECK response.ok: fetch() FULFILLS on a 409 and only rejects on network failure, so a wrapper that does .then(r => r.json()) without checking ok swallows every conflict this design defends with and the banner never fires. A 409 surfaces a 'changed underneath you' banner with Reload and DISCARDS THE LOCAL OPTIMISTIC BUFFER INSTEAD OF RETRYING, because retrying re-applies a decision made against stale state. refreshPlan() re-fetches /arrange and repaints from the response only, never from local state. Uses AbortController to cancel a superseded arrange fetch (an AbortSignal is single-use per request, so allocate a fresh controller each time). createAndActivateBunch posts to /api/bunches then /api/plans/<slug>/bunches and returns a DISCRIMINATED result so the caller can distinguish library-create-failed from activation-conflicted; the activation 409's {conflicting_bunch_id, shared_track_ids} is passed through UNFLATTENED, never collapsed into a message string, or the UI cannot name the conflict. setTransition accepts and sends author.
+
+% Output
+
+- Primary output: `brain/web/plan_client.js`.
+- PDD context tags: frontend, browser, client.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/web/plan_client.js` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For browser modules, also run `node --check brain/web/plan_client.js` and the plan frontend tests.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch — post_json_stringify_and_check_response_ok
+- https://developer.mozilla.org/en-US/docs/Web/API/Response/ok — fetch_does_not_reject_on_409
+- https://developer.mozilla.org/en-US/docs/Web/API/AbortController — cancel_superseded_arrange_fetch
+- https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal — signal_is_single_use_per_request
+- https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules — module_boundary_between_client_and_views

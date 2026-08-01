@@ -1,0 +1,2610 @@
+[
+  {
+    "reason": "Every other module in the feature exchanges plan identity, revision tokens, bunch records, transition overrides and provenance; without one shared vocabulary each would re-spell them and drift.",
+    "description": "Pure stdlib shared types, no I/O and no imports outside the standard library. Frozen dataclasses PlanMeta, PlanPaths, Rev, Bunch, OrderConstraints, TransitionOverride, EffectiveNote. PlanStatus is a StrEnum of exactly wip|ready|archived ('wip' is PRD-sourced from 'work in progress'; 'ready' and 'archived' are design-sourced and must not be back-attributed to the PRD). Author is a StrEnum of human|agent|llm ('llm' is PRD-sourced from 'work with an LLM'). Actor is a StrEnum of gui|cli|agent and is a DISTINCT type from Author that must never be merged despite both containing 'agent': actor is which surface issued the write, author is who composed the content, so an LLM driving the CLI is actor=cli, author=llm and collapsing them makes that case unrepresentable. TransitionOverride fields: from_track_id, to_track_id, technique?, beats?, showcase_move?, effects?, note?, author?, state (active|orphaned); author is optional so records written before the field existed round-trip as None rather than raising. PlanPaths has exactly 10 members: root, plan_json, selection, exclusions, playlist, mix_plan, notes, bunches, transitions, journal. slugify() NFKD-normalizes then reduces to a lowercase kebab slug; validate_slug() raises on anything else; header_safe() strips CR/LF because http.server's send_header does not validate them and display_name is free-form user text. RESERVED_SLUGS = {'active','trash'} plus a leading-dot rule: slugify('Active') must NOT return 'active' but route through the same -2/-3 collision path as a duplicate name, because a slug of 'active' collides with both the /api/plans/active route and plan_paths.resolve()'s active.json read.",
+    "dependencies": [],
+    "priority": 1,
+    "filename": "brain/plan_types_Python.prompt",
+    "filepath": "brain/plan_types.py",
+    "tags": [
+      "backend",
+      "plan",
+      "types"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/dataclasses.html",
+        "purpose": "frozen_dataclass_and_slots_semantics"
+      },
+      {
+        "url": "https://docs.python.org/3/library/enum.html",
+        "purpose": "strenum_json_safe_status_and_author"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unicodedata.html",
+        "purpose": "nfkd_normalization_for_slugify"
+      },
+      {
+        "url": "https://docs.python.org/3/library/re.html",
+        "purpose": "slug_character_class_and_collision_suffix"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "PlanStatus",
+            "signature": "class PlanStatus(StrEnum)  # wip | ready | archived",
+            "returns": "StrEnum member"
+          },
+          {
+            "name": "Author",
+            "signature": "class Author(StrEnum)  # human | agent | llm",
+            "returns": "StrEnum member"
+          },
+          {
+            "name": "Actor",
+            "signature": "class Actor(StrEnum)  # gui | cli | agent",
+            "returns": "StrEnum member"
+          },
+          {
+            "name": "PlanMeta",
+            "signature": "@dataclass(frozen=True) class PlanMeta  # plan_id, slug, display_name, status, origin, origin_ref, collection_id, created_at, updated_at, last_opened_at",
+            "returns": "PlanMeta"
+          },
+          {
+            "name": "Rev",
+            "signature": "@dataclass(frozen=True) class Rev  # composite token over the per-file digests in fixed key order",
+            "returns": "Rev"
+          },
+          {
+            "name": "Bunch",
+            "signature": "@dataclass(frozen=True) class Bunch  # bunch_id, label, track_ids, ordered, source, notes, archived",
+            "returns": "Bunch"
+          },
+          {
+            "name": "OrderConstraints",
+            "signature": "@dataclass(frozen=True) class OrderConstraints  # use_only, opener_id, adjacent, adjacent_ordered, regions, notes (mirrors mix_order_brief's existing dict shape)",
+            "returns": "OrderConstraints"
+          },
+          {
+            "name": "EffectiveNote",
+            "signature": "@dataclass(frozen=True) class EffectiveNote  # track_id, note, layer ('plan'|'global'), diverged, available",
+            "returns": "EffectiveNote"
+          },
+          {
+            "name": "PlanPaths",
+            "signature": "@dataclass(frozen=True) class PlanPaths  # 10 members",
+            "returns": "PlanPaths"
+          },
+          {
+            "name": "TransitionOverride",
+            "signature": "@dataclass(frozen=True) class TransitionOverride",
+            "returns": "TransitionOverride"
+          },
+          {
+            "name": "RESERVED_SLUGS",
+            "signature": "RESERVED_SLUGS: frozenset[str]  # {'active', 'trash'}",
+            "returns": "frozenset of slugs no plan may own"
+          },
+          {
+            "name": "slugify",
+            "signature": "slugify(name: str) -> str",
+            "returns": "kebab slug, never a reserved word"
+          },
+          {
+            "name": "validate_slug",
+            "signature": "validate_slug(slug: str) -> None",
+            "errors": [
+              "ValueError"
+            ]
+          },
+          {
+            "name": "header_safe",
+            "signature": "header_safe(value: str) -> str",
+            "returns": "CR/LF-stripped header value"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Today every module hardcodes the singleton paths playlist_selection.json / playlist.json / mix_plan.json; multiple plans are impossible until path resolution is one function.",
+    "description": "Resolves the on-disk layout for a plan. DEFAULT_PLANS_DIR is a module-level constant that tests patch (read it as plan_paths.DEFAULT_PLANS_DIR at call time, never 'from plan_paths import DEFAULT_PLANS_DIR', which binds a copy and is unpatchable). resolve(slug) returns a PlanPaths with all 10 declared members under plans/<slug>/. resolve() with no slug reads active.json and falls back to the legacy singleton paths when no plans directory exists, so a pre-migration checkout keeps working. Traversal guard: Path.resolve() FIRST (it is the only method that eliminates '..'), THEN a containment check against the plans dir, because relative_to() assumes no symlinks are present; '../' and absolute slugs raise rather than escaping.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt"
+    ],
+    "priority": 2,
+    "filename": "brain/plan_paths_Python.prompt",
+    "filepath": "brain/plan_paths.py",
+    "tags": [
+      "backend",
+      "plan",
+      "paths"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/pathlib.html",
+        "purpose": "resolve_and_is_relative_to_containment_check"
+      },
+      {
+        "url": "https://docs.python.org/3/library/os.path.html",
+        "purpose": "realpath_vs_abspath_symlink_difference"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "resolve",
+            "signature": "resolve(slug: str | None = None) -> PlanPaths",
+            "errors": [
+              "PlanNotFound",
+              "ValueError on traversal"
+            ]
+          },
+          {
+            "name": "legacy_paths",
+            "signature": "legacy_paths() -> PlanPaths",
+            "returns": "pre-migration singleton layout"
+          },
+          {
+            "name": "list_slugs",
+            "signature": "list_slugs() -> list[str]",
+            "returns": "directory scan of plans/*/plan.json"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "PlaylistApp holds selection state in memory with no version check, so an agent editing files on disk is silently clobbered by the next in-GUI save; 'press refresh and see the truth' needs an ownership contract, not just a button.",
+    "description": "Optimistic-concurrency primitives. file_rev(path) is a hashlib.file_digest sha256 hex digest, '' for a missing file. plan_rev(paths) digests the per-file digests in a fixed key order to produce one composite token. Content hashes, NOT mtimes: two writes inside one filesystem tick are indistinguishable by mtime, and that is precisely the agent-writes-then-GUI-writes race this module exists to catch. write_checked(path, data, base_rev) re-reads the current rev, raises StalePlanError carrying {current_rev, changed_files, summary} on mismatch, and otherwise writes atomically via a temp file in the SAME directory plus os.replace (os.replace is only atomic within one filesystem). Conflicts surface as 409 with the payload in the body rather than If-Match/412: RFC 9110 strong comparison and the fact that If-Match is not a standard pairing with POST make it the wrong fit when all 19 existing mutations are POST with JSON bodies. Emit ETag on plan GETs anyway, since it is free and useful to curl-driven harnesses.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_paths_Python.prompt"
+    ],
+    "priority": 3,
+    "filename": "brain/plan_revision_Python.prompt",
+    "filepath": "brain/plan_revision.py",
+    "tags": [
+      "backend",
+      "plan",
+      "concurrency"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/hashlib.html",
+        "purpose": "file_digest_sha256_rev_token"
+      },
+      {
+        "url": "https://docs.python.org/3/library/os.html",
+        "purpose": "os_replace_atomic_same_filesystem"
+      },
+      {
+        "url": "https://docs.python.org/3/library/tempfile.html",
+        "purpose": "named_temp_file_in_target_directory"
+      },
+      {
+        "url": "https://www.rfc-editor.org/rfc/rfc9110#section-13.2",
+        "purpose": "precondition_evaluation_before_payload"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Conditional_requests",
+        "purpose": "mid_air_collision_workflow"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "file_rev",
+            "signature": "file_rev(path: Path) -> str",
+            "returns": "sha256 hex, '' when missing"
+          },
+          {
+            "name": "plan_rev",
+            "signature": "plan_rev(paths: PlanPaths) -> Rev",
+            "returns": "composite rev over fixed key order"
+          },
+          {
+            "name": "read_with_rev",
+            "signature": "read_with_rev(path: Path) -> tuple[dict, str]"
+          },
+          {
+            "name": "write_checked",
+            "signature": "write_checked(path: Path, data, base_rev: str | None) -> str",
+            "returns": "new rev",
+            "errors": [
+              "StalePlanError"
+            ],
+            "sideEffects": "temp-in-same-dir + os.replace"
+          },
+          {
+            "name": "StalePlanError.payload",
+            "signature": "payload() -> dict",
+            "returns": "{current_rev, changed_files, summary}"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The PRD's core loop is 'an AI agent changed my mix, I press refresh and see what changed'; without an append-only record the What-changed strip has nothing to render.",
+    "description": "Append-only JSON Lines journal at plans/<slug>/journal.jsonl, one valid JSON value per line written with compact separators. append(slug, actor, action, detail, rev_before, rev_after, author=None) issues a single O_APPEND write with no read-modify-write, so concurrent ThreadingHTTPServer threads cannot interleave a partial record. actor is validated against plan_types.Actor and author independently against plan_types.Author (actor=cli with author=llm is legal and is the case the PRD cares about); an unknown value for either raises. read(slug, limit, actor=None, author=None) returns newest-first and TOLERATES a truncated final line by skipping it rather than raising, because a crash mid-append must not make the whole journal unreadable. Lines written before the author field existed read back as author=None: the journal is append-only and cannot be rewritten.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_paths_Python.prompt"
+    ],
+    "priority": 4,
+    "filename": "brain/plan_journal_Python.prompt",
+    "filepath": "brain/plan_journal.py",
+    "tags": [
+      "backend",
+      "plan",
+      "provenance"
+    ],
+    "context_urls": [
+      {
+        "url": "https://jsonlines.org/",
+        "purpose": "one_valid_json_value_per_line"
+      },
+      {
+        "url": "https://docs.python.org/3/library/os.html",
+        "purpose": "o_append_single_write_no_read_modify_write"
+      },
+      {
+        "url": "https://docs.python.org/3/library/json.html",
+        "purpose": "compact_separators_single_line_dumps"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "append",
+            "signature": "append(slug, actor, action, detail, rev_before, rev_after, author=None) -> None",
+            "sideEffects": "single O_APPEND write to plans/<slug>/journal.jsonl",
+            "errors": [
+              "ValueError on unknown actor/author"
+            ]
+          },
+          {
+            "name": "read",
+            "signature": "read(slug, limit=50, *, actor=None, author=None) -> list[dict]",
+            "returns": "newest-first entries; truncated tail skipped"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The PRD asks to keep several work-in-progress mixes and switch between them; that is a plan lifecycle CRUD surface, which does not exist today.",
+    "description": "Plan lifecycle over directory-per-plan JSON so agent harnesses can edit plans with plain file tools. list() is a DIRECTORY SCAN of plans/*/plan.json with no registry file: a harness will cp -r a plan directory, and a registry makes that copy invisible and creates a permanent index-vs-directory desync class. Only active.json survives as a pointer. create() births a plan at status='wip' so the state is never unset. rename() changes display_name ONLY; the slug is frozen at creation so an agent's --plan reference survives a rename with no directory move. duplicate() uses shutil.copytree (3.13-compatible, not Path.copy() which is 3.14-only) with dirs_exist_ok left at its default False so a collision raises FileExistsError instead of merging into an existing plan directory; the copy gets a fresh plan_id and origin='duplicated'. delete() moves to plans/.trash/<slug>/ with a tombstone and never rm -rf. set_status() validates against PlanStatus and refuses anything else rather than persisting it; archived leaves the directory in place, because archived is not deleted. Slug collisions and reserved slugs both append -2, -3.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_journal_Python.prompt"
+    ],
+    "priority": 5,
+    "filename": "brain/plan_store_Python.prompt",
+    "filepath": "brain/plan_store.py",
+    "tags": [
+      "backend",
+      "plan",
+      "store"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/shutil.html",
+        "purpose": "copytree_dirs_exist_ok_false_raises"
+      },
+      {
+        "url": "https://docs.python.org/3/library/pathlib.html",
+        "purpose": "directory_scan_and_rename"
+      },
+      {
+        "url": "https://docs.python.org/3/library/enum.html",
+        "purpose": "planstatus_validation_on_write"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "create",
+            "signature": "create(display_name: str, *, collection_id: str | None = None) -> PlanMeta",
+            "returns": "plan born status='wip'"
+          },
+          {
+            "name": "list",
+            "signature": "list(*, status: PlanStatus | None = None) -> list[PlanMeta]",
+            "returns": "directory scan, no registry"
+          },
+          {
+            "name": "get",
+            "signature": "get(slug: str) -> PlanMeta",
+            "returns": "one plan's metadata",
+            "errors": [
+              "PlanNotFound"
+            ]
+          },
+          {
+            "name": "rename",
+            "signature": "rename(slug: str, display_name: str) -> PlanMeta",
+            "sideEffects": "display_name only, slug frozen"
+          },
+          {
+            "name": "set_status",
+            "signature": "set_status(slug: str, status: PlanStatus, base_rev: str) -> PlanMeta",
+            "errors": [
+              "StalePlanError",
+              "ValueError"
+            ]
+          },
+          {
+            "name": "duplicate",
+            "signature": "duplicate(slug: str, display_name: str) -> PlanMeta",
+            "errors": [
+              "FileExistsError"
+            ]
+          },
+          {
+            "name": "delete",
+            "signature": "delete(slug: str) -> None",
+            "sideEffects": "soft-delete into plans/.trash/"
+          },
+          {
+            "name": "get_active",
+            "signature": "get_active() -> PlanMeta | None"
+          },
+          {
+            "name": "set_active",
+            "signature": "set_active(slug: str) -> PlanMeta"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Every request must agree on which plan it is talking about; the current in-memory PlaylistApp.selection is the silent-clobber bug this replaces.",
+    "description": "Resolves the plan scope for one request in precedence order body.plan -> ?plan= -> active.json. STATELESS by construction: no caching and no module-level mutable state, because the server is a ThreadingHTTPServer (thread-per-request) and because PlaylistApp holding authoritative selection state in memory is exactly the defect that lets an agent's on-disk edit be overwritten by the next in-GUI save. An unknown slug raises a structured PlanNotFound that the router turns into a 404. Safe to call concurrently from multiple request threads.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_store_Python.prompt"
+    ],
+    "priority": 6,
+    "filename": "brain/plan_context_Python.prompt",
+    "filepath": "brain/plan_context.py",
+    "tags": [
+      "backend",
+      "plan",
+      "request-scope"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "thread_per_request_no_shared_state"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "parse_qs_plan_query_param"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "for_request",
+            "signature": "for_request(query: dict, body: dict) -> PlanScope",
+            "returns": "PlanScope = (meta, paths, rev)",
+            "errors": [
+              "PlanNotFound"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "'These 2-4 songs sound very good together' is durable knowledge about the songs themselves, so it belongs to the library, not to one plan.",
+    "description": "Library-scoped SQLite storage appending two CREATE TABLE IF NOT EXISTS blocks (bunches, bunch_members) to brain/library_index.py's SCHEMA. Sets PRAGMA foreign_keys = ON IMMEDIATELY AFTER connect(), before any statement opens a transaction: the pragma is per-connection, off by default, and a no-op inside a transaction where it silently reports success and leaves the declared ON DELETE CASCADE dead. Enabling it is safe precisely because no existing table in this database declares a constraint. OVERLAPPING BUNCHES ARE ACCEPTED here on purpose: you will legitimately learn that A->B is great and that B->C is great, and a store that refuses to hold both is discarding real ears-on knowledge; disjointness is a property of one ordering and is enforced at activation time in module 8. Every call uses 'with closing(sqlite3.connect(db, timeout=30))'. This module is LIBRARY-SCOPED AND JOURNALS NOTHING, because plan_journal.append requires a slug and a library bunch belongs to no single plan; archive() and update_members() instead return structured ArchiveResult/MembersResult (auto_archived, member_count, reason) and the plan-scoped caller writes the journal entries. Silently dropping a bunch below 2 members without returning that fact is the defect being closed.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt"
+    ],
+    "priority": 7,
+    "filename": "brain/bunch_store_Python.prompt",
+    "filepath": "brain/bunch_store.py",
+    "tags": [
+      "backend",
+      "bunch",
+      "sqlite",
+      "library"
+    ],
+    "context_urls": [
+      {
+        "url": "https://sqlite.org/foreignkeys.html",
+        "purpose": "pragma_per_connection_noop_in_transaction"
+      },
+      {
+        "url": "https://docs.python.org/3/library/sqlite3.html",
+        "purpose": "check_same_thread_and_legacy_transaction_control"
+      },
+      {
+        "url": "https://docs.python.org/3/library/contextlib.html",
+        "purpose": "closing_connection_per_call"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "connect",
+            "signature": "connect(db_path: Path) -> sqlite3.Connection",
+            "sideEffects": "PRAGMA foreign_keys=ON before any transaction"
+          },
+          {
+            "name": "create",
+            "signature": "create(label, track_ids, ordered, source, notes) -> Bunch",
+            "errors": [
+              "ValueError when fewer than 2 members"
+            ]
+          },
+          {
+            "name": "list",
+            "signature": "list(include_archived: bool = False) -> list[Bunch]"
+          },
+          {
+            "name": "list_for_track",
+            "signature": "list_for_track(track_id: str) -> list[Bunch]"
+          },
+          {
+            "name": "get",
+            "signature": "get(bunch_id: int) -> Bunch",
+            "returns": "one bunch with ordered members",
+            "errors": [
+              "KeyError on unknown bunch_id"
+            ]
+          },
+          {
+            "name": "update_members",
+            "signature": "update_members(bunch_id: int, track_ids: list[str]) -> MembersResult",
+            "returns": "structured result; caller journals"
+          },
+          {
+            "name": "archive",
+            "signature": "archive(bunch_id: int) -> ArchiveResult",
+            "returns": "structured result; caller journals"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "A library bunch that is never activated constrains nothing; activation is what turns ears-on knowledge into an ordering constraint for one plan.",
+    "description": "Per-plan activation records at plans/<slug>/bunches.json. THE DISJOINTNESS GATE LIVES HERE AND NOWHERE ELSE: an activation intersecting an already-enabled bunch is rejected naming the conflicting bunch_id and the shared track_ids, so the caller can render the conflict rather than a generic error. region is validated against the imported mix_order_brief.REGION_SLICES rather than a re-spelled copy. Activating an archived bunch is returned with a warning flag, not pruned. Every successful activate/deactivate appends EXACTLY ONE journal entry with rev_before/rev_after; a rejected activation appends NONE, because a 409 changed nothing. plans_activating(bunch_id) is a reverse lookup scanning plans/*/bunches.json so a library-level bunch edit or archive can journal into every plan it actually constrains; without it, archiving a bunch silently changes N plans with no trace in any of their journals.",
+    "dependencies": [
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/bunch_store_Python.prompt"
+    ],
+    "priority": 8,
+    "filename": "brain/plan_bunch_activation_Python.prompt",
+    "filepath": "brain/plan_bunch_activation.py",
+    "tags": [
+      "backend",
+      "bunch",
+      "plan"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/pathlib.html",
+        "purpose": "glob_plans_activating_reverse_lookup"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "overlap_rejection_is_state_conflict"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "list_active",
+            "signature": "list_active(slug: str) -> list[dict]"
+          },
+          {
+            "name": "activate",
+            "signature": "activate(slug, bunch_id, *, region=None, base_rev) -> dict",
+            "errors": [
+              "OverlapConflict",
+              "StalePlanError"
+            ],
+            "sideEffects": "one journal entry on success, none on rejection"
+          },
+          {
+            "name": "deactivate",
+            "signature": "deactivate(slug, bunch_id, *, base_rev) -> dict",
+            "sideEffects": "one journal entry"
+          },
+          {
+            "name": "check_disjoint",
+            "signature": "check_disjoint(slug, bunch_id) -> Conflict | None",
+            "returns": "{conflicting_bunch_id, shared_track_ids} or None"
+          },
+          {
+            "name": "plans_activating",
+            "signature": "plans_activating(bunch_id: int) -> list[str]",
+            "returns": "slugs whose bunches.json references this bunch"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "dj_notes is a column on tracks keyed by track_id, so it is global per song and one track cannot carry different notes in two plans; that blocks the whole feature.",
+    "description": "TRACK-scoped note override layer at plans/<slug>/notes.json. The global tracks.dj_notes column stays the default and plans store sparse overrides on top: this is the only design that gets per-plan divergence without orphaning hand-verified notes, which the sibling portable-collection intent requires outright, and the library index has no migration framework or version table so altering the column has no supported path anyway. get_effective(slug, track_ids) returns EffectiveNote with layer='plan'|'global' and a diverged flag. set_override/clear_override NEVER write tracks.dj_notes by any path; clearing falls back to the global note, never to ''. An override whose track is available=0 is RETAINED and flagged, never dropped, because an unmounted collection must not be read as deleted. Each accepted set/clear appends exactly one journal entry carrying the author already in its signature. Transition-scoped notes are module 10's, not this module's.",
+    "dependencies": [
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_journal_Python.prompt"
+    ],
+    "priority": 9,
+    "filename": "brain/plan_notes_Python.prompt",
+    "filepath": "brain/plan_notes.py",
+    "tags": [
+      "backend",
+      "plan",
+      "notes"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/sqlite3.html",
+        "purpose": "read_only_global_dj_notes_access"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "get_effective",
+            "signature": "get_effective(slug: str, track_ids: list[str]) -> list[EffectiveNote]",
+            "returns": "note + layer + diverged"
+          },
+          {
+            "name": "set_override",
+            "signature": "set_override(slug, track_id, note, author, base_rev) -> str",
+            "sideEffects": "one journal entry; never touches tracks.dj_notes"
+          },
+          {
+            "name": "clear_override",
+            "signature": "clear_override(slug, track_id, base_rev) -> EffectiveNote",
+            "returns": "the global note that took over"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Segments are currently derived outputs, not stored records, so there is nothing for an LLM to edit when the PRD asks to adjust transitions and effects by talking to one.",
+    "description": "Sparse override layer at plans/<slug>/transitions.json, stored as a list KEYED BY THE (from_track_id, to_track_id) PAIR rather than by index, so an override survives unrelated reordering. merge(segments, overrides) patches only non-null fields onto the derived segments and sets overridden plus override_fields, keeping the beatgrid/phrase derivation authoritative. NULL MEANS LEAVE UNCHANGED AND {clear:true} MEANS DELETE. This is a DELIBERATE DIVERGENCE FROM RFC 7396 JSON Merge Patch, where null deletes; state it explicitly in generated code and docstrings, because the LLM path is exactly where merge-patch semantics would be wrongly assumed and {'beats': null} would silently destroy the beat count. reconcile(order, overrides) marks a pair that is no longer adjacent as orphaned and RESTORES it to active on re-adjacency, so removing and re-adding a track restores its transitions. technique and showcase_move are free strings, never closed enums, because build_mix_plan.py:1288 composes f'dj_format_{recipe}' at runtime and an enum breaks the builder. upsert persists author on the record itself so an LLM-written transition is distinguishable from a hand-written one at rest, not only in the journal. upsert and clear each append exactly one journal entry; reconcile called as part of another module's write journals NOTHING of its own and is recorded in that write's detail, or the What-changed strip fills with noise on every reorder.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_journal_Python.prompt"
+    ],
+    "priority": 10,
+    "filename": "brain/transition_overrides_Python.prompt",
+    "filepath": "brain/transition_overrides.py",
+    "tags": [
+      "backend",
+      "plan",
+      "transitions"
+    ],
+    "context_urls": [
+      {
+        "url": "https://www.rfc-editor.org/rfc/rfc7396",
+        "purpose": "merge_patch_null_semantics_deliberately_not_used"
+      },
+      {
+        "url": "https://docs.python.org/3/library/dataclasses.html",
+        "purpose": "optional_author_field_backward_compatible"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "load",
+            "signature": "load(slug: str) -> list[TransitionOverride]"
+          },
+          {
+            "name": "upsert",
+            "signature": "upsert(slug, override: TransitionOverride, base_rev, *, author=None) -> str",
+            "sideEffects": "one journal entry, author persisted on the record"
+          },
+          {
+            "name": "clear",
+            "signature": "clear(slug, from_id, to_id, base_rev) -> str",
+            "sideEffects": "reverts segment to derived"
+          },
+          {
+            "name": "merge",
+            "signature": "merge(segments: list[dict], overrides) -> list[dict]",
+            "returns": "segments with overridden + override_fields"
+          },
+          {
+            "name": "reconcile",
+            "signature": "reconcile(order: list[str], overrides) -> list[TransitionOverride]",
+            "returns": "orphaned/re-activated records; journals nothing itself"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The PRD's 'move these n songs together as a unit' must be honored by the orderers; the existing pairwise force_adjacent silently strands members and never scores the seams.",
+    "description": "The riskiest module in the feature: the only one that changes behaviour inside working, ear-tested ordering code. CONTRACT BUNCHES INTO SUPERNODES, DO NOT PENALIZE EDGES. The textbook clustered-TSP reduction adds a large constant M to inter-cluster edges, but that guarantee holds only for an EXACT solver; greedy_mix_order is a nearest-neighbour tour, so a greedy pass can strand a member no matter how big M is. contract(rows, groups) collapses each n-ary group to one pseudo-track whose entry features come from the first member and exit features from the last, which makes non-contiguity structurally impossible AND fixes the real defect: the seams finally get scored, because the in-edge scores against the head and the out-edge against the tail. expand(order, table) restores members and NO PSEUDO ID MAY APPEAR IN ANY RETURNED ORDER. assert_intact raises on non-contiguity as a post-condition check, which the current code has none of. merge_groups(pairs) promotes pairwise constraints to n-ary groups so chaining (A,B) then (B,C) yields [A,B,C] and DOES NOT STRAND A, the verified defect at mix_order_brief.py:199 where both members are pulled out and reinserted. Replaces the pairwise implementation behind the existing dict shape so mix_order_brief's callers are unchanged.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/bunch_store_Python.prompt"
+    ],
+    "priority": 11,
+    "filename": "brain/order_constraints_Python.prompt",
+    "filepath": "brain/order_constraints.py",
+    "tags": [
+      "backend",
+      "bunch",
+      "ordering"
+    ],
+    "context_urls": [
+      {
+        "url": "https://arxiv.org/abs/2007.05254",
+        "purpose": "clustered_tsp_contraction_reduction"
+      },
+      {
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3950363/",
+        "purpose": "ordered_cluster_contiguity_constraint"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "from_activations",
+            "signature": "from_activations(slug: str) -> OrderConstraints"
+          },
+          {
+            "name": "merge_groups",
+            "signature": "merge_groups(pairs: list[tuple[str, str]]) -> list[list[str]]",
+            "returns": "n-ary groups; chained pairs coalesce"
+          },
+          {
+            "name": "contract",
+            "signature": "contract(rows: list[dict], groups: list[list[str]]) -> tuple[list[dict], dict]",
+            "returns": "(pseudo-rows, expansion table)"
+          },
+          {
+            "name": "expand",
+            "signature": "expand(order: list[str], table: dict) -> list[str]",
+            "returns": "member ids only, never a pseudo id"
+          },
+          {
+            "name": "assert_intact",
+            "signature": "assert_intact(order: list[str], groups) -> None",
+            "errors": [
+              "ConstraintViolation"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "mix_plan.json must carry which plan produced it and which inputs it was built from, or staleness cannot be computed and the Arrange tab cannot attribute anything.",
+    "description": "Pure function over a dict; DOES NOT import build_mix_plan, so it stays cheap to test and free of the 1895-line module. decorate(plan_dict, slug, paths) returns a version:3 envelope adding plan_id, plan_slug, dj_format, bunches[] provenance and source_revs{...}. READERS ACCEPT BOTH VERSION 2 AND 3, so existing artifacts keep loading. Does not narrow event.op: all 9 existing ops must survive a round-trip unchanged. Carries each segment's author through into the envelope so the Arrange tab can render attribution without a second lookup. source_revs is what retires the _plan_stale heuristic, which compares track-id sets and is therefore structurally blind to a changed dj_note, a changed transition, or a pure reorder.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_bunch_activation_Python.prompt",
+      "brain/plan_notes_Python.prompt",
+      "brain/transition_overrides_Python.prompt"
+    ],
+    "priority": 12,
+    "filename": "brain/plan_mix_envelope_Python.prompt",
+    "filepath": "brain/plan_mix_envelope.py",
+    "tags": [
+      "backend",
+      "plan",
+      "mix"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/json.html",
+        "purpose": "version_tolerant_envelope_round_trip"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "decorate",
+            "signature": "decorate(plan: dict, slug: str, paths: PlanPaths) -> dict",
+            "returns": "version:3 envelope with source_revs and per-segment author"
+          },
+          {
+            "name": "read_tolerant",
+            "signature": "read_tolerant(path: Path) -> dict",
+            "returns": "accepts version 2 and 3"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The GUI's build_mix calls compose_mix_plan IN-PROCESS against the module-level MIX_PLAN_PATH, so adding a --plan flag to build_mix_plan.py would never reach it and the Arrange tab would be permanently empty.",
+    "description": "The single plan-aware entry to mix composition, callable from both the GUI and the CLI so the two cannot produce different artifacts. build(slug, **opts) resolves EVERY path from PlanPaths and never from MIX_PLAN_PATH or DEFAULT_PLAYLIST_JSON, injects effective notes plus ordering constraints plus transition overrides, calls the existing compose_mix_plan, wraps the result through decorate(), writes plans/<slug>/mix_plan.json and appends one journal entry. For every build mode (including NemoClaw order, H Company order, and Feel only), the selected tracks are an AVAILABLE POOL, not a required playback order: the builder may reorder the finalized playlist as needed for mix quality, must preserve every available track exactly once unless explicit subset constraints say otherwise, and must return the candidate order for user review before Start mix. Any natural-language ordering constraints may be interpreted with LLM help, but mix-quality ordering itself must not require an LLM and must still work in every mode. H Company planning-only ordering must not require or start a local desktop bridge. When downstream execution needs a Mixxx control API port, preserve an explicit override as highest priority and otherwise propagate the discovered/reused validated localhost control port consistently rather than assuming 9995. Exports playlist_path(slug) and mix_plan_path(slug) so start_mix, reexport_finalized and start_enrich resolve the same way rather than re-deriving paths. Without this module /api/mix/build writes the legacy singleton while api_plan_arrange reads plans/<slug>/mix_plan.json, and /api/mix/start plays the wrong plan under a live run. Exists as its own module rather than an inline diff because playlist_editor.py is 1437 lines, past the single-prompt regeneration ceiling. Keep the legacy constants in place as a fallback so the existing tests' patch-the-constant idiom survives.",
+    "dependencies": [
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/plan_notes_Python.prompt",
+      "brain/transition_overrides_Python.prompt",
+      "brain/order_constraints_Python.prompt",
+      "brain/plan_mix_envelope_Python.prompt"
+    ],
+    "priority": 13,
+    "filename": "brain/plan_mix_build_Python.prompt",
+    "filepath": "brain/plan_mix_build.py",
+    "tags": [
+      "backend",
+      "plan",
+      "mix",
+      "integration"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/pathlib.html",
+        "purpose": "per_plan_path_resolution"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_default_path_constants_in_tests"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "build",
+            "signature": "build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **opts) -> dict",
+            "sideEffects": "writes plans/<slug>/mix_plan.json, one journal entry"
+          },
+          {
+            "name": "playlist_path",
+            "signature": "playlist_path(slug: str) -> Path"
+          },
+          {
+            "name": "mix_plan_path",
+            "signature": "mix_plan_path(slug: str) -> Path"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "'Press refresh and see the truth' is only true if the server can tell that the built mix no longer matches its inputs.",
+    "description": "is_stale(slug) compares the built mix_plan's source_revs against the current file revs. Detects a changed dj_note, a changed transition and a pure reorder, the three cases the existing _plan_stale (playlist_editor.py:618-635) is blind to because it compares track-id sets. A version-2 plan with no source_revs reports stale=True with reason='no_source_revs' rather than guessing. NEVER triggers a rebuild itself: it reports, the caller decides.",
+    "dependencies": [
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_mix_envelope_Python.prompt"
+    ],
+    "priority": 14,
+    "filename": "brain/plan_staleness_Python.prompt",
+    "filepath": "brain/plan_staleness.py",
+    "tags": [
+      "backend",
+      "plan",
+      "staleness"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/hashlib.html",
+        "purpose": "source_rev_comparison"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "is_stale",
+            "signature": "is_stale(slug: str) -> dict",
+            "returns": "{stale: bool, changed_inputs: list[str], reason: str}",
+            "sideEffects": "none; never rebuilds"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "An existing working set lives in the legacy singleton files; without a one-shot promotion the user's current mix is stranded the moment plans exist.",
+    "description": "Promotes the legacy singletons (playlist_selection.json, playlist.json, mix_plan.json) into plan #1 with origin='migrated' and status='wip'. ATOMIC OR ABORTED: copy before promote so a failure rolls back, and finish with os.replace rather than a partial in-place rewrite. Guarded by PRAGMA user_version so a rerun is a no-op and a half-finished run FAILS LOUDLY rather than silently duplicating rows or dropping lookups, which the portable-collection intent requires by name. Flip user_version LAST and inside the transaction; issue PRAGMA foreign_keys outside it. --dry-run prints the backfill report and writes nothing. Exposed as 'python -m brain.plan_migration' and documented in PROGRESS.md as a required one-time step.",
+    "dependencies": [
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_store_Python.prompt",
+      "brain/plan_bunch_activation_Python.prompt",
+      "brain/plan_notes_Python.prompt",
+      "brain/transition_overrides_Python.prompt"
+    ],
+    "priority": 15,
+    "filename": "brain/plan_migration_Python.prompt",
+    "filepath": "brain/plan_migration.py",
+    "tags": [
+      "backend",
+      "plan",
+      "migration"
+    ],
+    "context_urls": [
+      {
+        "url": "https://sqlite.org/pragma.html#pragma_user_version",
+        "purpose": "version_flip_last_inside_transaction"
+      },
+      {
+        "url": "https://sqlite.org/foreignkeys.html",
+        "purpose": "pragma_outside_transaction_ordering"
+      },
+      {
+        "url": "https://docs.python.org/3/library/shutil.html",
+        "purpose": "copy_before_promote_rollback"
+      },
+      {
+        "url": "https://docs.python.org/3/library/os.html",
+        "purpose": "atomic_replace_or_abort"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "main",
+            "signature": "main(argv: list[str] | None = None) -> int",
+            "returns": "exit code"
+          },
+          {
+            "name": "migrate",
+            "signature": "migrate(*, dry_run: bool = False) -> dict",
+            "returns": "backfill report",
+            "errors": [
+              "MigrationAborted"
+            ],
+            "sideEffects": "atomic promotion guarded by PRAGMA user_version"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Routing today is a literal if self.path == ... chain with 6 GET and 19 POST exact matches and no path parameters, so /api/plans/<slug>/tracks is physically unreachable until dispatch changes.",
+    "description": "Replaces the exact-match chain at playlist_editor.py:1262-1414. register(pattern, methods, handler) and route(method, path) with <param> segments; match on the urlparse()d path, never on raw self.path, or a query string defeats every pattern. ALL 25 EXISTING ROUTES MUST STILL RESOLVE UNCHANGED, which makes this the highest-regression-risk change in the feature. MATCHING RULE: segments are scored per position and a LITERAL SEGMENT OUTRANKS A <param> SEGMENT AT THE SAME POSITION REGARDLESS OF REGISTRATION ORDER; the highest-scoring pattern wins. Without this rule, registration order silently decides whether GET /api/plans/active reaches module 19 or is swallowed by module 20's <slug> and 404s on an unknown plan. Ties are impossible because two identical patterns cannot both register. Unknown path -> 404. Wrong method -> 405 WITH AN Allow HEADER naming the registered methods for that pattern; MDN documents the header as mandatory on 405, this module already knows the methods so emitting it is free, and without it an agent harness cannot tell a typo'd path from a wrong verb. A handler raising StalePlanError is translated HERE to 409 with the conflict payload in the body, so no individual route repeats it.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_context_Python.prompt"
+    ],
+    "priority": 16,
+    "filename": "brain/api_router_Python.prompt",
+    "filepath": "brain/api_router.py",
+    "tags": [
+      "backend",
+      "api",
+      "routing"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "no_path_parameters_dispatch_is_yours"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "match_on_path_never_raw_self_path"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/405",
+        "purpose": "405_must_carry_allow_header"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "staleplanerror_translation_point"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "register",
+            "signature": "register(pattern: str, methods: tuple[str, ...], handler) -> None"
+          },
+          {
+            "name": "route",
+            "signature": "route(method: str, path: str) -> tuple[handler, dict]",
+            "returns": "(handler, path params)",
+            "errors": [
+              "NotFound -> 404",
+              "MethodNotAllowed -> 405 with Allow header"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "playlist_editor.py has no /web/ route at all, so modules 32-35 are unreachable orphans until one exists; they are the first external JS in this repo.",
+    "description": "Serves brain/web/*.js and *.css. SERVE .js AS text/javascript AND .css AS text/css FROM A LITERAL TWO-ENTRY MAP, not mimetypes.guess_type: guess_type reads /etc/apache2/mime.types and seven other system files at module init, so its answer is this box's answer rather than a contract, and MDN is explicit that scripts served with any other MIME type may not run while CSS sent as text/plain or application/octet-stream is IGNORED. Use guess_type only as a fallback for other extensions. This is the second silent failure mode on the same path as the arrange.js filename fix: right file, wrong Content-Type, fetched and refused, nav button never appears, nothing in the server log. SCRIPT MODEL: modules 32-35 are ES modules loaded with <script type=\"module\">, chosen because 33/34/35 all import 32 and classic scripts would require a global namespace plus load-order discipline in playlist.html; same-origin here so the CORS requirement on module scripts is moot, and module scripts are deferred by default. Path confined to WEB_ROOT via Path.resolve() then containment; '..' and absolute paths rejected. ETag plus 304 with the required headers on Not Modified. A startup assertion (or test) checks that every <script src=\"/web/...\"> in playlist.html names a file on disk AND that this module serves it with a JavaScript MIME type.",
+    "dependencies": [
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 17,
+    "filename": "brain/api/api_static_assets_Python.prompt",
+    "filepath": "brain/api/api_static_assets.py",
+    "tags": [
+      "backend",
+      "api",
+      "static",
+      "frontend"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types",
+        "purpose": "text_javascript_and_text_css_required"
+      },
+      {
+        "url": "https://docs.python.org/3/library/mimetypes.html",
+        "purpose": "guess_type_reads_system_files_use_literal_map"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/script/type",
+        "purpose": "module_scripts_deferred_and_cors_fetched"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules",
+        "purpose": "es_modules_in_browser_without_bundler"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag",
+        "purpose": "asset_etag_generation"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/If-None-Match",
+        "purpose": "weak_comparison_on_get"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/304",
+        "purpose": "headers_required_on_not_modified"
+      },
+      {
+        "url": "https://docs.python.org/3/library/pathlib.html",
+        "purpose": "web_root_containment_check"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/web/<file>",
+            "auth": "none",
+            "responseSchema": "file bytes with text/javascript or text/css",
+            "errors": [
+              "404 unknown or out-of-root file",
+              "304 on If-None-Match match"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The plan picker needs one call that lists every work-in-progress mix and one call that creates a new one.",
+    "description": "GET /api/plans returns every plan with slug, display_name, status, updated_at, track_count and stale, sorted by last_opened_at descending. status is a PlanStatus value written by plan_store, not a free string, so a plan created through POST comes back 'wip' immediately. ?status= filters; archived plans are EXCLUDED BY DEFAULT and included with ?status=archived. POST creates from {display_name} and returns the allocated slug. Duplicate display names are allowed (the slug disambiguates with -2/-3). An empty or whitespace-only display_name is a 400 naming the field, NOT a 500.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_store_Python.prompt",
+      "brain/plan_staleness_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 18,
+    "filename": "brain/api/api_plans_collection_Python.prompt",
+    "filepath": "brain/api/api_plans_collection.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "status_filter_query_param"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/400",
+        "purpose": "empty_display_name_is_400_not_500"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/plans",
+            "auth": "none",
+            "responseSchema": "{plans: [{slug, display_name, status, updated_at, track_count, stale}]}"
+          },
+          {
+            "method": "POST",
+            "path": "/api/plans",
+            "auth": "none",
+            "requestSchema": "{display_name: string}",
+            "responseSchema": "{slug, display_name, status: 'wip'}",
+            "errors": [
+              "400 empty display_name"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Switching between plans is the PRD's headline verb and needs a server-side pointer the CLI and GUI both read.",
+    "description": "GET returns the currently active plan payload. POST {slug} sets the pointer and returns the plan. REFUSES WITH 409 WHILE app.mix_state.running: switching the active plan under a live run is the same class of race as pulling a track out of a playing set. An unknown slug is a 404 and leaves the pointer unchanged. REACHABILITY: this route only resolves because api_router scores a literal segment above a <param> segment; registered naively it is swallowed by /api/plans/<slug>. The reserved-slug set in plan_types is the second, independent defense, since the router rule does not stop a plans/active/ directory from shadowing active.json on disk.",
+    "dependencies": [
+      "brain/plan_store_Python.prompt",
+      "brain/plan_context_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 19,
+    "filename": "brain/api/api_plans_active_Python.prompt",
+    "filepath": "brain/api/api_plans_active.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/plans/active",
+            "auth": "none",
+            "responseSchema": "PlanMeta + rev"
+          },
+          {
+            "method": "POST",
+            "path": "/api/plans/active",
+            "auth": "none",
+            "requestSchema": "{slug: string}",
+            "responseSchema": "PlanMeta + rev",
+            "errors": [
+              "404 unknown slug",
+              "409 while mix_state.running"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Rename, lifecycle status and soft-delete are the plan-management verbs the picker exposes, and every one of them needs a rev guard.",
+    "description": "GET returns PlanMeta plus rev plus staleness with an ETag BUILT FROM THE REV AND THE SLUG, NEVER FROM display_name: display_name is free-form user text, http.server's send_header() does not validate CRLF, and anything reaching ETag, Location or Content-Disposition must go through plan_types.header_safe() or use the slug. POST {display_name} renames WITHOUT moving the directory, so an agent's --plan reference survives. POST {status, base_rev} delegates to plan_store.set_status; a status outside PlanStatus is a 400 NAMING THE LEGAL VALUES and is rejected before any write touches disk, not a 500. POST {action:'delete'} soft-deletes into .trash. Every mutation carries base_rev and answers 409 on mismatch. Journaling belongs to plan_store and is not repeated here.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_store_Python.prompt",
+      "brain/plan_staleness_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 20,
+    "filename": "brain/api/api_plan_detail_Python.prompt",
+    "filepath": "brain/api/api_plan_detail.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag",
+        "purpose": "rev_as_entity_tag_slug_substituted"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "send_header_does_not_validate_crlf"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/400",
+        "purpose": "unknown_status_string_rejected_early"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/plans/<slug>",
+            "auth": "none",
+            "responseSchema": "{meta, rev, stale, changed_inputs}",
+            "errors": [
+              "404 unknown slug"
+            ]
+          },
+          {
+            "method": "POST",
+            "path": "/api/plans/<slug>",
+            "auth": "none",
+            "requestSchema": "{display_name?, status?, action?: 'delete', base_rev}",
+            "responseSchema": "PlanMeta + rev",
+            "errors": [
+              "400 unknown status value",
+              "409 stale base_rev",
+              "409 delete while running"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Branching an existing work-in-progress mix into a variant is how a '25th anniversary' cut gets tried without losing the original.",
+    "description": "POST copies the FULL plan directory including notes.json and transitions.json, not just the track list, so a duplicate carries the hand-written work forward. Fresh plan_id plus an origin_ref back to the source. THE COPY IS BORN 'wip' EVEN WHEN DUPLICATING A 'ready' PLAN, because a fork is by definition unfinished. The source directory is byte-identical afterwards. Reads on-disk state only, never in-memory GUI state, so duplicating while the GUI has unsaved buffers cannot capture a phantom.",
+    "dependencies": [
+      "brain/plan_store_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 21,
+    "filename": "brain/api/api_plan_duplicate_Python.prompt",
+    "filepath": "brain/api/api_plan_duplicate.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/shutil.html",
+        "purpose": "copytree_full_directory_including_notes"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/api/plans/<slug>/duplicate",
+            "auth": "none",
+            "requestSchema": "{display_name?: string}",
+            "responseSchema": "{slug, display_name, status: 'wip', origin: 'duplicated', origin_ref}",
+            "errors": [
+              "404 unknown source",
+              "409 slug collision"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Without a read surface the journal is write-only, and the PRD's 'the agent changed my mix, what did it do?' has no answer.",
+    "description": "GET returns journal entries newest-first with ?limit= (default 50, capped at 500). Each entry is {at, actor, author, action, detail, rev_before, rev_after}. AUTHOR IS WHAT LETS THE STRIP SAY 'the LLM wrote this transition note' rather than only 'the CLI did'. Entries written before the author field existed return author: null and MUST RENDER, not 500. ?actor= and ?author= filter independently. A plan with no journal file returns {entries: []}, NOT 404. A truncated final line is skipped rather than fatal, so a crash mid-append does not make the history unreadable.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 22,
+    "filename": "brain/api/api_plan_journal_Python.prompt",
+    "filepath": "brain/api/api_plan_journal.py",
+    "tags": [
+      "backend",
+      "api",
+      "provenance"
+    ],
+    "context_urls": [
+      {
+        "url": "https://jsonlines.org/",
+        "purpose": "truncated_final_line_is_skippable"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "limit_actor_author_query_filters"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/plans/<slug>/journal",
+            "auth": "none",
+            "requestSchema": "?limit=&actor=&author=",
+            "responseSchema": "{entries: [{at, actor, author, action, detail, rev_before, rev_after}]}",
+            "errors": [
+              "404 unknown plan (but empty journal is 200)"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The 3 . Arrange tab must be able to repaint the whole truth from one response, or Refresh can show a half-updated view stitched from several races.",
+    "description": "THE SINGLE READ THE ARRANGE TAB NEEDS, deliberately one call: ordered tracks, effective notes with their layer (plan|global) and diverged flag, derived-then-merged segments, active bunches with their member spans, per-file revs, the composite rev and staleness. Because it is one response, refresh cannot render a mix of old and new state. Each segment carries its author so attribution renders without a second fetch. Each active bunch carries bunch_id AND its member span so the UI can draw an un-bunch control without another round trip. A plan with no built mix returns the order with segments: [] rather than 404, so a brand-new plan is arrangeable immediately. The response is also the PREVIEW surface for the built candidate order before Start mix, including any reorder performed by NemoClaw, H Company, or Feel-only planning. Emits the composite rev as an ETag. READ-ONLY: journals nothing.",
+    "dependencies": [
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_bunch_activation_Python.prompt",
+      "brain/plan_notes_Python.prompt",
+      "brain/transition_overrides_Python.prompt",
+      "brain/plan_mix_envelope_Python.prompt",
+      "brain/plan_staleness_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 23,
+    "filename": "brain/api/api_plan_arrange_Python.prompt",
+    "filepath": "brain/api/api_plan_arrange.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan",
+      "arrange"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag",
+        "purpose": "composite_rev_as_etag_on_single_read"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/plans/<slug>/arrange",
+            "auth": "none",
+            "responseSchema": "{tracks[], notes[{track_id, note, layer, diverged}], segments[{from_track_id, to_track_id, technique, beats, effects, note, author, overridden, override_fields, state}], bunches[{bunch_id, label, track_ids, span}], revs{}, rev, stale}",
+            "errors": [
+              "404 unknown plan"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Reordering is the single most likely agent action in the PRD's own scenario, and moving a bunch as one unit is a first-class verb the PRD asks for by name.",
+    "description": "POST {track_ids[], base_rev} is a FULL REPLACEMENT, never index arithmetic, because index deltas desync the moment two writers interleave. POST {move_bunch, to_index, base_rev} moves a bunch as a unit. Rejects a body that is not a permutation of the current selection, which is what structurally prevents this route from adding or removing tracks (that is module 25's job). An order that breaks an active bunch is a 422 NAMING THE GROUP: 422 and 409 are both used on this one route and are not interchangeable, because 409 means the plan moved underneath you and repeating may succeed, while 422 means the body was understood and the constraint is unsatisfiable so repeating it unchanged will fail identically. Calls transition_overrides.reconcile in the SAME write so orphaning is atomic with the reorder. Appends EXACTLY ONE journal entry per accepted write with rev_before/rev_after and a detail summarizing the move plus any transitions reconcile orphaned; a 422 or 409 appends nothing.",
+    "dependencies": [
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/plan_bunch_activation_Python.prompt",
+      "brain/order_constraints_Python.prompt",
+      "brain/transition_overrides_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 24,
+    "filename": "brain/api/api_plan_order_Python.prompt",
+    "filepath": "brain/api/api_plan_order.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan",
+      "ordering"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/422",
+        "purpose": "valid_syntax_unsatisfiable_bunch_constraint"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "stale_base_rev_distinct_from_422"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/api/plans/<slug>/order",
+            "auth": "none",
+            "requestSchema": "{track_ids?: string[], move_bunch?: int, to_index?: int, base_rev}",
+            "responseSchema": "{rev, order[], orphaned_transitions[]}",
+            "errors": [
+              "400 not a permutation of current selection",
+              "409 stale base_rev",
+              "422 order breaks active bunch <id>"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "'Easily add and remove songs' is the PRD's first concrete verb, and today's only add/remove path carries no rev guard at all.",
+    "description": "POST {add: [track_id], remove: [track_id], base_rev} in ONE rev-guarded write covering both selection.json and exclusions.json, returning the new rev and the resulting membership. Adds append at the end preserving existing order; an add of an already-present id is a no-op, not a duplicate. add and remove of the same id in one body is a 400, because the intent is ambiguous. Removes drop the id from the selection and from any active bunch; A BUNCH FALLING BELOW 2 MEMBERS DEACTIVATES WITH A NAMED WARNING, NEVER SILENTLY, and this module writes that journal entry using the structured ArchiveResult/MembersResult bunch_store returns (bunch_store is library-scoped and cannot journal). Calls transition_overrides.reconcile so a removal ORPHANS rather than deletes its transitions, and the note override is retained, so re-adding the track restores both. A stale base_rev is a 409 carrying changed_files.",
+    "dependencies": [
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_paths_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/plan_bunch_activation_Python.prompt",
+      "brain/transition_overrides_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 25,
+    "filename": "brain/api/api_plan_tracks_Python.prompt",
+    "filepath": "brain/api/api_plan_tracks.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan",
+      "tracks"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "stale_base_rev_with_changed_files"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/400",
+        "purpose": "add_and_remove_same_id_rejected"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/api/plans/<slug>/tracks",
+            "auth": "none",
+            "requestSchema": "{add?: string[], remove?: string[], base_rev}",
+            "responseSchema": "{rev, track_ids[], deactivated_bunches[], orphaned_transitions[]}",
+            "errors": [
+              "400 same id in add and remove",
+              "409 stale base_rev with changed_files",
+              "409 while mix_state.running"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Per-plan dj notes are the gap that blocks everything else: one track must be able to carry different notes in two plans without losing the global note.",
+    "description": "POST {track_id, note, author, base_rev} writes a TRACK-scoped plan override. POST {track_id, clear: true, base_rev} removes it, and the response shows the GLOBAL note that took over rather than an empty string, so the user can see what they fell back to. author is validated against plan_types.Author and recorded, so an LLM-written note stays distinguishable from a hand-written one. tracks.dj_notes is untouched by EVERY path through this route. One journal entry per accepted write with author propagated. Transition-scoped notes are not this route: they go through /api/plans/<slug>/transitions.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/plan_notes_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 26,
+    "filename": "brain/api/api_plan_notes_Python.prompt",
+    "filepath": "brain/api/api_plan_notes.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan",
+      "notes"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/api/plans/<slug>/notes",
+            "auth": "none",
+            "requestSchema": "{track_id, note?, clear?: bool, author?: 'human'|'agent'|'llm', base_rev}",
+            "responseSchema": "{rev, effective: {track_id, note, layer, diverged}}",
+            "errors": [
+              "400 unknown author value",
+              "409 stale base_rev"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The HTTP half of the PRD's 'work with an LLM to add dj notes on transitions, adjust transitions and effects by speaking with it'.",
+    "description": "SPARSE PATCH: {from_track_id, to_track_id, technique?, beats?, showcase_move?, effects?, note?, author?, base_rev}. Sending only 'note' leaves the derived technique intact. NULL MEANS LEAVE UNCHANGED; deletion is {clear: true}, which reverts the segment to fully derived. THIS IS A DELIBERATE INVERSION OF RFC 7396 JSON Merge Patch, where null deletes, and it must be stated in the generated docstring and in the agent-facing docs: an LLM that assumes merge-patch semantics and sends {'beats': null} would otherwise destroy the beat count on exactly the path the PRD hands to an LLM. A non-adjacent pair is ACCEPTED and stored orphaned rather than rejected, so an agent can write ahead of a reorder. author is part of the payload and is persisted on the record, not only in the journal. This payload's field names must be an exact field-for-field match with plan_cli's 'transition' flags, author included, so a harness and the GUI cannot disagree. One journal entry per accepted patch.",
+    "dependencies": [
+      "brain/plan_types_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/transition_overrides_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 27,
+    "filename": "brain/api/api_plan_transitions_Python.prompt",
+    "filepath": "brain/api/api_plan_transitions.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan",
+      "transitions"
+    ],
+    "context_urls": [
+      {
+        "url": "https://www.rfc-editor.org/rfc/rfc7396",
+        "purpose": "merge_patch_contrast_null_is_not_delete_here"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/api/plans/<slug>/transitions",
+            "auth": "none",
+            "requestSchema": "{from_track_id, to_track_id, technique?, beats?, showcase_move?, effects?, note?, author?, clear?: bool, base_rev}",
+            "responseSchema": "{rev, segment: {..., overridden, override_fields, state, author}}",
+            "errors": [
+              "400 unknown author value",
+              "409 stale base_rev"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Creating a library bunch constrains nothing until it is activated for a plan; this is the route that makes a bunch actually hold songs together in one mix.",
+    "description": "GET lists this plan's activations joined to their library bunches plus each one's span in the current order. POST {bunch_id, enabled, region?, base_rev} activates or deactivates; ENABLED:FALSE IS THE UN-BUNCH PATH the Arrange tab calls. AN OVERLAPPING ACTIVATION RETURNS 409 NAMING THE CONFLICTING BUNCH AND THE SHARED track_ids as structured fields, not a flattened message string, so the UI can render the conflict verbatim and tell the user which songs collide. The disjointness check itself lives in plan_bunch_activation, which also writes the journal entry; this module does not double-write. A rejected activation journals nothing and, critically, does NOT discard the library bunch: overlap is legal knowledge about songs and only this plan's ordering rejected it.",
+    "dependencies": [
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/bunch_store_Python.prompt",
+      "brain/plan_bunch_activation_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 28,
+    "filename": "brain/api/api_plan_bunches_Python.prompt",
+    "filepath": "brain/api/api_plan_bunches.py",
+    "tags": [
+      "backend",
+      "api",
+      "plan",
+      "bunch"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_body_carries_bunch_id_and_shared_tracks"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/plans/<slug>/bunches",
+            "auth": "none",
+            "responseSchema": "{activations: [{bunch_id, label, track_ids, ordered, enabled, region, span, archived}]}"
+          },
+          {
+            "method": "POST",
+            "path": "/api/plans/<slug>/bunches",
+            "auth": "none",
+            "requestSchema": "{bunch_id, enabled: bool, region?, base_rev}",
+            "responseSchema": "{rev, activation}",
+            "errors": [
+              "409 {conflicting_bunch_id, shared_track_ids}",
+              "409 stale base_rev"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Bunches are library-level knowledge reusable across plans, so they need a collection surface independent of any one plan.",
+    "description": "GET lists library bunches hydrated with member titles; ?track_id= filters to bunches containing a track. POST {label, track_ids[], ordered, notes} creates one. FEWER THAN 2 MEMBERS IS A 400. CREATING A BUNCH THAT OVERLAPS AN EXISTING ONE SUCCEEDS, deliberately: disjointness is a property of one ordering, not of the library, and a store that refused overlap would make it impossible to record both 'A then B is great' and 'B then C is great'. LIBRARY-SCOPED: journals nothing, because a new bunch constrains no plan until module 28 activates it. Per-call sqlite3 connection with timeout.",
+    "dependencies": [
+      "brain/bunch_store_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 29,
+    "filename": "brain/api/api_bunches_collection_Python.prompt",
+    "filepath": "brain/api/api_bunches_collection.py",
+    "tags": [
+      "backend",
+      "api",
+      "bunch",
+      "library"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/sqlite3.html",
+        "purpose": "per_call_connection_with_timeout"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/400",
+        "purpose": "fewer_than_two_members_rejected"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/bunches",
+            "auth": "none",
+            "requestSchema": "?track_id=",
+            "responseSchema": "{bunches: [{bunch_id, label, ordered, notes, members: [{track_id, title, artist, position}]}]}"
+          },
+          {
+            "method": "POST",
+            "path": "/api/bunches",
+            "auth": "none",
+            "requestSchema": "{label, track_ids: string[], ordered: bool, notes?}",
+            "responseSchema": "{bunch_id, label, members}",
+            "errors": [
+              "400 fewer than 2 members"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Editing or retiring a bunch changes the ordering constraints of every plan that activated it, so it needs its own guarded surface.",
+    "description": "GET returns one bunch hydrated. POST updates label, notes, ordered or track_ids, with members rewritten wholesale and position renumbered dense in one transaction. POST {action:'archive'} soft-deletes, leaving activations dangling but restorable; dropping below 2 members auto-archives. A LIBRARY-LEVEL EDIT OR ARCHIVE JOURNALS INTO EVERY PLAN RETURNED BY plan_bunch_activation.plans_activating(bunch_id): otherwise archiving one bunch silently changes the constraints of N plans with no trace in any of their journals. The response reports the affected slugs so the UI can tell the user which other plans it just touched. Because bunch_store cannot journal (it is library-scoped and plan_journal.append requires a slug), this module writes those entries from bunch_store's structured result.",
+    "dependencies": [
+      "brain/bunch_store_Python.prompt",
+      "brain/plan_bunch_activation_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/api_router_Python.prompt"
+    ],
+    "priority": 30,
+    "filename": "brain/api/api_bunch_item_Python.prompt",
+    "filepath": "brain/api/api_bunch_item.py",
+    "tags": [
+      "backend",
+      "api",
+      "bunch",
+      "library"
+    ],
+    "context_urls": [
+      {
+        "url": "https://sqlite.org/foreignkeys.html",
+        "purpose": "cascade_on_member_rewrite"
+      },
+      {
+        "url": "https://docs.python.org/3/library/sqlite3.html",
+        "purpose": "dense_position_rewrite_in_one_transaction"
+      },
+      {
+        "url": "https://docs.python.org/3/library/http.server.html",
+        "purpose": "threading_http_server_and_crlf_header_warning"
+      },
+      {
+        "url": "https://docs.python.org/3/library/urllib.parse.html",
+        "purpose": "urlparse_path_vs_query_string"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409",
+        "purpose": "conflict_is_resource_state_not_syntax"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/bunches/<bunch_id>",
+            "auth": "none",
+            "responseSchema": "{bunch_id, label, ordered, notes, members[], archived}"
+          },
+          {
+            "method": "POST",
+            "path": "/api/bunches/<bunch_id>",
+            "auth": "none",
+            "requestSchema": "{label?, notes?, ordered?, track_ids?, action?: 'archive'}",
+            "responseSchema": "{bunch_id, members[], archived, auto_archived, affected_slugs: string[]}",
+            "errors": [
+              "404 unknown bunch"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The PRD's 'an AI agent harness like hermes-agent, Claude or Codex makes changes' needs a defined offline write path; without it agents keep editing singleton files and there is nothing to refresh from.",
+    "description": "THE HARNESS-FACING CONTRACT. Runs with no GUI process and no server. argparse add_subparsers(dest=..., required=True) - required defaults to False, so without it the CLI with no verb parses successfully and does nothing - plus add_parser() and set_defaults(func=...) per verb, which keeps 13 verbs and their nested sub-verbs from becoming an if-ladder. 'show --json' RETURNS THE SAME SHAPE AS THE ARRANGE ROUTE, so a harness and the GUI cannot disagree about what the plan is. 'build' calls plan_mix_build so CLI and GUI produce an identical artifact. Every mutation takes --base-rev or --force and prints the new rev. 'transition get|set|clear' mirrors the transitions route FIELD-FOR-FIELD: --from --to [--technique --beats --showcase-move --effects --note --author] --base-rev, with the same null-means-leave-unchanged semantics. --AUTHOR IS EXPLICIT AND IS NOT INFERRED FROM actor=cli, because an LLM shelling out and a human typing the same command are both actor=cli and inferring would mislabel exactly the case the PRD cares about. 'bunch list|new|activate|deactivate|archive', where 'bunch new --activate' composes create-then-activate in one invocation and reports a conflicting bunch by name, because a bunch that is created and never activated constrains nothing. 'mark <wip|ready|archived>' WRITES lifecycle state while the separate 'status' verb READS staleness; deliberately different verbs. 'note' is TRACK-scoped; transition notes go through 'transition set --note'.",
+    "dependencies": [
+      "brain/plan_staleness_Python.prompt",
+      "brain/plan_revision_Python.prompt",
+      "brain/plan_store_Python.prompt",
+      "brain/plan_journal_Python.prompt",
+      "brain/bunch_store_Python.prompt",
+      "brain/plan_bunch_activation_Python.prompt",
+      "brain/plan_notes_Python.prompt",
+      "brain/transition_overrides_Python.prompt",
+      "brain/order_constraints_Python.prompt",
+      "brain/plan_mix_build_Python.prompt"
+    ],
+    "priority": 31,
+    "filename": "brain/plan_cli_Python.prompt",
+    "filepath": "brain/plan_cli.py",
+    "tags": [
+      "backend",
+      "cli",
+      "agent-interface"
+    ],
+    "context_urls": [
+      {
+        "url": "https://docs.python.org/3/library/argparse.html",
+        "purpose": "add_subparsers_with_set_defaults_per_verb"
+      },
+      {
+        "url": "https://docs.python.org/3/library/json.html",
+        "purpose": "show_json_matches_arrange_shape"
+      },
+      {
+        "url": "https://www.rfc-editor.org/rfc/rfc7396",
+        "purpose": "sparse_flag_semantics_mirror_module_27"
+      },
+      {
+        "url": "https://docs.python.org/3/whatsnew/3.14.html",
+        "purpose": "sqlite3_version_removed_and_313_vs_314_floor"
+      },
+      {
+        "url": "https://docs.python.org/3/library/unittest.mock.html",
+        "purpose": "patch_where_the_name_is_looked_up"
+      }
+    ],
+    "interface": {
+      "type": "cli",
+      "cli": {
+        "commands": [
+          {
+            "name": "list",
+            "flags": [
+              "--status",
+              "--json"
+            ]
+          },
+          {
+            "name": "new",
+            "args": [
+              "display_name"
+            ],
+            "flags": [
+              "--activate"
+            ]
+          },
+          {
+            "name": "switch",
+            "args": [
+              "slug"
+            ]
+          },
+          {
+            "name": "show",
+            "flags": [
+              "--plan",
+              "--json"
+            ]
+          },
+          {
+            "name": "add",
+            "args": [
+              "track_id..."
+            ],
+            "flags": [
+              "--plan",
+              "--base-rev",
+              "--force"
+            ]
+          },
+          {
+            "name": "remove",
+            "args": [
+              "track_id..."
+            ],
+            "flags": [
+              "--plan",
+              "--base-rev",
+              "--force"
+            ]
+          },
+          {
+            "name": "move",
+            "flags": [
+              "--track",
+              "--bunch",
+              "--to-index",
+              "--base-rev"
+            ]
+          },
+          {
+            "name": "note",
+            "args": [
+              "track_id",
+              "text"
+            ],
+            "flags": [
+              "--author",
+              "--clear",
+              "--base-rev"
+            ]
+          },
+          {
+            "name": "transition",
+            "args": [
+              "get|set|clear"
+            ],
+            "flags": [
+              "--from",
+              "--to",
+              "--technique",
+              "--beats",
+              "--showcase-move",
+              "--effects",
+              "--note",
+              "--author",
+              "--base-rev"
+            ]
+          },
+          {
+            "name": "mark",
+            "args": [
+              "wip|ready|archived"
+            ],
+            "flags": [
+              "--base-rev"
+            ]
+          },
+          {
+            "name": "bunch",
+            "args": [
+              "list|new|activate|deactivate|archive"
+            ],
+            "flags": [
+              "--label",
+              "--tracks",
+              "--ordered",
+              "--activate",
+              "--bunch-id",
+              "--base-rev"
+            ]
+          },
+          {
+            "name": "build",
+            "flags": [
+              "--plan",
+              "--profile",
+              "--dj-format"
+            ]
+          },
+          {
+            "name": "log",
+            "flags": [
+              "--limit",
+              "--actor",
+              "--author"
+            ]
+          },
+          {
+            "name": "status",
+            "flags": [
+              "--plan",
+              "--json"
+            ]
+          }
+        ],
+        "io": {
+          "stdout": "human table by default, JSON with --json"
+        }
+      }
+    }
+  },
+  {
+    "reason": "Every browser view needs the same rev-threading and conflict handling; duplicating it per view guarantees one of them forgets base_rev and silently clobbers an agent's edit.",
+    "description": "Vanilla ES module (no framework, no bundler, no node_modules) loaded with <script type=\"module\">. Fetch wrappers that thread base_rev into EVERY mutation body automatically, so a caller cannot forget it. MUST CHECK response.ok: fetch() FULFILLS on a 409 and only rejects on network failure, so a wrapper that does .then(r => r.json()) without checking ok swallows every conflict this design defends with and the banner never fires. A 409 surfaces a 'changed underneath you' banner with Reload and DISCARDS THE LOCAL OPTIMISTIC BUFFER INSTEAD OF RETRYING, because retrying re-applies a decision made against stale state. refreshPlan() re-fetches /arrange and repaints from the response only, never from local state. Uses AbortController to cancel a superseded arrange fetch (an AbortSignal is single-use per request, so allocate a fresh controller each time). createAndActivateBunch posts to /api/bunches then /api/plans/<slug>/bunches and returns a DISCRIMINATED result so the caller can distinguish library-create-failed from activation-conflicted; the activation 409's {conflicting_bunch_id, shared_track_ids} is passed through UNFLATTENED, never collapsed into a message string, or the UI cannot name the conflict. setTransition accepts and sends author.",
+    "dependencies": [
+      "brain/api/api_plans_collection_Python.prompt",
+      "brain/api/api_plans_active_Python.prompt",
+      "brain/api/api_plan_detail_Python.prompt",
+      "brain/api/api_plan_duplicate_Python.prompt",
+      "brain/api/api_plan_journal_Python.prompt",
+      "brain/api/api_plan_arrange_Python.prompt",
+      "brain/api/api_plan_order_Python.prompt",
+      "brain/api/api_plan_tracks_Python.prompt",
+      "brain/api/api_plan_notes_Python.prompt",
+      "brain/api/api_plan_transitions_Python.prompt",
+      "brain/api/api_plan_bunches_Python.prompt",
+      "brain/api/api_bunches_collection_Python.prompt",
+      "brain/api/api_bunch_item_Python.prompt"
+    ],
+    "priority": 32,
+    "filename": "brain/web/plan_client_JavaScript.prompt",
+    "filepath": "brain/web/plan_client.js",
+    "tags": [
+      "frontend",
+      "browser",
+      "client"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
+        "purpose": "post_json_stringify_and_check_response_ok"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Response/ok",
+        "purpose": "fetch_does_not_reject_on_409"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController",
+        "purpose": "cancel_superseded_arrange_fetch"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal",
+        "purpose": "signal_is_single_use_per_request"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules",
+        "purpose": "module_boundary_between_client_and_views"
+      }
+    ],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "listPlans",
+            "signature": "listPlans({status} = {}) -> Promise<Plan[]>"
+          },
+          {
+            "name": "createPlan",
+            "signature": "createPlan(displayName) -> Promise<Plan>"
+          },
+          {
+            "name": "setActivePlan",
+            "signature": "setActivePlan(slug) -> Promise<Plan>",
+            "errors": [
+              "409 while live run"
+            ]
+          },
+          {
+            "name": "renamePlan",
+            "signature": "renamePlan(slug, displayName) -> Promise<Plan>",
+            "sideEffects": "display_name only; slug frozen, no URL change"
+          },
+          {
+            "name": "duplicatePlan",
+            "signature": "duplicatePlan(slug, displayName) -> Promise<Plan>",
+            "returns": "the new plan, born 'wip'"
+          },
+          {
+            "name": "deletePlan",
+            "signature": "deletePlan(slug) -> Promise<void>",
+            "sideEffects": "soft-delete into .trash",
+            "errors": [
+              "409 while live run"
+            ]
+          },
+          {
+            "name": "setStatus",
+            "signature": "setStatus(slug, status) -> Promise<Plan>"
+          },
+          {
+            "name": "refreshPlan",
+            "signature": "refreshPlan(slug, {signal}) -> Promise<Arrange>",
+            "sideEffects": "repaints from response only"
+          },
+          {
+            "name": "fetchJournal",
+            "signature": "fetchJournal(slug, limit) -> Promise<Entry[]>"
+          },
+          {
+            "name": "setOrder",
+            "signature": "setOrder(slug, trackIds) -> Promise<{rev}>"
+          },
+          {
+            "name": "moveBunch",
+            "signature": "moveBunch(slug, bunchId, toIndex) -> Promise<{rev}>"
+          },
+          {
+            "name": "addTracks",
+            "signature": "addTracks(slug, {add, remove}) -> Promise<{rev}>"
+          },
+          {
+            "name": "setNote",
+            "signature": "setNote(slug, trackId, note, author) -> Promise<{rev}>"
+          },
+          {
+            "name": "setTransition",
+            "signature": "setTransition(slug, patch) -> Promise<{rev}>",
+            "sideEffects": "sparse; null means leave unchanged"
+          },
+          {
+            "name": "createAndActivateBunch",
+            "signature": "createAndActivateBunch(slug, {label, track_ids, ordered}) -> Promise<{created, activated, conflict}>",
+            "returns": "discriminated result, 409 body unflattened"
+          },
+          {
+            "name": "deactivateBunch",
+            "signature": "deactivateBunch(slug, bunchId) -> Promise<{rev}>"
+          },
+          {
+            "name": "archiveBunch",
+            "signature": "archiveBunch(bunchId) -> Promise<{affected_slugs}>"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Switching between work-in-progress mixes is a change of SCOPE, not a step in the Curate-then-Create wizard, so it belongs above the numbered nav rather than inside it.",
+    "description": "Header-level plan picker rendered ABOVE the '1 . Curate set' / '2 . Create the mix' nav. Numbering the plan chooser '3 .' in a linear wizard would tell the user to pick it last, which is backwards: a plan scopes everything the other tabs do. Shows display name, a status badge and a stale dot, with Switch, New, Rename, Duplicate and Delete inline. Rename updates the label with NO URL change and no page reload, because the slug is frozen. THE STATUS BADGE IS A CONTROL, NOT DECORATION: clicking it sets wip|ready|archived through plan_client.setStatus and repaints from the response. A 409 shows the standard changed-underneath banner. Announces plan switches through an ARIA status role so the change is not silent to assistive tech.",
+    "dependencies": [
+      "brain/web/plan_client_JavaScript.prompt"
+    ],
+    "priority": 33,
+    "filename": "brain/web/plan_picker_JavaScript.prompt",
+    "filepath": "brain/web/plan_picker.js",
+    "tags": [
+      "frontend",
+      "browser",
+      "component"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/status_role",
+        "purpose": "plan_switch_announcement"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules",
+        "purpose": "import_plan_client"
+      }
+    ],
+    "interface": {
+      "type": "component",
+      "component": {
+        "props": [
+          {
+            "name": "activeSlug",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "plans",
+            "type": "Plan[]",
+            "required": true
+          },
+          {
+            "name": "onSwitch",
+            "type": "(slug: string) => void",
+            "required": true
+          },
+          {
+            "name": "onStatusChange",
+            "type": "(slug: string, status: 'wip'|'ready'|'archived') => void",
+            "required": false
+          }
+        ],
+        "emits": [
+          "switch",
+          "create",
+          "rename",
+          "duplicate",
+          "delete",
+          "statusChange"
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The PRD asks for a nice GUI view of the refreshed song order and the transitions between them, with bunched songs moving as one unit; that is a third tab that does not exist.",
+    "description": "Registers '3 . Arrange' as a third nav button and renders the order with the transition between each adjacent pair. THE PROMPT BASENAME MUST EQUAL THE GENERATED FILENAME 'arrange.js' AND THE <script src=\"/web/arrange.js\"> in playlist.html: a mismatch is silent server-side and fatal client-side, because the file is generated, never served, and the tab simply never registers with no error in the log. Bunched tracks render as ONE VISUALLY CONTIGUOUS UNIT that drags as one block and cannot be split by a drop between its members. Drag and drop MUST preventDefault() on dragover or drop never fires, and ships keyboard pickup/move/drop plus Move up / Move down buttons alongside dragging, since drag alone is inaccessible; reorder announcements go through an aria-live=polite region, not assertive. Per-row Add / Remove call the tracks route, plus an 'Add from Curate selection' action. A collapsible 'What changed' strip renders fetchJournal with AUTHOR SHOWN ALONGSIDE ACTOR, marked up with the ARIA log role. A Refresh button repaints from /arrange with an EXPLICIT IN-FLIGHT STATE on the blocking fetch. 'Bunch these' on 2+ selected rows performs CREATE-THEN-ACTIVATE as one user action; on the activation 409 it names the conflicting bunch and the shared tracks AND states that the library bunch was still saved, because overlap is legal knowledge and only this plan's ordering rejected it. Each bunch unit carries an un-bunch control (activation enabled:false) and an overflow action archiving the library bunch, surfacing its affected-plans list. Avoid Element.moveBefore: not baseline.",
+    "dependencies": [
+      "brain/web/plan_client_JavaScript.prompt",
+      "brain/web/plan_picker_JavaScript.prompt"
+    ],
+    "priority": 34,
+    "filename": "brain/web/arrange_JavaScript.prompt",
+    "filepath": "brain/web/arrange.js",
+    "tags": [
+      "frontend",
+      "browser",
+      "page",
+      "arrange"
+    ],
+    "context_urls": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API",
+        "purpose": "dragover_preventdefault_or_drop_never_fires"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Guides/Live_regions",
+        "purpose": "announce_moved_to_position"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-live",
+        "purpose": "polite_not_assertive_for_reorder"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/log_role",
+        "purpose": "what_changed_strip_is_a_log"
+      },
+      {
+        "url": "https://www.smashingmagazine.com/2018/01/dragon-drop-accessible-list-reordering/",
+        "purpose": "keyboard_pickup_move_drop_fallback"
+      },
+      {
+        "url": "https://react-aria.adobe.com/blog/drag-and-drop",
+        "purpose": "move_up_down_buttons_alongside_drag"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Element/moveBefore",
+        "purpose": "state_preserving_move_not_baseline_avoid"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController",
+        "purpose": "in_flight_state_on_blocking_arrange_fetch"
+      }
+    ],
+    "interface": {
+      "type": "page",
+      "page": {
+        "route": "/#arrange",
+        "renderingModel": "client",
+        "params": [
+          {
+            "name": "plan",
+            "type": "string",
+            "description": "active plan slug, resolved by plan_context when absent"
+          }
+        ],
+        "dataSources": [
+          {
+            "kind": "api",
+            "source": "/api/plans/<slug>/arrange",
+            "method": "GET",
+            "description": "single blocking read: order, notes, merged segments, bunch spans, revs, staleness"
+          },
+          {
+            "kind": "api",
+            "source": "/api/plans/<slug>/journal",
+            "method": "GET",
+            "description": "What changed strip; renders actor and author"
+          },
+          {
+            "kind": "api",
+            "source": "/api/plans/<slug>/order",
+            "method": "POST",
+            "description": "full-replacement reorder and move-bunch-as-a-unit"
+          },
+          {
+            "kind": "api",
+            "source": "/api/plans/<slug>/tracks",
+            "method": "POST",
+            "description": "per-row add and remove"
+          },
+          {
+            "kind": "api",
+            "source": "/api/plans/<slug>/bunches",
+            "method": "POST",
+            "description": "activate on Bunch these, enabled:false on un-bunch"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The PRD wants transitions and effects adjusted by talking to an LLM and then seen and corrected by hand; both halves need the same editable object.",
+    "description": "Clicking a transition opens an editor for technique, beats, showcase move, effects and note. An overridden field is VISUALLY MARKED and carries a per-field 'Revert to derived', so the user can always see which values are theirs and which came from the beatgrid derivation. An orphaned override is shown GREYED WITH ITS STORED PAIR, never hidden, so a reorder does not appear to have destroyed work that is actually still there and will re-activate on re-adjacency. Saves are SPARSE, sending only changed fields; omitted means leave unchanged and Revert sends {clear:true}, deliberately not RFC 7396 null semantics. Renders the segment's author and SENDS author: 'human' on a hand edit, so a subsequent LLM pass and the user's own edit stay distinguishable. Revert-to-derived confirmation is announced through an ARIA status role.",
+    "dependencies": [
+      "brain/web/plan_client_JavaScript.prompt"
+    ],
+    "priority": 35,
+    "filename": "brain/web/transition_editor_JavaScript.prompt",
+    "filepath": "brain/web/transition_editor.js",
+    "tags": [
+      "frontend",
+      "browser",
+      "component",
+      "transitions"
+    ],
+    "context_urls": [
+      {
+        "url": "https://www.rfc-editor.org/rfc/rfc7396",
+        "purpose": "sparse_save_sends_only_changed_fields"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules",
+        "purpose": "import_plan_client"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/status_role",
+        "purpose": "revert_to_derived_confirmation"
+      }
+    ],
+    "interface": {
+      "type": "component",
+      "component": {
+        "props": [
+          {
+            "name": "segment",
+            "type": "Segment",
+            "required": true
+          },
+          {
+            "name": "slug",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "onSave",
+            "type": "(patch: Partial<Segment>) => Promise<void>",
+            "required": true
+          },
+          {
+            "name": "onRevert",
+            "type": "(field?: string) => Promise<void>",
+            "required": false
+          }
+        ],
+        "emits": [
+          "save",
+          "revert",
+          "close"
+        ]
+      }
+    }
+  },
+  {
+    "reason": "A running patched Mixxx may expose its validated control API on a port other than the preferred 9995, and every GUI and CLI caller must resolve the same real endpoint without accepting an arbitrary listener.",
+    "description": "Owns localhost Mixxx control protocol validation and safe port discovery. Probe the preferred port plus TCP listeners owned by a running Mixxx process, and accept a candidate only when the line-delimited JSON ping returns the expected pong. An explicit port is the sole highest-priority candidate. Distinguish no Mixxx process from a running Mixxx with no reachable control API. Never scan arbitrary port ranges, accept an unrelated TCP service, launch Mixxx, open a browser, or start playback. Read and preserve runtime.mixxx_control_port from plan artifacts for downstream live execution.",
+    "dependencies": [],
+    "priority": 36,
+    "filename": "hands/mixxx_control_Python.prompt",
+    "filepath": "hands/mixxx_control.py",
+    "tags": ["runtime", "mixxx", "control-port", "safety"],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {"name": "validates_mixxx_control", "signature": "validates_mixxx_control(port: int, *, timeout_s: float = 0.5) -> bool"},
+          {"name": "mixxx_process_ids", "signature": "mixxx_process_ids(*, ps_output: str | None = None) -> list[int]"},
+          {"name": "mixxx_listener_ports", "signature": "mixxx_listener_ports(pid: int, *, lsof_output: str | None = None) -> list[int]"},
+          {"name": "discover_mixxx_control_port", "signature": "discover_mixxx_control_port(*, preferred: int = 9995, explicit: int | None = None, process_ids: list[int] | None = None, listener_lookup=None, probe=validates_mixxx_control) -> int", "errors": ["MixxxNotRunning", "MixxxControlUnavailable"]},
+          {"name": "plan_control_port", "signature": "plan_control_port(plan: dict) -> int | None"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "scripts/start.sh is the one-command operator entry point, so it must reuse an already-running valid Mixxx endpoint and propagate that exact port to an existing or newly started playlist editor.",
+    "description": "Start orchestration with port 9995 as a preference rather than a requirement. Parse optional --mixxx-port, call hands.mixxx_control discovery, reuse a validated running patched Mixxx on another owned localhost listener, and start Mixxx only when no Mixxx process is running. If Mixxx is running without any valid control API, exit honestly and never start a second instance. When the editor already owns port 8787, verify its page identity and POST the selected control port; otherwise refuse an unrelated listener or start the editor with --mixxx-control-port. Do not start playback.",
+    "dependencies": ["hands/mixxx_control_Python.prompt"],
+    "priority": 37,
+    "filename": "scripts/start_Bash.prompt",
+    "filepath": "scripts/start.sh",
+    "tags": ["runtime", "shell", "mixxx", "control-port"],
+    "context_urls": [],
+    "interface": {
+      "type": "cli",
+      "cli": {
+        "commands": [{"name": "scripts/start.sh", "flags": ["--mixxx-port PORT", "--help"]}],
+        "io": {"stdout": "selected Mixxx control port and editor startup status", "stderr": "distinct unsafe or unavailable conditions"}
+      }
+    }
+  }
+]

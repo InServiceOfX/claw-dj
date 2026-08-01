@@ -1,0 +1,83 @@
+<pdd-reason>PlaylistApp holds selection state in memory with no version check, so an agent editing files on disk is silently clobbered by the next in-GUI save; 'press refresh and see the truth' needs an ownership contract, not just a button.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "file_rev",
+        "signature": "file_rev(path: Path) -> str",
+        "returns": "sha256 hex, '' when missing"
+      },
+      {
+        "name": "plan_rev",
+        "signature": "plan_rev(paths: PlanPaths) -> Rev",
+        "returns": "composite rev over fixed key order"
+      },
+      {
+        "name": "read_with_rev",
+        "signature": "read_with_rev(path: Path) -> tuple[dict, str]"
+      },
+      {
+        "name": "write_checked",
+        "signature": "write_checked(path: Path, data, base_rev: str | None) -> str",
+        "returns": "new rev",
+        "errors": [
+          "StalePlanError"
+        ],
+        "sideEffects": "temp-in-same-dir + os.replace"
+      },
+      {
+        "name": "StalePlanError.payload",
+        "signature": "payload() -> dict",
+        "returns": "{current_rev, changed_files, summary}"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_paths_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/plan_revision.py` as the Optimistic-concurrency primitives. file_rev(path) is a hashlib.file_digest sha256 hex digest, '' for a missing file. plan_rev(paths) digests the per-file digests in a fixed key order to produce one composite token. Content hashes, NOT mtimes: two writes inside one filesystem tick are indistinguishable by mtime, and that is precisely the agent-writes-then-GUI-writes race this module exists to catch. write_checked(path, data, base_rev) re-reads the current rev, raises StalePlanError carrying {current_rev, changed_files, summary} on mismatch, and otherwise writes atomically via a temp file in the SAME directory plus os.replace (os.replace is only atomic within one filesystem). Conflicts surface as 409 with the payload in the body rather than If-Match/412: RFC 9110 strong comparison and the fact that If-Match is not a standard pairing with POST make it the wrong fit when all 19 existing mutations are POST with JSON bodies. Emit ETag on plan GETs anyway, since it is free and useful to curl-driven harnesses.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Optimistic-concurrency primitives. file_rev(path) is a hashlib.file_digest sha256 hex digest, '' for a missing file. plan_rev(paths) digests the per-file digests in a fixed key order to produce one composite token. Content hashes, NOT mtimes: two writes inside one filesystem tick are indistinguishable by mtime, and that is precisely the agent-writes-then-GUI-writes race this module exists to catch. write_checked(path, data, base_rev) re-reads the current rev, raises StalePlanError carrying {current_rev, changed_files, summary} on mismatch, and otherwise writes atomically via a temp file in the SAME directory plus os.replace (os.replace is only atomic within one filesystem). Conflicts surface as 409 with the payload in the body rather than If-Match/412: RFC 9110 strong comparison and the fact that If-Match is not a standard pairing with POST make it the wrong fit when all 19 existing mutations are POST with JSON bodies. Emit ETag on plan GETs anyway, since it is free and useful to curl-driven harnesses.
+
+% Output
+
+- Primary output: `brain/plan_revision.py`.
+- PDD context tags: backend, plan, concurrency.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/plan_revision.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/plan_revision.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://docs.python.org/3/library/hashlib.html — file_digest_sha256_rev_token
+- https://docs.python.org/3/library/os.html — os_replace_atomic_same_filesystem
+- https://docs.python.org/3/library/tempfile.html — named_temp_file_in_target_directory
+- https://www.rfc-editor.org/rfc/rfc9110#section-13.2 — precondition_evaluation_before_payload
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Conditional_requests — mid_air_collision_workflow
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

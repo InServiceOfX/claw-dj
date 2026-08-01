@@ -8,7 +8,7 @@ platforms: [macos, linux]
 metadata:
   hermes:
     tags: [dj, mixxx, audio, video, youtube, automation]
-    related_skills: []
+    related_skills: [prompt-driven-development]
 ---
 
 # clawdj — autonomous Mixxx DJ agent
@@ -27,6 +27,8 @@ Repository files remain the source of truth. This skill supplies task procedures
 - Producing branded 9:16 promotional clips for Reels, Shorts, and X.
 - Reconstructing the dedicated agent on another machine.
 - Authorizing or operating the dedicated YouTube channel.
+- Routing product intent through Prompt-Driven Development; load the related
+  `prompt-driven-development` skill before acting.
 
 Do not load this skill for unrelated generic audio questions.
 
@@ -49,6 +51,11 @@ Bootstrap is complete only when the active branch and current implementation pat
 - `docs/HANDOFF.md`: resolves which implementation is current when alternatives coexist.
 
 Maintain the Brain/Hands boundary. Screenshot-loop agents can make judgments and perform visible UI work; they should not own beat-critical timing.
+
+For offline multi-plan work, use `python -m brain.plan_cli`. Track notes use
+`note`; transition notes/effects use `transition get|set|clear --author ...`.
+Use `mark` to write lifecycle state and `status` to read artifact staleness.
+Mutations require the revision from `show --json` or an intentional `--force`.
 
 ## DJ quality standard
 
@@ -103,8 +110,9 @@ PROFILE_HOME="$HOME/.hermes/profiles/clawdj"
 mkdir -p "$PROFILE_HOME/skills"
 cp agent/hermes-profile/SOUL.md "$PROFILE_HOME/SOUL.md"
 cp -R agent/hermes-skill "$PROFILE_HOME/skills/clawdj"
+cp -R agent/pdd-skill "$PROFILE_HOME/skills/prompt-driven-development"
 hermes -p clawdj config set terminal.cwd "$PWD"
-clawdj -s clawdj
+clawdj -s clawdj,prompt-driven-development
 ```
 
 Inspect destinations before copying into a profile that is not new.

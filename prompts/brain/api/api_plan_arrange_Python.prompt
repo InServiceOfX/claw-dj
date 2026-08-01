@@ -1,0 +1,68 @@
+<pdd-reason>The 3 . Arrange tab must be able to repaint the whole truth from one response, or Refresh can show a half-updated view stitched from several races.</pdd-reason>
+<pdd-interface>
+{
+  "type": "api",
+  "api": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/api/plans/<slug>/arrange",
+        "auth": "none",
+        "responseSchema": "{tracks[], notes[{track_id, note, layer, diverged}], segments[{from_track_id, to_track_id, technique, beats, effects, note, author, overridden, override_fields, state}], bunches[{bunch_id, label, track_ids, span}], revs{}, rev, stale}",
+        "errors": [
+          "404 unknown plan"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_revision_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_bunch_activation_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_notes_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/transition_overrides_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_mix_envelope_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_staleness_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api_router_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/api/api_plan_arrange.py` as the THE SINGLE READ THE ARRANGE TAB NEEDS, deliberately one call: ordered tracks, effective notes with their layer (plan|global) and diverged flag, derived-then-merged segments, active bunches with their member spans, per-file revs, the composite rev and staleness. Because it is one response, refresh cannot render a mix of old and new state. Each segment carries its author so attribution renders without a second fetch. Each active bunch carries bunch_id AND its member span so the UI can draw an un-bunch control without another round trip. A plan with no built mix returns the order with segments: [] rather than 404, so a brand-new plan is arrangeable immediately. The response is also the PREVIEW surface for the built candidate order before Start mix, including any reorder performed by NemoClaw, H Company, or Feel-only planning. Emits the composite rev as an ETag. READ-ONLY: journals nothing.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+THE SINGLE READ THE ARRANGE TAB NEEDS, deliberately one call: ordered tracks, effective notes with their layer (plan|global) and diverged flag, derived-then-merged segments, active bunches with their member spans, per-file revs, the composite rev and staleness. Because it is one response, refresh cannot render a mix of old and new state. Each segment carries its author so attribution renders without a second fetch. Each active bunch carries bunch_id AND its member span so the UI can draw an un-bunch control without another round trip. A plan with no built mix returns the order with segments: [] rather than 404, so a brand-new plan is arrangeable immediately. The response is also the PREVIEW surface for the built candidate order before Start mix, including any reorder performed by NemoClaw, H Company, or Feel-only planning. Emits the composite rev as an ETag. READ-ONLY: journals nothing.
+
+% Output
+
+- Primary output: `brain/api/api_plan_arrange.py`.
+- PDD context tags: backend, api, plan, arrange.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/api/api_plan_arrange.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/api/api_plan_arrange.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag — composite_rev_as_etag_on_single_read
+- https://docs.python.org/3/library/http.server.html — threading_http_server_and_crlf_header_warning
+- https://docs.python.org/3/library/urllib.parse.html — urlparse_path_vs_query_string
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409 — conflict_is_resource_state_not_syntax
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

@@ -1,0 +1,90 @@
+<pdd-reason>'These 2-4 songs sound very good together' is durable knowledge about the songs themselves, so it belongs to the library, not to one plan.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "connect",
+        "signature": "connect(db_path: Path) -> sqlite3.Connection",
+        "sideEffects": "PRAGMA foreign_keys=ON before any transaction"
+      },
+      {
+        "name": "create",
+        "signature": "create(label, track_ids, ordered, source, notes) -> Bunch",
+        "errors": [
+          "ValueError when fewer than 2 members"
+        ]
+      },
+      {
+        "name": "list",
+        "signature": "list(include_archived: bool = False) -> list[Bunch]"
+      },
+      {
+        "name": "list_for_track",
+        "signature": "list_for_track(track_id: str) -> list[Bunch]"
+      },
+      {
+        "name": "get",
+        "signature": "get(bunch_id: int) -> Bunch",
+        "returns": "one bunch with ordered members",
+        "errors": [
+          "KeyError on unknown bunch_id"
+        ]
+      },
+      {
+        "name": "update_members",
+        "signature": "update_members(bunch_id: int, track_ids: list[str]) -> MembersResult",
+        "returns": "structured result; caller journals"
+      },
+      {
+        "name": "archive",
+        "signature": "archive(bunch_id: int) -> ArchiveResult",
+        "returns": "structured result; caller journals"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/bunch_store.py` as the Library-scoped SQLite storage appending two CREATE TABLE IF NOT EXISTS blocks (bunches, bunch_members) to brain/library_index.py's SCHEMA. Sets PRAGMA foreign_keys = ON IMMEDIATELY AFTER connect(), before any statement opens a transaction: the pragma is per-connection, off by default, and a no-op inside a transaction where it silently reports success and leaves the declared ON DELETE CASCADE dead. Enabling it is safe precisely because no existing table in this database declares a constraint. OVERLAPPING BUNCHES ARE ACCEPTED here on purpose: you will legitimately learn that A->B is great and that B->C is great, and a store that refuses to hold both is discarding real ears-on knowledge; disjointness is a property of one ordering and is enforced at activation time in module 8. Every call uses 'with closing(sqlite3.connect(db, timeout=30))'. This module is LIBRARY-SCOPED AND JOURNALS NOTHING, because plan_journal.append requires a slug and a library bunch belongs to no single plan; archive() and update_members() instead return structured ArchiveResult/MembersResult (auto_archived, member_count, reason) and the plan-scoped caller writes the journal entries. Silently dropping a bunch below 2 members without returning that fact is the defect being closed.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Library-scoped SQLite storage appending two CREATE TABLE IF NOT EXISTS blocks (bunches, bunch_members) to brain/library_index.py's SCHEMA. Sets PRAGMA foreign_keys = ON IMMEDIATELY AFTER connect(), before any statement opens a transaction: the pragma is per-connection, off by default, and a no-op inside a transaction where it silently reports success and leaves the declared ON DELETE CASCADE dead. Enabling it is safe precisely because no existing table in this database declares a constraint. OVERLAPPING BUNCHES ARE ACCEPTED here on purpose: you will legitimately learn that A->B is great and that B->C is great, and a store that refuses to hold both is discarding real ears-on knowledge; disjointness is a property of one ordering and is enforced at activation time in module 8. Every call uses 'with closing(sqlite3.connect(db, timeout=30))'. This module is LIBRARY-SCOPED AND JOURNALS NOTHING, because plan_journal.append requires a slug and a library bunch belongs to no single plan; archive() and update_members() instead return structured ArchiveResult/MembersResult (auto_archived, member_count, reason) and the plan-scoped caller writes the journal entries. Silently dropping a bunch below 2 members without returning that fact is the defect being closed.
+
+% Output
+
+- Primary output: `brain/bunch_store.py`.
+- PDD context tags: backend, bunch, sqlite, library.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/bunch_store.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/bunch_store.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://sqlite.org/foreignkeys.html — pragma_per_connection_noop_in_transaction
+- https://docs.python.org/3/library/sqlite3.html — check_same_thread_and_legacy_transaction_control
+- https://docs.python.org/3/library/contextlib.html — closing_connection_per_call
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

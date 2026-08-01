@@ -1,0 +1,43 @@
+<pdd-reason>A running patched Mixxx may expose its validated control API on a port other than the preferred 9995, and every GUI and CLI caller must resolve the same real endpoint without accepting an arbitrary listener.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "validates_mixxx_control", "signature": "validates_mixxx_control(port: int, *, timeout_s: float = 0.5) -> bool"},
+      {"name": "mixxx_process_ids", "signature": "mixxx_process_ids(*, ps_output: str | None = None) -> list[int]"},
+      {"name": "mixxx_listener_ports", "signature": "mixxx_listener_ports(pid: int, *, lsof_output: str | None = None) -> list[int]"},
+      {"name": "discover_mixxx_control_port", "signature": "discover_mixxx_control_port(*, preferred: int = 9995, explicit: int | None = None, process_ids: list[int] | None = None, listener_lookup=None, probe=validates_mixxx_control) -> int", "errors": ["MixxxNotRunning", "MixxxControlUnavailable"]},
+      {"name": "plan_control_port", "signature": "plan_control_port(plan: dict) -> int | None"}
+    ]
+  }
+}
+</pdd-interface>
+
+% Goal
+
+Maintain the stdlib-only Mixxx control client and safely discover the actual localhost control API port. Port `9995` is preferred, not mandatory.
+
+% Requirements
+
+1. Preserve the existing line-delimited JSON control client and its public methods.
+2. An explicit port override is the sole highest-priority candidate. Validate it with the real ping protocol.
+3. Without an explicit port, probe the preferred port and TCP listeners owned by processes positively identified as Mixxx.
+4. Accept a candidate only when `MixxxControl.ping()` returns the expected pong. An open TCP socket is insufficient.
+5. Never scan arbitrary port ranges or accept a listener owned by another process merely because it is open.
+6. Raise `MixxxNotRunning` when no Mixxx process and no valid endpoint exist.
+7. Raise `MixxxControlUnavailable` when Mixxx is running but none of its allowed listeners answer the control protocol.
+8. Discovery must not launch Mixxx, open a browser, initialize a desktop bridge, or start playback.
+9. `plan_control_port` reads `runtime.mixxx_control_port` defensively and returns `None` for absent or invalid metadata.
+10. Keep injectable process output, listener lookup, and probe seams so the safety behavior is deterministic and testable without live Mixxx.
+
+% Output
+
+- Primary output: `hands/mixxx_control.py`.
+- Small caller adaptations may preserve the resolved port, but must not duplicate discovery logic.
+
+% Verification
+
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest tests/test_mixxx_control_port.py`.
+- Cover preferred success, validated non-default listener, unrelated service rejection, explicit override precedence, no-process, and running-without-API cases.
+- Live verification may call `python -m hands.mixxx_control discover --preferred 9995`; it must not start playback.

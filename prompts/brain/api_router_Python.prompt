@@ -1,0 +1,67 @@
+<pdd-reason>Routing today is a literal if self.path == ... chain with 6 GET and 19 POST exact matches and no path parameters, so /api/plans/<slug>/tracks is physically unreachable until dispatch changes.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "register",
+        "signature": "register(pattern: str, methods: tuple[str, ...], handler) -> None"
+      },
+      {
+        "name": "route",
+        "signature": "route(method: str, path: str) -> tuple[handler, dict]",
+        "returns": "(handler, path params)",
+        "errors": [
+          "NotFound -> 404",
+          "MethodNotAllowed -> 405 with Allow header"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_context_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/api_router.py` as the Replaces the exact-match chain at playlist_editor.py:1262-1414. register(pattern, methods, handler) and route(method, path) with <param> segments; match on the urlparse()d path, never on raw self.path, or a query string defeats every pattern. ALL 25 EXISTING ROUTES MUST STILL RESOLVE UNCHANGED, which makes this the highest-regression-risk change in the feature. MATCHING RULE: segments are scored per position and a LITERAL SEGMENT OUTRANKS A <param> SEGMENT AT THE SAME POSITION REGARDLESS OF REGISTRATION ORDER; the highest-scoring pattern wins. Without this rule, registration order silently decides whether GET /api/plans/active reaches module 19 or is swallowed by module 20's <slug> and 404s on an unknown plan. Ties are impossible because two identical patterns cannot both register. Unknown path -> 404. Wrong method -> 405 WITH AN Allow HEADER naming the registered methods for that pattern; MDN documents the header as mandatory on 405, this module already knows the methods so emitting it is free, and without it an agent harness cannot tell a typo'd path from a wrong verb. A handler raising StalePlanError is translated HERE to 409 with the conflict payload in the body, so no individual route repeats it.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Replaces the exact-match chain at playlist_editor.py:1262-1414. register(pattern, methods, handler) and route(method, path) with <param> segments; match on the urlparse()d path, never on raw self.path, or a query string defeats every pattern. ALL 25 EXISTING ROUTES MUST STILL RESOLVE UNCHANGED, which makes this the highest-regression-risk change in the feature. MATCHING RULE: segments are scored per position and a LITERAL SEGMENT OUTRANKS A <param> SEGMENT AT THE SAME POSITION REGARDLESS OF REGISTRATION ORDER; the highest-scoring pattern wins. Without this rule, registration order silently decides whether GET /api/plans/active reaches module 19 or is swallowed by module 20's <slug> and 404s on an unknown plan. Ties are impossible because two identical patterns cannot both register. Unknown path -> 404. Wrong method -> 405 WITH AN Allow HEADER naming the registered methods for that pattern; MDN documents the header as mandatory on 405, this module already knows the methods so emitting it is free, and without it an agent harness cannot tell a typo'd path from a wrong verb. A handler raising StalePlanError is translated HERE to 409 with the conflict payload in the body, so no individual route repeats it.
+
+% Output
+
+- Primary output: `brain/api_router.py`.
+- PDD context tags: backend, api, routing.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/api_router.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/api_router.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://docs.python.org/3/library/http.server.html — no_path_parameters_dispatch_is_yours
+- https://docs.python.org/3/library/urllib.parse.html — match_on_path_never_raw_self_path
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/405 — 405_must_carry_allow_header
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409 — staleplanerror_translation_point
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

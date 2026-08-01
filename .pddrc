@@ -1,0 +1,291 @@
+version: "1.0"
+
+contexts:
+  # ==========================================================
+  # Plan core (foundational domain layer)
+  # ==========================================================
+
+  plan_types:
+    paths: ["*plan_types*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_types.py"
+
+  plan_paths:
+    paths: ["*plan_paths*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_paths.py"
+
+  plan_revision:
+    paths: ["*plan_revision*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_revision.py"
+
+  plan_journal:
+    paths: ["*plan_journal*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_journal.py"
+
+  plan_store:
+    paths: ["*plan_store*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_store.py"
+
+  plan_context:
+    paths: ["*plan_context*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_context.py"
+
+  bunch_store:
+    paths: ["*bunch_store*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/bunch_store.py"
+
+  plan_bunch_activation:
+    paths: ["*plan_bunch_activation*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_bunch_activation.py"
+
+  plan_notes:
+    paths: ["*plan_notes*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_notes.py"
+
+  transition_overrides:
+    paths: ["*transition_overrides*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/transition_overrides.py"
+
+  order_constraints:
+    paths: ["*order_constraints*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/order_constraints.py"
+
+  plan_mix_envelope:
+    paths: ["*plan_mix_envelope*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_mix_envelope.py"
+
+  plan_mix_build:
+    paths: ["*plan_mix_build*"]
+    defaults:
+      prompts_dir: "prompts/"
+      outputs:
+        code:
+          path: "brain/plan_mix_build.py"
+
+  plan_staleness:
+    paths: ["*plan_staleness*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_staleness.py"
+
+  plan_migration:
+    paths: ["*plan_migration*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_migration.py"
+
+  # ==========================================================
+  # HTTP routing + API surface
+  # ==========================================================
+
+  api_router:
+    paths: ["*api_router*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api_router.py"
+
+  api_static_assets:
+    paths: ["*api_static_assets*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_static_assets.py"
+
+  api_plans_collection:
+    paths: ["*api_plans_collection*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plans_collection.py"
+
+  api_plans_active:
+    paths: ["*api_plans_active*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plans_active.py"
+
+  api_plan_detail:
+    paths: ["*api_plan_detail*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_detail.py"
+
+  api_plan_duplicate:
+    paths: ["*api_plan_duplicate*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_duplicate.py"
+
+  api_plan_journal:
+    paths: ["*api_plan_journal*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_journal.py"
+
+  api_plan_arrange:
+    paths: ["*api_plan_arrange*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_arrange.py"
+
+  api_plan_order:
+    paths: ["*api_plan_order*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_order.py"
+
+  api_plan_tracks:
+    paths: ["*api_plan_tracks*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_tracks.py"
+
+  api_plan_notes:
+    paths: ["*api_plan_notes*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_notes.py"
+
+  api_plan_transitions:
+    paths: ["*api_plan_transitions*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_transitions.py"
+
+  api_plan_bunches:
+    paths: ["*api_plan_bunches*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_plan_bunches.py"
+
+  api_bunches_collection:
+    paths: ["*api_bunches_collection*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_bunches_collection.py"
+
+  api_bunch_item:
+    paths: ["*api_bunch_item*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_bunch_item.py"
+
+  # ==========================================================
+  # Agent-facing CLI
+  # ==========================================================
+
+  plan_cli:
+    paths: ["*plan_cli*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/plan_cli.py"
+
+  # ==========================================================
+  # Browser assets (vanilla ES modules, no bundler)
+  # ==========================================================
+
+  plan_client:
+    paths: ["*plan_client*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/web/plan_client.js"
+
+  plan_picker:
+    paths: ["*plan_picker*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/web/plan_picker.js"
+
+  arrange:
+    paths: ["*arrange*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/web/arrange.js"
+
+  transition_editor:
+    paths: ["*transition_editor*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/web/transition_editor.js"
+
+  # ==========================================================
+  # Mixxx runtime coordination
+  # ==========================================================
+
+  mixxx_control:
+    paths: ["*mixxx_control*"]
+    defaults:
+      outputs:
+        code:
+          path: "hands/mixxx_control.py"
+
+  start_script:
+    paths: ["*start_Bash*", "*start_script*"]
+    defaults:
+      outputs:
+        code:
+          path: "scripts/start.sh"
+
+  # ==========================================================
+  # Default fallback — prompts_dir belongs ONLY here
+  # ==========================================================
+
+  default:
+    defaults:
+      prompts_dir: "prompts/"
+      generate_output_path: "brain/"

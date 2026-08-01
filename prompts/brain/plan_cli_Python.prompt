@@ -1,0 +1,199 @@
+<pdd-reason>The PRD's 'an AI agent harness like hermes-agent, Claude or Codex makes changes' needs a defined offline write path; without it agents keep editing singleton files and there is nothing to refresh from.</pdd-reason>
+<pdd-interface>
+{
+  "type": "cli",
+  "cli": {
+    "commands": [
+      {
+        "name": "list",
+        "flags": [
+          "--status",
+          "--json"
+        ]
+      },
+      {
+        "name": "new",
+        "args": [
+          "display_name"
+        ],
+        "flags": [
+          "--activate"
+        ]
+      },
+      {
+        "name": "switch",
+        "args": [
+          "slug"
+        ]
+      },
+      {
+        "name": "show",
+        "flags": [
+          "--plan",
+          "--json"
+        ]
+      },
+      {
+        "name": "add",
+        "args": [
+          "track_id..."
+        ],
+        "flags": [
+          "--plan",
+          "--base-rev",
+          "--force"
+        ]
+      },
+      {
+        "name": "remove",
+        "args": [
+          "track_id..."
+        ],
+        "flags": [
+          "--plan",
+          "--base-rev",
+          "--force"
+        ]
+      },
+      {
+        "name": "move",
+        "flags": [
+          "--track",
+          "--bunch",
+          "--to-index",
+          "--base-rev"
+        ]
+      },
+      {
+        "name": "note",
+        "args": [
+          "track_id",
+          "text"
+        ],
+        "flags": [
+          "--author",
+          "--clear",
+          "--base-rev"
+        ]
+      },
+      {
+        "name": "transition",
+        "args": [
+          "get|set|clear"
+        ],
+        "flags": [
+          "--from",
+          "--to",
+          "--technique",
+          "--beats",
+          "--showcase-move",
+          "--effects",
+          "--note",
+          "--author",
+          "--base-rev"
+        ]
+      },
+      {
+        "name": "mark",
+        "args": [
+          "wip|ready|archived"
+        ],
+        "flags": [
+          "--base-rev"
+        ]
+      },
+      {
+        "name": "bunch",
+        "args": [
+          "list|new|activate|deactivate|archive"
+        ],
+        "flags": [
+          "--label",
+          "--tracks",
+          "--ordered",
+          "--activate",
+          "--bunch-id",
+          "--base-rev"
+        ]
+      },
+      {
+        "name": "build",
+        "flags": [
+          "--plan",
+          "--profile",
+          "--dj-format"
+        ]
+      },
+      {
+        "name": "log",
+        "flags": [
+          "--limit",
+          "--actor",
+          "--author"
+        ]
+      },
+      {
+        "name": "status",
+        "flags": [
+          "--plan",
+          "--json"
+        ]
+      }
+    ],
+    "io": {
+      "stdout": "human table by default, JSON with --json"
+    }
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_staleness_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_revision_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_store_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/bunch_store_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_bunch_activation_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_notes_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/transition_overrides_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/order_constraints_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_mix_build_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/plan_cli.py` as the THE HARNESS-FACING CONTRACT. Runs with no GUI process and no server. argparse add_subparsers(dest=..., required=True) - required defaults to False, so without it the CLI with no verb parses successfully and does nothing - plus add_parser() and set_defaults(func=...) per verb, which keeps 13 verbs and their nested sub-verbs from becoming an if-ladder. 'show --json' RETURNS THE SAME SHAPE AS THE ARRANGE ROUTE, so a harness and the GUI cannot disagree about what the plan is. 'build' calls plan_mix_build so CLI and GUI produce an identical artifact. Every mutation takes --base-rev or --force and prints the new rev. 'transition get|set|clear' mirrors the transitions route FIELD-FOR-FIELD: --from --to [--technique --beats --showcase-move --effects --note --author] --base-rev, with the same null-means-leave-unchanged semantics. --AUTHOR IS EXPLICIT AND IS NOT INFERRED FROM actor=cli, because an LLM shelling out and a human typing the same command are both actor=cli and inferring would mislabel exactly the case the PRD cares about. 'bunch list|new|activate|deactivate|archive', where 'bunch new --activate' composes create-then-activate in one invocation and reports a conflicting bunch by name, because a bunch that is created and never activated constrains nothing. 'mark <wip|ready|archived>' WRITES lifecycle state while the separate 'status' verb READS staleness; deliberately different verbs. 'note' is TRACK-scoped; transition notes go through 'transition set --note'.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+THE HARNESS-FACING CONTRACT. Runs with no GUI process and no server. argparse add_subparsers(dest=..., required=True) - required defaults to False, so without it the CLI with no verb parses successfully and does nothing - plus add_parser() and set_defaults(func=...) per verb, which keeps 13 verbs and their nested sub-verbs from becoming an if-ladder. 'show --json' RETURNS THE SAME SHAPE AS THE ARRANGE ROUTE, so a harness and the GUI cannot disagree about what the plan is. 'build' calls plan_mix_build so CLI and GUI produce an identical artifact. Every mutation takes --base-rev or --force and prints the new rev. 'transition get|set|clear' mirrors the transitions route FIELD-FOR-FIELD: --from --to [--technique --beats --showcase-move --effects --note --author] --base-rev, with the same null-means-leave-unchanged semantics. --AUTHOR IS EXPLICIT AND IS NOT INFERRED FROM actor=cli, because an LLM shelling out and a human typing the same command are both actor=cli and inferring would mislabel exactly the case the PRD cares about. 'bunch list|new|activate|deactivate|archive', where 'bunch new --activate' composes create-then-activate in one invocation and reports a conflicting bunch by name, because a bunch that is created and never activated constrains nothing. 'mark <wip|ready|archived>' WRITES lifecycle state while the separate 'status' verb READS staleness; deliberately different verbs. 'note' is TRACK-scoped; transition notes go through 'transition set --note'.
+
+% Output
+
+- Primary output: `brain/plan_cli.py`.
+- PDD context tags: backend, cli, agent-interface.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/plan_cli.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/plan_cli.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://docs.python.org/3/library/argparse.html — add_subparsers_with_set_defaults_per_verb
+- https://docs.python.org/3/library/json.html — show_json_matches_arrange_shape
+- https://www.rfc-editor.org/rfc/rfc7396 — sparse_flag_semantics_mirror_module_27
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

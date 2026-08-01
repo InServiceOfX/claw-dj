@@ -1,0 +1,78 @@
+<pdd-reason>Segments are currently derived outputs, not stored records, so there is nothing for an LLM to edit when the PRD asks to adjust transitions and effects by talking to one.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "load",
+        "signature": "load(slug: str) -> list[TransitionOverride]"
+      },
+      {
+        "name": "upsert",
+        "signature": "upsert(slug, override: TransitionOverride, base_rev, *, author=None) -> str",
+        "sideEffects": "one journal entry, author persisted on the record"
+      },
+      {
+        "name": "clear",
+        "signature": "clear(slug, from_id, to_id, base_rev) -> str",
+        "sideEffects": "reverts segment to derived"
+      },
+      {
+        "name": "merge",
+        "signature": "merge(segments: list[dict], overrides) -> list[dict]",
+        "returns": "segments with overridden + override_fields"
+      },
+      {
+        "name": "reconcile",
+        "signature": "reconcile(order: list[str], overrides) -> list[TransitionOverride]",
+        "returns": "orphaned/re-activated records; journals nothing itself"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_paths_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_revision_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/transition_overrides.py` as the Sparse override layer at plans/<slug>/transitions.json, stored as a list KEYED BY THE (from_track_id, to_track_id) PAIR rather than by index, so an override survives unrelated reordering. merge(segments, overrides) patches only non-null fields onto the derived segments and sets overridden plus override_fields, keeping the beatgrid/phrase derivation authoritative. NULL MEANS LEAVE UNCHANGED AND {clear:true} MEANS DELETE. This is a DELIBERATE DIVERGENCE FROM RFC 7396 JSON Merge Patch, where null deletes; state it explicitly in generated code and docstrings, because the LLM path is exactly where merge-patch semantics would be wrongly assumed and {'beats': null} would silently destroy the beat count. reconcile(order, overrides) marks a pair that is no longer adjacent as orphaned and RESTORES it to active on re-adjacency, so removing and re-adding a track restores its transitions. technique and showcase_move are free strings, never closed enums, because build_mix_plan.py:1288 composes f'dj_format_{recipe}' at runtime and an enum breaks the builder. upsert persists author on the record itself so an LLM-written transition is distinguishable from a hand-written one at rest, not only in the journal. upsert and clear each append exactly one journal entry; reconcile called as part of another module's write journals NOTHING of its own and is recorded in that write's detail, or the What-changed strip fills with noise on every reorder.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Sparse override layer at plans/<slug>/transitions.json, stored as a list KEYED BY THE (from_track_id, to_track_id) PAIR rather than by index, so an override survives unrelated reordering. merge(segments, overrides) patches only non-null fields onto the derived segments and sets overridden plus override_fields, keeping the beatgrid/phrase derivation authoritative. NULL MEANS LEAVE UNCHANGED AND {clear:true} MEANS DELETE. This is a DELIBERATE DIVERGENCE FROM RFC 7396 JSON Merge Patch, where null deletes; state it explicitly in generated code and docstrings, because the LLM path is exactly where merge-patch semantics would be wrongly assumed and {'beats': null} would silently destroy the beat count. reconcile(order, overrides) marks a pair that is no longer adjacent as orphaned and RESTORES it to active on re-adjacency, so removing and re-adding a track restores its transitions. technique and showcase_move are free strings, never closed enums, because build_mix_plan.py:1288 composes f'dj_format_{recipe}' at runtime and an enum breaks the builder. upsert persists author on the record itself so an LLM-written transition is distinguishable from a hand-written one at rest, not only in the journal. upsert and clear each append exactly one journal entry; reconcile called as part of another module's write journals NOTHING of its own and is recorded in that write's detail, or the What-changed strip fills with noise on every reorder.
+
+% Output
+
+- Primary output: `brain/transition_overrides.py`.
+- PDD context tags: backend, plan, transitions.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/transition_overrides.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/transition_overrides.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://www.rfc-editor.org/rfc/rfc7396 — merge_patch_null_semantics_deliberately_not_used
+- https://docs.python.org/3/library/dataclasses.html — optional_author_field_backward_compatible
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

@@ -1,0 +1,73 @@
+<pdd-reason>Editing or retiring a bunch changes the ordering constraints of every plan that activated it, so it needs its own guarded surface.</pdd-reason>
+<pdd-interface>
+{
+  "type": "api",
+  "api": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/api/bunches/<bunch_id>",
+        "auth": "none",
+        "responseSchema": "{bunch_id, label, ordered, notes, members[], archived}"
+      },
+      {
+        "method": "POST",
+        "path": "/api/bunches/<bunch_id>",
+        "auth": "none",
+        "requestSchema": "{label?, notes?, ordered?, track_ids?, action?: 'archive'}",
+        "responseSchema": "{bunch_id, members[], archived, auto_archived, affected_slugs: string[]}",
+        "errors": [
+          "404 unknown bunch"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/bunch_store_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_bunch_activation_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api_router_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/api/api_bunch_item.py` as the GET returns one bunch hydrated. POST updates label, notes, ordered or track_ids, with members rewritten wholesale and position renumbered dense in one transaction. POST {action:'archive'} soft-deletes, leaving activations dangling but restorable; dropping below 2 members auto-archives. A LIBRARY-LEVEL EDIT OR ARCHIVE JOURNALS INTO EVERY PLAN RETURNED BY plan_bunch_activation.plans_activating(bunch_id): otherwise archiving one bunch silently changes the constraints of N plans with no trace in any of their journals. The response reports the affected slugs so the UI can tell the user which other plans it just touched. Because bunch_store cannot journal (it is library-scoped and plan_journal.append requires a slug), this module writes those entries from bunch_store's structured result.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+GET returns one bunch hydrated. POST updates label, notes, ordered or track_ids, with members rewritten wholesale and position renumbered dense in one transaction. POST {action:'archive'} soft-deletes, leaving activations dangling but restorable; dropping below 2 members auto-archives. A LIBRARY-LEVEL EDIT OR ARCHIVE JOURNALS INTO EVERY PLAN RETURNED BY plan_bunch_activation.plans_activating(bunch_id): otherwise archiving one bunch silently changes the constraints of N plans with no trace in any of their journals. The response reports the affected slugs so the UI can tell the user which other plans it just touched. Because bunch_store cannot journal (it is library-scoped and plan_journal.append requires a slug), this module writes those entries from bunch_store's structured result.
+
+% Output
+
+- Primary output: `brain/api/api_bunch_item.py`.
+- PDD context tags: backend, api, bunch, library.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/api/api_bunch_item.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/api/api_bunch_item.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://sqlite.org/foreignkeys.html — cascade_on_member_rewrite
+- https://docs.python.org/3/library/sqlite3.html — dense_position_rewrite_in_one_transaction
+- https://docs.python.org/3/library/http.server.html — threading_http_server_and_crlf_header_warning
+- https://docs.python.org/3/library/urllib.parse.html — urlparse_path_vs_query_string
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409 — conflict_is_resource_state_not_syntax
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

@@ -1,0 +1,78 @@
+<pdd-reason>The PRD's 'move these n songs together as a unit' must be honored by the orderers; the existing pairwise force_adjacent silently strands members and never scores the seams.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "from_activations",
+        "signature": "from_activations(slug: str) -> OrderConstraints"
+      },
+      {
+        "name": "merge_groups",
+        "signature": "merge_groups(pairs: list[tuple[str, str]]) -> list[list[str]]",
+        "returns": "n-ary groups; chained pairs coalesce"
+      },
+      {
+        "name": "contract",
+        "signature": "contract(rows: list[dict], groups: list[list[str]]) -> tuple[list[dict], dict]",
+        "returns": "(pseudo-rows, expansion table)"
+      },
+      {
+        "name": "expand",
+        "signature": "expand(order: list[str], table: dict) -> list[str]",
+        "returns": "member ids only, never a pseudo id"
+      },
+      {
+        "name": "assert_intact",
+        "signature": "assert_intact(order: list[str], groups) -> None",
+        "errors": [
+          "ConstraintViolation"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/bunch_store_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/order_constraints.py` as the The riskiest module in the feature: the only one that changes behaviour inside working, ear-tested ordering code. CONTRACT BUNCHES INTO SUPERNODES, DO NOT PENALIZE EDGES. The textbook clustered-TSP reduction adds a large constant M to inter-cluster edges, but that guarantee holds only for an EXACT solver; greedy_mix_order is a nearest-neighbour tour, so a greedy pass can strand a member no matter how big M is. contract(rows, groups) collapses each n-ary group to one pseudo-track whose entry features come from the first member and exit features from the last, which makes non-contiguity structurally impossible AND fixes the real defect: the seams finally get scored, because the in-edge scores against the head and the out-edge against the tail. expand(order, table) restores members and NO PSEUDO ID MAY APPEAR IN ANY RETURNED ORDER. assert_intact raises on non-contiguity as a post-condition check, which the current code has none of. merge_groups(pairs) promotes pairwise constraints to n-ary groups so chaining (A,B) then (B,C) yields [A,B,C] and DOES NOT STRAND A, the verified defect at mix_order_brief.py:199 where both members are pulled out and reinserted. Replaces the pairwise implementation behind the existing dict shape so mix_order_brief's callers are unchanged.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+The riskiest module in the feature: the only one that changes behaviour inside working, ear-tested ordering code. CONTRACT BUNCHES INTO SUPERNODES, DO NOT PENALIZE EDGES. The textbook clustered-TSP reduction adds a large constant M to inter-cluster edges, but that guarantee holds only for an EXACT solver; greedy_mix_order is a nearest-neighbour tour, so a greedy pass can strand a member no matter how big M is. contract(rows, groups) collapses each n-ary group to one pseudo-track whose entry features come from the first member and exit features from the last, which makes non-contiguity structurally impossible AND fixes the real defect: the seams finally get scored, because the in-edge scores against the head and the out-edge against the tail. expand(order, table) restores members and NO PSEUDO ID MAY APPEAR IN ANY RETURNED ORDER. assert_intact raises on non-contiguity as a post-condition check, which the current code has none of. merge_groups(pairs) promotes pairwise constraints to n-ary groups so chaining (A,B) then (B,C) yields [A,B,C] and DOES NOT STRAND A, the verified defect at mix_order_brief.py:199 where both members are pulled out and reinserted. Replaces the pairwise implementation behind the existing dict shape so mix_order_brief's callers are unchanged.
+
+% Output
+
+- Primary output: `brain/order_constraints.py`.
+- PDD context tags: backend, bunch, ordering.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/order_constraints.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/order_constraints.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://arxiv.org/abs/2007.05254 — clustered_tsp_contraction_reduction
+- https://pmc.ncbi.nlm.nih.gov/articles/PMC3950363/ — ordered_cluster_contiguity_constraint
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

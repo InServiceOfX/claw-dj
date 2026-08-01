@@ -7,6 +7,8 @@ This is the preferred portable setup for a second personal machine. It recreates
 - TARS/clawdj identity and operating posture.
 - The project mission, architecture, branch rules, and safety policy.
 - The Mixxx engineering workflow recorded in this repository.
+- The Prompt-Driven Development adapter that routes ordinary product intent
+  through Ernest's editable PDD fork and canonical Monoclaw policy.
 - The verified WAV-to-video and 9:16 teaser procedure.
 - The YouTube OAuth scope and confirmation policy.
 - A small deterministic social-teaser renderer.
@@ -88,6 +90,7 @@ PROFILE_HOME="$HOME/.hermes/profiles/clawdj"
 mkdir -p "$PROFILE_HOME/skills"
 cp agent/hermes-profile/SOUL.md "$PROFILE_HOME/SOUL.md"
 cp -R agent/hermes-skill "$PROFILE_HOME/skills/clawdj"
+cp -R agent/pdd-skill "$PROFILE_HOME/skills/prompt-driven-development"
 ```
 
 ### Symlink option
@@ -99,6 +102,7 @@ PROFILE_HOME="$HOME/.hermes/profiles/clawdj"
 mkdir -p "$PROFILE_HOME/skills"
 ln -s "$PWD/agent/hermes-profile/SOUL.md" "$PROFILE_HOME/SOUL.md"
 ln -s "$PWD/agent/hermes-skill" "$PROFILE_HOME/skills/clawdj"
+ln -s "$PWD/agent/pdd-skill" "$PROFILE_HOME/skills/prompt-driven-development"
 ```
 
 Before using either recipe on a non-fresh profile, inspect the destinations. Do not overwrite an existing `SOUL.md` or skill without reviewing it.
@@ -129,18 +133,51 @@ Use `medium` for routine operation and `high` for difficult engineering, debuggi
 ```bash
 hermes profile show clawdj
 hermes -p clawdj doctor
-clawdj -s clawdj
+clawdj -s clawdj,prompt-driven-development
 ```
 
 Inside the session, ask:
 
 ```text
-Summarize the claw-dj mission, the brain/hands architecture, the Git branch policy, the social-teaser verification gates, and the YouTube publishing confirmation policy. Cite the repository files you used.
+Summarize the claw-dj mission, the brain/hands architecture, the Git branch policy, the PDD intent/characterization workflow, the social-teaser verification gates, and the YouTube publishing confirmation policy. Cite the repository files you used.
 ```
 
-A successful response should cite `AGENTS.md`, `PROGRESS.md`, `docs/HANDOFF.md`, and the `clawdj` skill. It should say that DJing is more than playlist selection, that timing-sensitive work belongs in Hands, and that API uploads default to private.
+A successful response should cite `AGENTS.md`, `PROGRESS.md`, `docs/HANDOFF.md`, and both repository skills. It should say that DJing is more than playlist selection, that timing-sensitive work belongs in Hands, that brownfield PDD adoption requires characterization before regeneration, and that API uploads default to private.
 
-## 7. Media smoke test
+## 7. Install and verify the local PDD fork
+
+The workspace-level `PDD.md` router expects sibling checkouts under
+`workspace/repos/`: `Monoclaw` owns canonical agent policy and
+`PromptDrivenDevelopment/pdd` owns Ernest's CLI implementation.
+
+```bash
+cd ../PromptDrivenDevelopment/pdd
+uv tool install --editable .
+command -v pdd
+pdd --version
+pdd intent plan --help
+git remote -v
+```
+
+The expected fork remote is `git@github.com:InServiceOfX/pdd.git`. The editable
+tool installation makes checkout changes visible immediately. Do not copy PDD
+policy into the profile; `agent/pdd-skill/SKILL.md` points to the versioned
+workspace router and Monoclaw playbooks.
+
+Return to `claw-dj` before starting Hermes. A read-only smoke test is:
+
+```bash
+pdd intent plan \
+  --text "Adopt PDD for one bounded claw-dj component." \
+  --project-root "$PWD" \
+  --json
+```
+
+On a conventional clone this should classify the repository as brownfield and
+recommend characterization before adoption. Do not run `intent apply` merely
+as a setup smoke test.
+
+## 8. Media smoke test
 
 Confirm tools:
 
@@ -153,7 +190,7 @@ python3 agent/hermes-skill/scripts/render_transition_teaser.py --help
 
 For a real render, follow `agent/hermes-skill/references/media-export.md`. Keep WAV, artwork, cards, and rendered clips outside the repository.
 
-## 8. Recreate external integrations separately
+## 9. Recreate external integrations separately
 
 - YouTube: follow `agent/hermes-skill/references/youtube-channel-oauth.md`; authorize through Google's browser consent flow on each machine.
 - Mixxx/library: follow `docs/SETUP_NEW_MACHINE.md`.

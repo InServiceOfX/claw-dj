@@ -1,0 +1,70 @@
+<pdd-reason>Reordering is the single most likely agent action in the PRD's own scenario, and moving a bunch as one unit is a first-class verb the PRD asks for by name.</pdd-reason>
+<pdd-interface>
+{
+  "type": "api",
+  "api": {
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/api/plans/<slug>/order",
+        "auth": "none",
+        "requestSchema": "{track_ids?: string[], move_bunch?: int, to_index?: int, base_rev}",
+        "responseSchema": "{rev, order[], orphaned_transitions[]}",
+        "errors": [
+          "400 not a permutation of current selection",
+          "409 stale base_rev",
+          "422 order breaks active bunch <id>"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_revision_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_bunch_activation_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/order_constraints_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/transition_overrides_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api_router_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/api/api_plan_order.py` as the POST {track_ids[], base_rev} is a FULL REPLACEMENT, never index arithmetic, because index deltas desync the moment two writers interleave. POST {move_bunch, to_index, base_rev} moves a bunch as a unit. Rejects a body that is not a permutation of the current selection, which is what structurally prevents this route from adding or removing tracks (that is module 25's job). An order that breaks an active bunch is a 422 NAMING THE GROUP: 422 and 409 are both used on this one route and are not interchangeable, because 409 means the plan moved underneath you and repeating may succeed, while 422 means the body was understood and the constraint is unsatisfiable so repeating it unchanged will fail identically. Calls transition_overrides.reconcile in the SAME write so orphaning is atomic with the reorder. Appends EXACTLY ONE journal entry per accepted write with rev_before/rev_after and a detail summarizing the move plus any transitions reconcile orphaned; a 422 or 409 appends nothing.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+POST {track_ids[], base_rev} is a FULL REPLACEMENT, never index arithmetic, because index deltas desync the moment two writers interleave. POST {move_bunch, to_index, base_rev} moves a bunch as a unit. Rejects a body that is not a permutation of the current selection, which is what structurally prevents this route from adding or removing tracks (that is module 25's job). An order that breaks an active bunch is a 422 NAMING THE GROUP: 422 and 409 are both used on this one route and are not interchangeable, because 409 means the plan moved underneath you and repeating may succeed, while 422 means the body was understood and the constraint is unsatisfiable so repeating it unchanged will fail identically. Calls transition_overrides.reconcile in the SAME write so orphaning is atomic with the reorder. Appends EXACTLY ONE journal entry per accepted write with rev_before/rev_after and a detail summarizing the move plus any transitions reconcile orphaned; a 422 or 409 appends nothing.
+
+% Output
+
+- Primary output: `brain/api/api_plan_order.py`.
+- PDD context tags: backend, api, plan, ordering.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/api/api_plan_order.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/api/api_plan_order.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/422 — valid_syntax_unsatisfiable_bunch_constraint
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409 — stale_base_rev_distinct_from_422
+- https://docs.python.org/3/library/http.server.html — threading_http_server_and_crlf_header_warning
+- https://docs.python.org/3/library/urllib.parse.html — urlparse_path_vs_query_string
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

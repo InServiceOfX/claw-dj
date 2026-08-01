@@ -1,0 +1,107 @@
+<pdd-reason>The PRD asks to keep several work-in-progress mixes and switch between them; that is a plan lifecycle CRUD surface, which does not exist today.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "create",
+        "signature": "create(display_name: str, *, collection_id: str | None = None) -> PlanMeta",
+        "returns": "plan born status='wip'"
+      },
+      {
+        "name": "list",
+        "signature": "list(*, status: PlanStatus | None = None) -> list[PlanMeta]",
+        "returns": "directory scan, no registry"
+      },
+      {
+        "name": "get",
+        "signature": "get(slug: str) -> PlanMeta",
+        "returns": "one plan's metadata",
+        "errors": [
+          "PlanNotFound"
+        ]
+      },
+      {
+        "name": "rename",
+        "signature": "rename(slug: str, display_name: str) -> PlanMeta",
+        "sideEffects": "display_name only, slug frozen"
+      },
+      {
+        "name": "set_status",
+        "signature": "set_status(slug: str, status: PlanStatus, base_rev: str) -> PlanMeta",
+        "errors": [
+          "StalePlanError",
+          "ValueError"
+        ]
+      },
+      {
+        "name": "duplicate",
+        "signature": "duplicate(slug: str, display_name: str) -> PlanMeta",
+        "errors": [
+          "FileExistsError"
+        ]
+      },
+      {
+        "name": "delete",
+        "signature": "delete(slug: str) -> None",
+        "sideEffects": "soft-delete into plans/.trash/"
+      },
+      {
+        "name": "get_active",
+        "signature": "get_active() -> PlanMeta | None"
+      },
+      {
+        "name": "set_active",
+        "signature": "set_active(slug: str) -> PlanMeta"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_paths_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_revision_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/plan_store.py` as the Plan lifecycle over directory-per-plan JSON so agent harnesses can edit plans with plain file tools. list() is a DIRECTORY SCAN of plans/*/plan.json with no registry file: a harness will cp -r a plan directory, and a registry makes that copy invisible and creates a permanent index-vs-directory desync class. Only active.json survives as a pointer. create() births a plan at status='wip' so the state is never unset. rename() changes display_name ONLY; the slug is frozen at creation so an agent's --plan reference survives a rename with no directory move. duplicate() uses shutil.copytree (3.13-compatible, not Path.copy() which is 3.14-only) with dirs_exist_ok left at its default False so a collision raises FileExistsError instead of merging into an existing plan directory; the copy gets a fresh plan_id and origin='duplicated'. delete() moves to plans/.trash/<slug>/ with a tombstone and never rm -rf. set_status() validates against PlanStatus and refuses anything else rather than persisting it; archived leaves the directory in place, because archived is not deleted. Slug collisions and reserved slugs both append -2, -3.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- `get_active()` returns `None` unless `plans/active.json` exists; the legacy singleton data directory is a fallback store, never a plan slug.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Plan lifecycle over directory-per-plan JSON so agent harnesses can edit plans with plain file tools. list() is a DIRECTORY SCAN of plans/*/plan.json with no registry file: a harness will cp -r a plan directory, and a registry makes that copy invisible and creates a permanent index-vs-directory desync class. Only active.json survives as a pointer. create() births a plan at status='wip' so the state is never unset. rename() changes display_name ONLY; the slug is frozen at creation so an agent's --plan reference survives a rename with no directory move. duplicate() uses shutil.copytree (3.13-compatible, not Path.copy() which is 3.14-only) with dirs_exist_ok left at its default False so a collision raises FileExistsError instead of merging into an existing plan directory; the copy gets a fresh plan_id and origin='duplicated'. delete() moves to plans/.trash/<slug>/ with a tombstone and never rm -rf. set_status() validates against PlanStatus and refuses anything else rather than persisting it; archived leaves the directory in place, because archived is not deleted. Slug collisions and reserved slugs both append -2, -3.
+
+% Output
+
+- Primary output: `brain/plan_store.py`.
+- PDD context tags: backend, plan, store.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/plan_store.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/plan_store.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://docs.python.org/3/library/shutil.html — copytree_dirs_exist_ok_false_raises
+- https://docs.python.org/3/library/pathlib.html — directory_scan_and_rename
+- https://docs.python.org/3/library/enum.html — planstatus_validation_on_write
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

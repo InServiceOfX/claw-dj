@@ -15,7 +15,7 @@ Build and operate `claw-dj`: an autonomous or semi-autonomous DJ that plays Mixx
    - `docs/DJ_TRANSITIONS_PLAYBOOK.md` and `docs/DJ_STYLE_GUIDE.md` — mixing craft.
    - `docs/SETUP_NEW_MACHINE.md` — music/database portability.
    - `docs/HERMES_AGENT_SETUP.md` — lightweight Hermes reconstruction.
-5. In Hermes, load the repository skill from `agent/hermes-skill/` (installed as `clawdj`).
+5. In Hermes, load the repository skill from `agent/hermes-skill/` (installed as `clawdj`). Load `agent/pdd-skill/` (installed as `prompt-driven-development`) for PDD work.
 
 Do not ask the user to repeat context that is already in these files.
 
@@ -36,6 +36,12 @@ The project contains multiple generations of similar code. Do not assume the new
 - `docs/HANDOFF.md` decides which implementation is current when alternatives coexist.
 
 Trace a symbol and its usages before changing behavior. Validate DJ changes with dry runs, tests, transition previews, and live Mixxx only when appropriate.
+
+For offline multi-plan edits, use `python -m brain.plan_cli`. `note` is
+track-scoped; transition notes and effects use `transition get|set|clear` with
+an explicit `--author`. `mark` writes `wip|ready|archived`; `status` only reads
+artifact staleness. Mutations require `--base-rev` from `show --json` or an
+intentional `--force`.
 
 ## Data and secrets
 
@@ -63,6 +69,28 @@ YouTube OAuth/API setup remains an active cross-machine priority. Follow:
 `agent/hermes-skill/references/youtube-channel-oauth.md`
 
 Never request a Google password, 2FA code, recovery code, browser cookie, raw access token, or refresh token. Default API uploads to private. Require explicit confirmation for uploads, publication/scheduling, public metadata edits, comment writes/moderation, and deletion.
+
+## Prompt-Driven Development
+
+Before PDD adoption or PDD-managed product work, read the workspace router at
+`../../PDD.md` and the mandatory Monoclaw playbooks it names. The installed
+`pdd` executable and its command help are authoritative; on this workspace it
+comes from the editable fork at `../PromptDrivenDevelopment/pdd`.
+
+`claw-dj` is conventional brownfield until matching `.pddrc`,
+`architecture.json`, and prompt ownership say otherwise. Adopt one bounded,
+stable-interface unit at a time. Characterize current behavior and important
+negative boundaries before passing `--characterized` or regenerating code.
+
+Treat ordinary product requests, corrections, removals, examples, and
+constraints as intent input for PDD-managed parts. The agent runs `pdd intent
+plan` with the exact request and project scope, presents meaning for approval,
+then runs the approved apply/story/synchronization workflow. Do not require the
+user to choose commands, dev-unit names, prompt paths, flags, or filenames.
+Keep accepted behavior in versioned `.prompt` source and executable tests; a
+PRD, story, chat transcript, or generated code does not replace prompt source.
+
+The detailed Hermes adapter is `agent/pdd-skill/SKILL.md`.
 
 ## Definition of done
 

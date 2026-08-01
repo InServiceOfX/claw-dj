@@ -1,0 +1,68 @@
+<pdd-reason>The HTTP half of the PRD's 'work with an LLM to add dj notes on transitions, adjust transitions and effects by speaking with it'.</pdd-reason>
+<pdd-interface>
+{
+  "type": "api",
+  "api": {
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/api/plans/<slug>/transitions",
+        "auth": "none",
+        "requestSchema": "{from_track_id, to_track_id, technique?, beats?, showcase_move?, effects?, note?, author?, clear?: bool, base_rev}",
+        "responseSchema": "{rev, segment: {..., overridden, override_fields, state, author}}",
+        "errors": [
+          "400 unknown author value",
+          "409 stale base_rev"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_revision_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/transition_overrides_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api_router_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/api/api_plan_transitions.py` as the SPARSE PATCH: {from_track_id, to_track_id, technique?, beats?, showcase_move?, effects?, note?, author?, base_rev}. Sending only 'note' leaves the derived technique intact. NULL MEANS LEAVE UNCHANGED; deletion is {clear: true}, which reverts the segment to fully derived. THIS IS A DELIBERATE INVERSION OF RFC 7396 JSON Merge Patch, where null deletes, and it must be stated in the generated docstring and in the agent-facing docs: an LLM that assumes merge-patch semantics and sends {'beats': null} would otherwise destroy the beat count on exactly the path the PRD hands to an LLM. A non-adjacent pair is ACCEPTED and stored orphaned rather than rejected, so an agent can write ahead of a reorder. author is part of the payload and is persisted on the record, not only in the journal. This payload's field names must be an exact field-for-field match with plan_cli's 'transition' flags, author included, so a harness and the GUI cannot disagree. One journal entry per accepted patch.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+SPARSE PATCH: {from_track_id, to_track_id, technique?, beats?, showcase_move?, effects?, note?, author?, base_rev}. Sending only 'note' leaves the derived technique intact. NULL MEANS LEAVE UNCHANGED; deletion is {clear: true}, which reverts the segment to fully derived. THIS IS A DELIBERATE INVERSION OF RFC 7396 JSON Merge Patch, where null deletes, and it must be stated in the generated docstring and in the agent-facing docs: an LLM that assumes merge-patch semantics and sends {'beats': null} would otherwise destroy the beat count on exactly the path the PRD hands to an LLM. A non-adjacent pair is ACCEPTED and stored orphaned rather than rejected, so an agent can write ahead of a reorder. author is part of the payload and is persisted on the record, not only in the journal. This payload's field names must be an exact field-for-field match with plan_cli's 'transition' flags, author included, so a harness and the GUI cannot disagree. One journal entry per accepted patch.
+
+% Output
+
+- Primary output: `brain/api/api_plan_transitions.py`.
+- PDD context tags: backend, api, plan, transitions.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/api/api_plan_transitions.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/api/api_plan_transitions.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://www.rfc-editor.org/rfc/rfc7396 — merge_patch_contrast_null_is_not_delete_here
+- https://docs.python.org/3/library/http.server.html — threading_http_server_and_crlf_header_warning
+- https://docs.python.org/3/library/urllib.parse.html — urlparse_path_vs_query_string
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409 — conflict_is_resource_state_not_syntax
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

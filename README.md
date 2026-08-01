@@ -100,3 +100,68 @@ hai login    # from hai-agents[cli] — see HANDOFF.md
 
 See [docs/HANDOFF.md](docs/HANDOFF.md#whats-built-so-far) — actively being
 built during the hackathon, updated as work progresses.
+
+## Persistent mix plans
+
+The editor keeps several **work-in-progress** mixes side by side — the
+"2001 expanded 25th anniversary mix" and the "Notorious BIG tribute mix" as
+separate, switchable plans instead of one hardcoded
+`playlist_selection.json` / `playlist.json` / `mix_plan.json` trio.
+
+The implemented feature has PDD source specifications and executable
+characterization. Its design lives in four tracked places:
+
+| File | What it holds |
+|------|---------------|
+| [`architecture.json`](architecture.json) | 37 modules, priorities, dependency graph, per-module interfaces and reference URLs |
+| [`.pddrc`](.pddrc) | Maps each prompt basename to its generated file path |
+| [`prompts/`](prompts/) | Module-level `.prompt` source specifications, filled from the reviewed architecture |
+| [`docs/intents/`](docs/intents/) | The intent record and the step-by-step analysis it was derived from |
+
+What is implemented:
+
+- **Plans are directories.** `plans/<slug>/` holds `plan.json`, `selection.json`,
+  `notes.json`, `bunches.json`, `transitions.json`, `journal.jsonl`. No registry
+  file — the directory scan *is* the list, so `cp -r` on a plan just works.
+- **Bunches.** 2–4 songs that sound good together, held contiguous and moved as
+  one unit. Stored in the library index (overlap is legal — you can know both
+  that A→B works and that B→C works) and *activated* per plan, where overlap is
+  rejected.
+- **Agents are first-class writers.** `python -m brain.plan_cli` is the offline
+  contract for Hermes / Claude / Codex; every mutation is rev-guarded and lands
+  in an append-only journal recording both `actor` (which surface) and `author`
+  (who composed it — including `llm`). The GUI's "What changed" strip reads that
+  journal, which is what makes "press Refresh and see the truth" true.
+- **A third `3 · Arrange` tab**, with the plan picker above the nav rather than
+  inside it — a plan is a *scope*, not a wizard step.
+
+### Agent and PDD workflow
+
+```
+uv run python -m brain.plan_cli list --json
+uv run python -m brain.plan_cli show --plan <slug> --json
+pdd contracts check prompts/ --stories user_stories/
+pdd sync plan_types --dry-run   # inspect drift; do not regenerate blindly
+```
+
+Prompt paths mirror their output modules under `prompts/`. The checked-in
+implementation is the reviewed brownfield baseline; a future `pdd sync` must
+be scoped and reviewed rather than used to rewrite the subsystem wholesale.
+
+### Configuration
+
+The editor binds `127.0.0.1:8787`, single local user, no auth or login.
+`CLAWDJ_MIXXX_CONTROL_PORT` is an optional explicit runtime override; otherwise
+`scripts/start.sh` validates and reuses the actual patched Mixxx control port.
+
+### Tests
+
+```
+uv run python -m unittest discover -s tests
+```
+
+Note `-s tests` without `-t .`: `tests/` has no `__init__.py`. pytest is **not**
+installed. New modules keep their path constants at module level
+(`DEFAULT_*`) and read them as `module.DEFAULT_X` at call time, because the
+suite isolates by patching those constants and a `from ... import` binds an
+unpatchable copy.

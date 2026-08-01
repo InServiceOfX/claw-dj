@@ -1,0 +1,95 @@
+<pdd-reason>The PRD asks for a nice GUI view of the refreshed song order and the transitions between them, with bunched songs moving as one unit; that is a third tab that does not exist.</pdd-reason>
+<pdd-interface>
+{
+  "type": "page",
+  "page": {
+    "route": "/#arrange",
+    "renderingModel": "client",
+    "params": [
+      {
+        "name": "plan",
+        "type": "string",
+        "description": "active plan slug, resolved by plan_context when absent"
+      }
+    ],
+    "dataSources": [
+      {
+        "kind": "api",
+        "source": "/api/plans/<slug>/arrange",
+        "method": "GET",
+        "description": "single blocking read: order, notes, merged segments, bunch spans, revs, staleness"
+      },
+      {
+        "kind": "api",
+        "source": "/api/plans/<slug>/journal",
+        "method": "GET",
+        "description": "What changed strip; renders actor and author"
+      },
+      {
+        "kind": "api",
+        "source": "/api/plans/<slug>/order",
+        "method": "POST",
+        "description": "full-replacement reorder and move-bunch-as-a-unit"
+      },
+      {
+        "kind": "api",
+        "source": "/api/plans/<slug>/tracks",
+        "method": "POST",
+        "description": "per-row add and remove"
+      },
+      {
+        "kind": "api",
+        "source": "/api/plans/<slug>/bunches",
+        "method": "POST",
+        "description": "activate on Bunch these, enabled:false on un-bunch"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/web/plan_client_JavaScript.prompt</pdd-dependency>
+<pdd-dependency>brain/web/plan_picker_JavaScript.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/web/arrange.js` as the Registers '3 . Arrange' as a third nav button and renders the order with the transition between each adjacent pair. THE PROMPT BASENAME MUST EQUAL THE GENERATED FILENAME 'arrange.js' AND THE <script src="/web/arrange.js"> in playlist.html: a mismatch is silent server-side and fatal client-side, because the file is generated, never served, and the tab simply never registers with no error in the log. Bunched tracks render as ONE VISUALLY CONTIGUOUS UNIT that drags as one block and cannot be split by a drop between its members. Drag and drop MUST preventDefault() on dragover or drop never fires, and ships keyboard pickup/move/drop plus Move up / Move down buttons alongside dragging, since drag alone is inaccessible; reorder announcements go through an aria-live=polite region, not assertive. Per-row Add / Remove call the tracks route, plus an 'Add from Curate selection' action. A collapsible 'What changed' strip renders fetchJournal with AUTHOR SHOWN ALONGSIDE ACTOR, marked up with the ARIA log role. A Refresh button repaints from /arrange with an EXPLICIT IN-FLIGHT STATE on the blocking fetch. 'Bunch these' on 2+ selected rows performs CREATE-THEN-ACTIVATE as one user action; on the activation 409 it names the conflicting bunch and the shared tracks AND states that the library bunch was still saved, because overlap is legal knowledge and only this plan's ordering rejected it. Each bunch unit carries an un-bunch control (activation enabled:false) and an overflow action archiving the library bunch, surfacing its affected-plans list. Avoid Element.moveBefore: not baseline.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Registers '3 . Arrange' as a third nav button and renders the order with the transition between each adjacent pair. THE PROMPT BASENAME MUST EQUAL THE GENERATED FILENAME 'arrange.js' AND THE <script src="/web/arrange.js"> in playlist.html: a mismatch is silent server-side and fatal client-side, because the file is generated, never served, and the tab simply never registers with no error in the log. Bunched tracks render as ONE VISUALLY CONTIGUOUS UNIT that drags as one block and cannot be split by a drop between its members. Drag and drop MUST preventDefault() on dragover or drop never fires, and ships keyboard pickup/move/drop plus Move up / Move down buttons alongside dragging, since drag alone is inaccessible; reorder announcements go through an aria-live=polite region, not assertive. Per-row Add / Remove call the tracks route, plus an 'Add from Curate selection' action. A collapsible 'What changed' strip renders fetchJournal with AUTHOR SHOWN ALONGSIDE ACTOR, marked up with the ARIA log role. A Refresh button repaints from /arrange with an EXPLICIT IN-FLIGHT STATE on the blocking fetch. 'Bunch these' on 2+ selected rows performs CREATE-THEN-ACTIVATE as one user action; on the activation 409 it names the conflicting bunch and the shared tracks AND states that the library bunch was still saved, because overlap is legal knowledge and only this plan's ordering rejected it. Each bunch unit carries an un-bunch control (activation enabled:false) and an overflow action archiving the library bunch, surfacing its affected-plans list. Avoid Element.moveBefore: not baseline.
+
+% Output
+
+- Primary output: `brain/web/arrange.js`.
+- PDD context tags: frontend, browser, page, arrange.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/web/arrange.js` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For browser modules, also run `node --check brain/web/arrange.js` and the plan frontend tests.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API — dragover_preventdefault_or_drop_never_fires
+- https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Guides/Live_regions — announce_moved_to_position
+- https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-live — polite_not_assertive_for_reorder
+- https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/log_role — what_changed_strip_is_a_log
+- https://www.smashingmagazine.com/2018/01/dragon-drop-accessible-list-reordering/ — keyboard_pickup_move_drop_fallback
+- https://react-aria.adobe.com/blog/drag-and-drop — move_up_down_buttons_alongside_drag
+- https://developer.mozilla.org/en-US/docs/Web/API/Element/moveBefore — state_preserving_move_not_baseline_avoid
+- https://developer.mozilla.org/en-US/docs/Web/API/AbortController — in_flight_state_on_blocking_arrange_fetch

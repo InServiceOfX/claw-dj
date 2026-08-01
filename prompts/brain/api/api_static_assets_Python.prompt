@@ -1,0 +1,70 @@
+<pdd-reason>playlist_editor.py has no /web/ route at all, so modules 32-35 are unreachable orphans until one exists; they are the first external JS in this repo.</pdd-reason>
+<pdd-interface>
+{
+  "type": "api",
+  "api": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/web/<file>",
+        "auth": "none",
+        "responseSchema": "file bytes with text/javascript or text/css",
+        "errors": [
+          "404 unknown or out-of-root file",
+          "304 on If-None-Match match"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/api_router_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/api/api_static_assets.py` as the Serves brain/web/*.js and *.css. SERVE .js AS text/javascript AND .css AS text/css FROM A LITERAL TWO-ENTRY MAP, not mimetypes.guess_type: guess_type reads /etc/apache2/mime.types and seven other system files at module init, so its answer is this box's answer rather than a contract, and MDN is explicit that scripts served with any other MIME type may not run while CSS sent as text/plain or application/octet-stream is IGNORED. Use guess_type only as a fallback for other extensions. This is the second silent failure mode on the same path as the arrange.js filename fix: right file, wrong Content-Type, fetched and refused, nav button never appears, nothing in the server log. SCRIPT MODEL: modules 32-35 are ES modules loaded with <script type="module">, chosen because 33/34/35 all import 32 and classic scripts would require a global namespace plus load-order discipline in playlist.html; same-origin here so the CORS requirement on module scripts is moot, and module scripts are deferred by default. Path confined to WEB_ROOT via Path.resolve() then containment; '..' and absolute paths rejected. ETag plus 304 with the required headers on Not Modified. A startup assertion (or test) checks that every <script src="/web/..."> in playlist.html names a file on disk AND that this module serves it with a JavaScript MIME type.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Serves brain/web/*.js and *.css. SERVE .js AS text/javascript AND .css AS text/css FROM A LITERAL TWO-ENTRY MAP, not mimetypes.guess_type: guess_type reads /etc/apache2/mime.types and seven other system files at module init, so its answer is this box's answer rather than a contract, and MDN is explicit that scripts served with any other MIME type may not run while CSS sent as text/plain or application/octet-stream is IGNORED. Use guess_type only as a fallback for other extensions. This is the second silent failure mode on the same path as the arrange.js filename fix: right file, wrong Content-Type, fetched and refused, nav button never appears, nothing in the server log. SCRIPT MODEL: modules 32-35 are ES modules loaded with <script type="module">, chosen because 33/34/35 all import 32 and classic scripts would require a global namespace plus load-order discipline in playlist.html; same-origin here so the CORS requirement on module scripts is moot, and module scripts are deferred by default. Path confined to WEB_ROOT via Path.resolve() then containment; '..' and absolute paths rejected. ETag plus 304 with the required headers on Not Modified. A startup assertion (or test) checks that every <script src="/web/..."> in playlist.html names a file on disk AND that this module serves it with a JavaScript MIME type.
+
+% Output
+
+- Primary output: `brain/api/api_static_assets.py`.
+- PDD context tags: backend, api, static, frontend.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/api/api_static_assets.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/api/api_static_assets.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types — text_javascript_and_text_css_required
+- https://docs.python.org/3/library/mimetypes.html — guess_type_reads_system_files_use_literal_map
+- https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/script/type — module_scripts_deferred_and_cors_fetched
+- https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules — es_modules_in_browser_without_bundler
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag — asset_etag_generation
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/If-None-Match — weak_comparison_on_get
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/304 — headers_required_on_not_modified
+- https://docs.python.org/3/library/pathlib.html — web_root_containment_check
+- https://docs.python.org/3/library/http.server.html — threading_http_server_and_crlf_header_warning
+- https://docs.python.org/3/library/urllib.parse.html — urlparse_path_vs_query_string
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409 — conflict_is_resource_state_not_syntax
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

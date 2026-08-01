@@ -14,6 +14,58 @@ Written 2026-07-11 mid-hackathon so work can resume on a different machine
 
 Both goals point at the same architecture, so there's one codebase.
 
+## Current-path ordering and flexible control port (2026-07-31)
+
+## Multi-plan foundation implementation (2026-07-31)
+
+Architecture entries 1–31 are now materialized under `brain/plan_*.py`,
+`brain/api_router.py`, and `brain/api/`, plus `bunch_store.py`,
+`transition_overrides.py`, and `order_constraints.py`.
+Plans live at `brain/data/plans/<frozen-slug>/`; `active.json` is only a pointer
+and listing is always a directory scan. Writes use content-hash optimistic
+concurrency and atomic same-directory replacement. Global `tracks.dj_notes`
+remain untouched beneath sparse per-plan overrides. Library bunches may overlap,
+but enabled bunches in one plan must be disjoint and retain exact internal
+order. `plan_mix_build` writes version-3 artifacts with plan/source provenance,
+transition attribution, bunch evidence, and the effective Mixxx port; v2 remains
+readable. `python -m brain.plan_migration` promotes legacy singleton files
+without removing them and is guarded for repeat runs. The stdlib server now
+registers plan APIs without changing legacy endpoints; mutations use composite
+revision guards and Arrange is one disk-consistent snapshot. `brain.plan_cli`
+is the offline agent contract: `note` is track-scoped,
+`transition get|set|clear` is transition-scoped, `mark` writes lifecycle, and
+`status` reads staleness. Plan-scoped build/start/enrich/refresh retain the
+effective Mixxx port. Browser modules 32–35 are now implemented as vanilla ES
+modules under `brain/web/`. `plan_client.js` owns revision threading,
+structured conflicts, and the one-shot Arrange read; `plan_picker.js` keeps
+frozen slugs internal while switching colloquial names above the workflow tabs;
+`arrange.js` adds accessible order/bunch/track/journal controls; and
+`transition_editor.js` owns sparse human overrides and explicit clearing.
+`playlist.html` retains its Curate and Create code and exposes only a refresh
+hook after plan switches. The browser never chooses or submits a Mixxx port.
+`tests/test_plan_frontend.py` starts a temporary loopback editor server and
+verifies HTML, JavaScript MIME responses, and real plan/Arrange GETs; the
+top-level suite is 211/211.
+
+The two approved PDD amendments are implemented in the working brownfield
+application and the multi-plan graph is now wired through the local server and
+offline CLI. `brain.build_mix_plan.compose_mix_plan` always runs the deterministic
+mix graph, even with no model or an empty brief. Optional NemoClaw/H Company
+responses are constraint interpretation only, invalid/failed responses preserve
+the full pool and fall back locally, and H planning uses an agent with
+`environments=[]` rather than `brain.agent.Brain` or a desktop bridge. The
+playlist editor dry-run now lists the complete candidate playback order before
+Start mix.
+
+Port 9995 is now preferred rather than required. `hands.mixxx_control` discovers
+only the preferred port and TCP listeners owned by detected Mixxx processes,
+then requires the patched JSON `ping` response. `scripts/start.sh` reuses a
+validated non-default listener, reports running-Mixxx/no-control-API distinctly,
+and passes one effective port into playlist-editor server state. Analyze &
+enrich, plan metadata, Start mix, `scripts/run_mix.sh`, and the live runner reuse
+that value; explicit overrides remain highest priority. Browser requests no
+longer contain their own 9995 default.
+
 ## Portable Hermes agent and publishing state (2026-07-23)
 
 The dedicated `clawdj` Hermes agent is now reproducible from a small reviewed
@@ -22,12 +74,28 @@ Git kit instead of a full personal-profile export:
 - `AGENTS.md` — canonical cross-agent repository rules;
 - `agent/hermes-profile/SOUL.md` — TARS/clawdj identity template;
 - `agent/hermes-skill/SKILL.md` plus `references/` — operational workflows;
+- `agent/pdd-skill/SKILL.md` — PDD intent, brownfield-adoption, approval, and
+  evidence workflow backed by the workspace's canonical Monoclaw policy;
 - `agent/hermes-skill/scripts/` — deterministic 9:16 teaser rendering;
 - `docs/HERMES_AGENT_SETUP.md` — exact new-Mac bootstrap.
 
 This intentionally excludes Hermes history/state databases, caches, logs,
 binaries, credentials, personal media, and Mixxx application state. Those are
 machine-local and must be installed, transferred, or reauthorized separately.
+
+PDD integration is workflow-ready but does not declare the entire brownfield
+repository generated. The workspace router is `../../PDD.md`; canonical policy
+is in `../Monoclaw/docs/pdd/`; the executable is the editable fork at
+`../PromptDrivenDevelopment/pdd` (remote `InServiceOfX/pdd`). The first
+read-only planner classified this repository as conventional brownfield; the
+now-characterized multi-plan subsystem is the bounded adopted slice. Its 37
+architecture entries have matching `.prompt` sources under `prompts/`, including
+dedicated runtime prompts for Mixxx discovery and `scripts/start.sh`, and
+`pdd contracts check prompts/ --stories user_stories/` is clean. The current
+211-test implementation is the reviewed baseline. Future changes still require
+exact intent planning, meaning approval, focused negative tests, and reviewed
+sync output. Saying “do PDD” loads this procedure; it is not permission for
+whole-project regeneration.
 
 YouTube OAuth is still open work. Ernest is creating the Google Cloud project
 and Desktop OAuth client for `https://www.youtube.com/@claw-dj`. Continue from

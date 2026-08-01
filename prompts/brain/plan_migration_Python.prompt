@@ -1,0 +1,71 @@
+<pdd-reason>An existing working set lives in the legacy singleton files; without a one-shot promotion the user's current mix is stranded the moment plans exist.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "main",
+        "signature": "main(argv: list[str] | None = None) -> int",
+        "returns": "exit code"
+      },
+      {
+        "name": "migrate",
+        "signature": "migrate(*, dry_run: bool = False) -> dict",
+        "returns": "backfill report",
+        "errors": [
+          "MigrationAborted"
+        ],
+        "sideEffects": "atomic promotion guarded by PRAGMA user_version"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_paths_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_store_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_bunch_activation_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_notes_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/transition_overrides_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/plan_migration.py` as the Promotes the legacy singletons (playlist_selection.json, playlist.json, mix_plan.json) into plan #1 with origin='migrated' and status='wip'. ATOMIC OR ABORTED: copy before promote so a failure rolls back, and finish with os.replace rather than a partial in-place rewrite. Guarded by PRAGMA user_version so a rerun is a no-op and a half-finished run FAILS LOUDLY rather than silently duplicating rows or dropping lookups, which the portable-collection intent requires by name. Flip user_version LAST and inside the transaction; issue PRAGMA foreign_keys outside it. --dry-run prints the backfill report and writes nothing. Exposed as 'python -m brain.plan_migration' and documented in PROGRESS.md as a required one-time step.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Promotes the legacy singletons (playlist_selection.json, playlist.json, mix_plan.json) into plan #1 with origin='migrated' and status='wip'. ATOMIC OR ABORTED: copy before promote so a failure rolls back, and finish with os.replace rather than a partial in-place rewrite. Guarded by PRAGMA user_version so a rerun is a no-op and a half-finished run FAILS LOUDLY rather than silently duplicating rows or dropping lookups, which the portable-collection intent requires by name. Flip user_version LAST and inside the transaction; issue PRAGMA foreign_keys outside it. --dry-run prints the backfill report and writes nothing. Exposed as 'python -m brain.plan_migration' and documented in PROGRESS.md as a required one-time step.
+
+% Output
+
+- Primary output: `brain/plan_migration.py`.
+- PDD context tags: backend, plan, migration.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/plan_migration.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/plan_migration.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://sqlite.org/pragma.html#pragma_user_version — version_flip_last_inside_transaction
+- https://sqlite.org/foreignkeys.html — pragma_outside_transaction_ordering
+- https://docs.python.org/3/library/shutil.html — copy_before_promote_rollback
+- https://docs.python.org/3/library/os.html — atomic_replace_or_abort
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

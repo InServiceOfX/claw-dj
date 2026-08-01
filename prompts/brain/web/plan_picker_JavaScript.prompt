@@ -1,0 +1,77 @@
+<pdd-reason>Switching between work-in-progress mixes is a change of SCOPE, not a step in the Curate-then-Create wizard, so it belongs above the numbered nav rather than inside it.</pdd-reason>
+<pdd-interface>
+{
+  "type": "component",
+  "component": {
+    "props": [
+      {
+        "name": "activeSlug",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "plans",
+        "type": "Plan[]",
+        "required": true
+      },
+      {
+        "name": "onSwitch",
+        "type": "(slug: string) => void",
+        "required": true
+      },
+      {
+        "name": "onStatusChange",
+        "type": "(slug: string, status: 'wip'|'ready'|'archived') => void",
+        "required": false
+      }
+    ],
+    "emits": [
+      "switch",
+      "create",
+      "rename",
+      "duplicate",
+      "delete",
+      "statusChange"
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/web/plan_client_JavaScript.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/web/plan_picker.js` as the Header-level plan picker rendered ABOVE the '1 . Curate set' / '2 . Create the mix' nav. Numbering the plan chooser '3 .' in a linear wizard would tell the user to pick it last, which is backwards: a plan scopes everything the other tabs do. Shows display name, a status badge and a stale dot, with Switch, New, Rename, Duplicate and Delete inline. Rename updates the label with NO URL change and no page reload, because the slug is frozen. THE STATUS BADGE IS A CONTROL, NOT DECORATION: clicking it sets wip|ready|archived through plan_client.setStatus and repaints from the response. A 409 shows the standard changed-underneath banner. Announces plan switches through an ARIA status role so the change is not silent to assistive tech.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Header-level plan picker rendered ABOVE the '1 . Curate set' / '2 . Create the mix' nav. Numbering the plan chooser '3 .' in a linear wizard would tell the user to pick it last, which is backwards: a plan scopes everything the other tabs do. Shows display name, a status badge and a stale dot, with Switch, New, Rename, Duplicate and Delete inline. Rename updates the label with NO URL change and no page reload, because the slug is frozen. THE STATUS BADGE IS A CONTROL, NOT DECORATION: clicking it sets wip|ready|archived through plan_client.setStatus and repaints from the response. A 409 shows the standard changed-underneath banner. Announces plan switches through an ARIA status role so the change is not silent to assistive tech.
+
+% Output
+
+- Primary output: `brain/web/plan_picker.js`.
+- PDD context tags: frontend, browser, component.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/web/plan_picker.js` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For browser modules, also run `node --check brain/web/plan_picker.js` and the plan frontend tests.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/status_role — plan_switch_announcement
+- https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules — import_plan_client

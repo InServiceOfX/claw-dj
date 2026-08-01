@@ -1,0 +1,69 @@
+<pdd-reason>Today every module hardcodes the singleton paths playlist_selection.json / playlist.json / mix_plan.json; multiple plans are impossible until path resolution is one function.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "resolve",
+        "signature": "resolve(slug: str | None = None) -> PlanPaths",
+        "errors": [
+          "PlanNotFound",
+          "ValueError on traversal"
+        ]
+      },
+      {
+        "name": "legacy_paths",
+        "signature": "legacy_paths() -> PlanPaths",
+        "returns": "pre-migration singleton layout"
+      },
+      {
+        "name": "list_slugs",
+        "signature": "list_slugs() -> list[str]",
+        "returns": "directory scan of plans/*/plan.json"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/plan_paths.py` as the Resolves the on-disk layout for a plan. DEFAULT_PLANS_DIR is a module-level constant that tests patch (read it as plan_paths.DEFAULT_PLANS_DIR at call time, never 'from plan_paths import DEFAULT_PLANS_DIR', which binds a copy and is unpatchable). resolve(slug) returns a PlanPaths with all 10 declared members under plans/<slug>/. resolve() with no slug reads active.json and falls back to the legacy singleton paths when no plans directory exists, so a pre-migration checkout keeps working. Traversal guard: Path.resolve() FIRST (it is the only method that eliminates '..'), THEN a containment check against the plans dir, because relative_to() assumes no symlinks are present; '../' and absolute slugs raise rather than escaping.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Resolves the on-disk layout for a plan. DEFAULT_PLANS_DIR is a module-level constant that tests patch (read it as plan_paths.DEFAULT_PLANS_DIR at call time, never 'from plan_paths import DEFAULT_PLANS_DIR', which binds a copy and is unpatchable). resolve(slug) returns a PlanPaths with all 10 declared members under plans/<slug>/. resolve() with no slug reads active.json and falls back to the legacy singleton paths when no plans directory exists, so a pre-migration checkout keeps working. Traversal guard: Path.resolve() FIRST (it is the only method that eliminates '..'), THEN a containment check against the plans dir, because relative_to() assumes no symlinks are present; '../' and absolute slugs raise rather than escaping.
+
+% Output
+
+- Primary output: `brain/plan_paths.py`.
+- PDD context tags: backend, plan, paths.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/plan_paths.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/plan_paths.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://docs.python.org/3/library/pathlib.html — resolve_and_is_relative_to_containment_check
+- https://docs.python.org/3/library/os.path.html — realpath_vs_abspath_symlink_difference
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

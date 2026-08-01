@@ -39,5 +39,15 @@ brain/data/
 
 # PDD runtime state (core dumps, caches). Durable intent belongs in docs/,
 # not here — see PDD_NATURAL_LANGUAGE_AGENT_PLAYBOOK.md.
+# .pdd/meta/ is the exception: fingerprint metadata that makes sync state
+# portable between machines, so it is tracked.
 .pdd/
+!.pdd/meta/
 litellm_cache.sqlite/
+
+# PDD generated scratch — regenerable from prompts/ + architecture.json
+examples/
+architecture.json.bak
+
+# per-plan working data (mix plans live under brain/data/, already ignored)
+.agentic_prompt_*.txt

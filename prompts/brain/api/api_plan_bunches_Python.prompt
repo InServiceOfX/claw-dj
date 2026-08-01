@@ -1,0 +1,73 @@
+<pdd-reason>Creating a library bunch constrains nothing until it is activated for a plan; this is the route that makes a bunch actually hold songs together in one mix.</pdd-reason>
+<pdd-interface>
+{
+  "type": "api",
+  "api": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/api/plans/<slug>/bunches",
+        "auth": "none",
+        "responseSchema": "{activations: [{bunch_id, label, track_ids, ordered, enabled, region, span, archived}]}"
+      },
+      {
+        "method": "POST",
+        "path": "/api/plans/<slug>/bunches",
+        "auth": "none",
+        "requestSchema": "{bunch_id, enabled: bool, region?, base_rev}",
+        "responseSchema": "{rev, activation}",
+        "errors": [
+          "409 {conflicting_bunch_id, shared_track_ids}",
+          "409 stale base_rev"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_revision_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/bunch_store_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_bunch_activation_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api_router_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/api/api_plan_bunches.py` as the GET lists this plan's activations joined to their library bunches plus each one's span in the current order. POST {bunch_id, enabled, region?, base_rev} activates or deactivates; ENABLED:FALSE IS THE UN-BUNCH PATH the Arrange tab calls. AN OVERLAPPING ACTIVATION RETURNS 409 NAMING THE CONFLICTING BUNCH AND THE SHARED track_ids as structured fields, not a flattened message string, so the UI can render the conflict verbatim and tell the user which songs collide. The disjointness check itself lives in plan_bunch_activation, which also writes the journal entry; this module does not double-write. A rejected activation journals nothing and, critically, does NOT discard the library bunch: overlap is legal knowledge about songs and only this plan's ordering rejected it.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+GET lists this plan's activations joined to their library bunches plus each one's span in the current order. POST {bunch_id, enabled, region?, base_rev} activates or deactivates; ENABLED:FALSE IS THE UN-BUNCH PATH the Arrange tab calls. AN OVERLAPPING ACTIVATION RETURNS 409 NAMING THE CONFLICTING BUNCH AND THE SHARED track_ids as structured fields, not a flattened message string, so the UI can render the conflict verbatim and tell the user which songs collide. The disjointness check itself lives in plan_bunch_activation, which also writes the journal entry; this module does not double-write. A rejected activation journals nothing and, critically, does NOT discard the library bunch: overlap is legal knowledge about songs and only this plan's ordering rejected it.
+
+% Output
+
+- Primary output: `brain/api/api_plan_bunches.py`.
+- PDD context tags: backend, api, plan, bunch.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/api/api_plan_bunches.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/api/api_plan_bunches.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409 — conflict_body_carries_bunch_id_and_shared_tracks
+- https://docs.python.org/3/library/http.server.html — threading_http_server_and_crlf_header_warning
+- https://docs.python.org/3/library/urllib.parse.html — urlparse_path_vs_query_string
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

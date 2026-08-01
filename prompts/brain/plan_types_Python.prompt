@@ -1,0 +1,124 @@
+<pdd-reason>Every other module in the feature exchanges plan identity, revision tokens, bunch records, transition overrides and provenance; without one shared vocabulary each would re-spell them and drift.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "PlanStatus",
+        "signature": "class PlanStatus(StrEnum)  # wip | ready | archived",
+        "returns": "StrEnum member"
+      },
+      {
+        "name": "Author",
+        "signature": "class Author(StrEnum)  # human | agent | llm",
+        "returns": "StrEnum member"
+      },
+      {
+        "name": "Actor",
+        "signature": "class Actor(StrEnum)  # gui | cli | agent",
+        "returns": "StrEnum member"
+      },
+      {
+        "name": "PlanMeta",
+        "signature": "@dataclass(frozen=True) class PlanMeta  # plan_id, slug, display_name, status, origin, origin_ref, collection_id, created_at, updated_at, last_opened_at",
+        "returns": "PlanMeta"
+      },
+      {
+        "name": "Rev",
+        "signature": "@dataclass(frozen=True) class Rev  # composite token over the per-file digests in fixed key order",
+        "returns": "Rev"
+      },
+      {
+        "name": "Bunch",
+        "signature": "@dataclass(frozen=True) class Bunch  # bunch_id, label, track_ids, ordered, source, notes, archived",
+        "returns": "Bunch"
+      },
+      {
+        "name": "OrderConstraints",
+        "signature": "@dataclass(frozen=True) class OrderConstraints  # use_only, opener_id, adjacent, adjacent_ordered, regions, notes (mirrors mix_order_brief's existing dict shape)",
+        "returns": "OrderConstraints"
+      },
+      {
+        "name": "EffectiveNote",
+        "signature": "@dataclass(frozen=True) class EffectiveNote  # track_id, note, layer ('plan'|'global'), diverged, available",
+        "returns": "EffectiveNote"
+      },
+      {
+        "name": "PlanPaths",
+        "signature": "@dataclass(frozen=True) class PlanPaths  # 10 members",
+        "returns": "PlanPaths"
+      },
+      {
+        "name": "TransitionOverride",
+        "signature": "@dataclass(frozen=True) class TransitionOverride",
+        "returns": "TransitionOverride"
+      },
+      {
+        "name": "RESERVED_SLUGS",
+        "signature": "RESERVED_SLUGS: frozenset[str]  # {'active', 'trash'}",
+        "returns": "frozenset of slugs no plan may own"
+      },
+      {
+        "name": "slugify",
+        "signature": "slugify(name: str) -> str",
+        "returns": "kebab slug, never a reserved word"
+      },
+      {
+        "name": "validate_slug",
+        "signature": "validate_slug(slug: str) -> None",
+        "errors": [
+          "ValueError"
+        ]
+      },
+      {
+        "name": "header_safe",
+        "signature": "header_safe(value: str) -> str",
+        "returns": "CR/LF-stripped header value"
+      }
+    ]
+  }
+}
+</pdd-interface>
+
+% Goal
+
+Implement and maintain `brain/plan_types.py` as the Pure stdlib shared types, no I/O and no imports outside the standard library. Frozen dataclasses PlanMeta, PlanPaths, Rev, Bunch, OrderConstraints, TransitionOverride, EffectiveNote. PlanStatus is a StrEnum of exactly wip|ready|archived ('wip' is PRD-sourced from 'work in progress'; 'ready' and 'archived' are design-sourced and must not be back-attributed to the PRD). Author is a StrEnum of human|agent|llm ('llm' is PRD-sourced from 'work with an LLM'). Actor is a StrEnum of gui|cli|agent and is a DISTINCT type from Author that must never be merged despite both containing 'agent': actor is which surface issued the write, author is who composed the content, so an LLM driving the CLI is actor=cli, author=llm and collapsing them makes that case unrepresentable. TransitionOverride fields: from_track_id, to_track_id, technique?, beats?, showcase_move?, effects?, note?, author?, state (active|orphaned); author is optional so records written before the field existed round-trip as None rather than raising. PlanPaths has exactly 10 members: root, plan_json, selection, exclusions, playlist, mix_plan, notes, bunches, transitions, journal. slugify() NFKD-normalizes then reduces to a lowercase kebab slug; validate_slug() raises on anything else; header_safe() strips CR/LF because http.server's send_header does not validate them and display_name is free-form user text. RESERVED_SLUGS = {'active','trash'} plus a leading-dot rule: slugify('Active') must NOT return 'active' but route through the same -2/-3 collision path as a duplicate name, because a slug of 'active' collides with both the /api/plans/active route and plan_paths.resolve()'s active.json read.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Pure stdlib shared types, no I/O and no imports outside the standard library. Frozen dataclasses PlanMeta, PlanPaths, Rev, Bunch, OrderConstraints, TransitionOverride, EffectiveNote. PlanStatus is a StrEnum of exactly wip|ready|archived ('wip' is PRD-sourced from 'work in progress'; 'ready' and 'archived' are design-sourced and must not be back-attributed to the PRD). Author is a StrEnum of human|agent|llm ('llm' is PRD-sourced from 'work with an LLM'). Actor is a StrEnum of gui|cli|agent and is a DISTINCT type from Author that must never be merged despite both containing 'agent': actor is which surface issued the write, author is who composed the content, so an LLM driving the CLI is actor=cli, author=llm and collapsing them makes that case unrepresentable. TransitionOverride fields: from_track_id, to_track_id, technique?, beats?, showcase_move?, effects?, note?, author?, state (active|orphaned); author is optional so records written before the field existed round-trip as None rather than raising. PlanPaths has exactly 10 members: root, plan_json, selection, exclusions, playlist, mix_plan, notes, bunches, transitions, journal. slugify() NFKD-normalizes then reduces to a lowercase kebab slug; validate_slug() raises on anything else; header_safe() strips CR/LF because http.server's send_header does not validate them and display_name is free-form user text. RESERVED_SLUGS = {'active','trash'} plus a leading-dot rule: slugify('Active') must NOT return 'active' but route through the same -2/-3 collision path as a duplicate name, because a slug of 'active' collides with both the /api/plans/active route and plan_paths.resolve()'s active.json read.
+
+% Output
+
+- Primary output: `brain/plan_types.py`.
+- PDD context tags: backend, plan, types.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/plan_types.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/plan_types.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://docs.python.org/3/library/dataclasses.html — frozen_dataclass_and_slots_semantics
+- https://docs.python.org/3/library/enum.html — strenum_json_safe_status_and_author
+- https://docs.python.org/3/library/unicodedata.html — nfkd_normalization_for_slugify
+- https://docs.python.org/3/library/re.html — slug_character_class_and_collision_suffix
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

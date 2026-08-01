@@ -1,0 +1,65 @@
+<pdd-reason>Without a read surface the journal is write-only, and the PRD's 'the agent changed my mix, what did it do?' has no answer.</pdd-reason>
+<pdd-interface>
+{
+  "type": "api",
+  "api": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/api/plans/<slug>/journal",
+        "auth": "none",
+        "requestSchema": "?limit=&actor=&author=",
+        "responseSchema": "{entries: [{at, actor, author, action, detail, rev_before, rev_after}]}",
+        "errors": [
+          "404 unknown plan (but empty journal is 200)"
+        ]
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api_router_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/api/api_plan_journal.py` as the GET returns journal entries newest-first with ?limit= (default 50, capped at 500). Each entry is {at, actor, author, action, detail, rev_before, rev_after}. AUTHOR IS WHAT LETS THE STRIP SAY 'the LLM wrote this transition note' rather than only 'the CLI did'. Entries written before the author field existed return author: null and MUST RENDER, not 500. ?actor= and ?author= filter independently. A plan with no journal file returns {entries: []}, NOT 404. A truncated final line is skipped rather than fatal, so a crash mid-append does not make the history unreadable.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+GET returns journal entries newest-first with ?limit= (default 50, capped at 500). Each entry is {at, actor, author, action, detail, rev_before, rev_after}. AUTHOR IS WHAT LETS THE STRIP SAY 'the LLM wrote this transition note' rather than only 'the CLI did'. Entries written before the author field existed return author: null and MUST RENDER, not 500. ?actor= and ?author= filter independently. A plan with no journal file returns {entries: []}, NOT 404. A truncated final line is skipped rather than fatal, so a crash mid-append does not make the history unreadable.
+
+% Output
+
+- Primary output: `brain/api/api_plan_journal.py`.
+- PDD context tags: backend, api, provenance.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/api/api_plan_journal.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/api/api_plan_journal.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://jsonlines.org/ — truncated_final_line_is_skippable
+- https://docs.python.org/3/library/urllib.parse.html — limit_actor_author_query_filters
+- https://docs.python.org/3/library/http.server.html — threading_http_server_and_crlf_header_warning
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409 — conflict_is_resource_state_not_syntax
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

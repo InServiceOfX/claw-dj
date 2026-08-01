@@ -8,6 +8,61 @@
 
 ## Active cross-machine priorities (2026-07-23)
 
+- [x] **Multi-plan frontend modules 32–35 (2026-07-31).** Added the vanilla
+      ES-module plan client, header-level colloquial plan picker, `3 · Arrange`
+      tab, and sparse transition editor. Every plan mutation is revision
+      guarded, conflicts stop with an explicit changed-on-disk Refresh action,
+      Arrange refreshes from one snapshot without rebuilding, exact-order
+      bunches move as accessible drag/keyboard/button units, and reusable
+      bunch overlap details remain structured through the UI. Curate/Create
+      remain intact and plan switches refresh their server-owned state without
+      exposing or submitting a Mixxx control port. Focused loopback HTTP/static
+      coverage is in `tests/test_plan_frontend.py`; 211/211 top-level tests pass.
+
+- [x] **Multi-plan integration modules 16–31 (2026-07-31).** Added the
+      literal-precedence stdlib router, static/plan/arrange/order/track/note/
+      transition/bunch/journal APIs, the offline `brain.plan_cli` harness
+      surface, safe singleton bootstrap, non-destructive active switching,
+      composite-rev 409 guards, one-shot Arrange snapshots, plan-scoped
+      build/start/enrich/refresh paths, and per-plan Mixxx control-port
+      persistence. Browser modules 32–35 are completed in the entry above.
+
+- [x] **Multi-plan foundation modules 1–15 (2026-07-31).** Added the
+      directory-per-plan storage core, content revisions/atomic guarded writes,
+      journal, stateless request context, reusable library bunches with
+      plan-local disjoint activation, note and transition overlays, structural
+      order constraints, v3 mix provenance/staleness, the plan-aware build
+      entry point, and idempotent legacy promotion. API/GUI modules 16–35 were
+      intentionally not part of that foundation slice; 16–31 are now complete
+      in the integration entry above. Promote legacy singleton state with
+      `uv run python -m brain.plan_migration --dry-run`, then rerun without
+      `--dry-run`; build a workspace plan with
+      `uv run python -m brain.build_mix_plan --plan <frozen-slug>`.
+
+- [x] **Approved current-path mix-order and Mixxx-port amendments
+      (2026-07-31).** `compose_mix_plan` now treats the finalized selection as
+      a pool and always applies deterministic BPM/key/lineage/chroma/genre/
+      tempo ordering, including Feel-only and empty briefs. NemoClaw/H Company
+      only interpret constraints; invalid/failing output falls back locally,
+      and H planning creates no desktop environment. The editor previews the
+      complete candidate order. `scripts/start.sh` now prefers 9995 but can
+      reuse another listener owned by the running Mixxx process after a real
+      JSON ping, then preserves that port through editor/enrichment/build/start
+      and CLI live execution. A running Mixxx with no reachable API is reported
+      separately and never causes a second instance to start.
+- [x] **Prompt-Driven Development agent workflow (2026-07-31).** Added a
+      portable `prompt-driven-development` Hermes skill, project instruction
+      routing, and setup verification against Ernest's editable PDD fork. The
+      original read-only intent planner classified `claw-dj` as conventional
+      brownfield. The reviewed multi-plan subsystem is now explicitly adopted:
+      `architecture.json` and `.pddrc` route 37 module prompts, all 37 `.prompt`
+      sources exist (including dedicated Mixxx discovery and startup prompts),
+      and deterministic contract checking reports zero warnings/errors. The
+      working implementation remains the characterized baseline—this is not
+      permission for whole-project regeneration. Saying “do PDD” means the
+      agent performs discovery, exact-request planning, meaning approval,
+      scoped apply/story gates, and evidence reporting without making Ernest
+      choose PDD commands or paths.
 - [ ] **YouTube OAuth/API access for `@claw-dj`.** Ernest is creating the
       Google Cloud project and Desktop OAuth client. Continue from
       `agent/hermes-skill/references/youtube-channel-oauth.md`; verify
@@ -67,6 +122,13 @@ core-rust/target/release/clawdj gesture brake --deck 1
 core-rust/target/release/clawdj gesture stutter --deck 1 --rolls 4 --size 0.5
 
 # Tests: uv run python -m unittest discover -s tests   (+ cargo test/clippy/fmt in core-rust)
+
+# Multi-plan harness surface (mutations require --base-rev or --force):
+uv run python -m brain.plan_cli list --json
+uv run python -m brain.plan_cli show --json
+uv run python -m brain.plan_cli transition set --from TRACK_A --to TRACK_B --note "echo out" --author llm --force
+uv run python -m brain.plan_cli mark ready --force   # lifecycle write
+uv run python -m brain.plan_cli status --json       # staleness read
 ```
 
 ## Done (post-hackathon arc, 2026-07-13)

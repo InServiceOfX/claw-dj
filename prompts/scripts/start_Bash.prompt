@@ -1,0 +1,42 @@
+<pdd-reason>scripts/start.sh is the one-command operator entry point, so it must reuse an already-running valid Mixxx endpoint and propagate that exact port to an existing or newly started playlist editor.</pdd-reason>
+<pdd-interface>
+{
+  "type": "cli",
+  "cli": {
+    "commands": [{"name": "scripts/start.sh", "flags": ["--mixxx-port PORT", "--help"]}],
+    "io": {
+      "stdout": "selected Mixxx control port and editor startup status",
+      "stderr": "distinct unsafe or unavailable conditions"
+    }
+  }
+}
+</pdd-interface>
+<pdd-dependency>hands/mixxx_control_Python.prompt</pdd-dependency>
+
+% Goal
+
+Keep `scripts/start.sh` as the safe one-command startup path while treating Mixxx control port `9995` as a preference rather than a strict requirement.
+
+% Requirements
+
+1. Parse `--mixxx-port PORT`; reject missing values and unknown arguments.
+2. Ask `hands.mixxx_control` to discover and validate the endpoint. Do not duplicate broad port-scanning logic in shell.
+3. Reuse an already-running patched Mixxx on any validated owned localhost listener.
+4. If Mixxx is running but no valid control API is reachable, report that distinct condition and do not start a second instance.
+5. Start Mixxx with the explicit port or preferred `9995` only when no Mixxx process is running, then wait for protocol validation rather than raw TCP availability.
+6. If port `8787` already serves the claw-dj editor, POST the chosen Mixxx port to `/api/mix/control-port` before opening it.
+7. If `8787` belongs to another service, refuse to replace or connect to it.
+8. Otherwise start the playlist editor with `--mixxx-control-port` set to the selected value.
+9. Propagate the selected port consistently to Analyze & enrich, Build/Start mix metadata, and CLI live execution through their established callers.
+10. Do not start playback and do not tell the user to quit a usable patched Mixxx solely because it is not on `9995`.
+
+% Output
+
+- Primary output: `scripts/start.sh`.
+- Preserve POSIX/macOS-compatible Bash behavior and existing one-command UX.
+
+% Verification
+
+- Run `bash -n scripts/start.sh scripts/run_mix.sh`.
+- Run the focused Mixxx port tests and playlist-editor integration tests.
+- Verify explicit override precedence, validated non-default reuse, unrelated-listener refusal, and running-Mixxx-without-API refusal without starting playback.

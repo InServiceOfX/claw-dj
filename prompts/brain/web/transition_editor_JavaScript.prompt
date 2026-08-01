@@ -1,0 +1,75 @@
+<pdd-reason>The PRD wants transitions and effects adjusted by talking to an LLM and then seen and corrected by hand; both halves need the same editable object.</pdd-reason>
+<pdd-interface>
+{
+  "type": "component",
+  "component": {
+    "props": [
+      {
+        "name": "segment",
+        "type": "Segment",
+        "required": true
+      },
+      {
+        "name": "slug",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "onSave",
+        "type": "(patch: Partial<Segment>) => Promise<void>",
+        "required": true
+      },
+      {
+        "name": "onRevert",
+        "type": "(field?: string) => Promise<void>",
+        "required": false
+      }
+    ],
+    "emits": [
+      "save",
+      "revert",
+      "close"
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/web/plan_client_JavaScript.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/web/transition_editor.js` as the Clicking a transition opens an editor for technique, beats, showcase move, effects and note. An overridden field is VISUALLY MARKED and carries a per-field 'Revert to derived', so the user can always see which values are theirs and which came from the beatgrid derivation. An orphaned override is shown GREYED WITH ITS STORED PAIR, never hidden, so a reorder does not appear to have destroyed work that is actually still there and will re-activate on re-adjacency. Saves are SPARSE, sending only changed fields; omitted means leave unchanged and Revert sends {clear:true}, deliberately not RFC 7396 null semantics. Renders the segment's author and SENDS author: 'human' on a hand edit, so a subsequent LLM pass and the user's own edit stay distinguishable. Revert-to-derived confirmation is announced through an ARIA status role.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Clicking a transition opens an editor for technique, beats, showcase move, effects and note. An overridden field is VISUALLY MARKED and carries a per-field 'Revert to derived', so the user can always see which values are theirs and which came from the beatgrid derivation. An orphaned override is shown GREYED WITH ITS STORED PAIR, never hidden, so a reorder does not appear to have destroyed work that is actually still there and will re-activate on re-adjacency. Saves are SPARSE, sending only changed fields; omitted means leave unchanged and Revert sends {clear:true}, deliberately not RFC 7396 null semantics. Renders the segment's author and SENDS author: 'human' on a hand edit, so a subsequent LLM pass and the user's own edit stay distinguishable. Revert-to-derived confirmation is announced through an ARIA status role.
+
+% Output
+
+- Primary output: `brain/web/transition_editor.js`.
+- PDD context tags: frontend, browser, component, transitions.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/web/transition_editor.js` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For browser modules, also run `node --check brain/web/transition_editor.js` and the plan frontend tests.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://www.rfc-editor.org/rfc/rfc7396 — sparse_save_sends_only_changed_fields
+- https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules — import_plan_client
+- https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/status_role — revert_to_derived_confirmation

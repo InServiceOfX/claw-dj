@@ -1,0 +1,66 @@
+<pdd-reason>The PRD's core loop is 'an AI agent changed my mix, I press refresh and see what changed'; without an append-only record the What-changed strip has nothing to render.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "append",
+        "signature": "append(slug, actor, action, detail, rev_before, rev_after, author=None) -> None",
+        "sideEffects": "single O_APPEND write to plans/<slug>/journal.jsonl",
+        "errors": [
+          "ValueError on unknown actor/author"
+        ]
+      },
+      {
+        "name": "read",
+        "signature": "read(slug, limit=50, *, actor=None, author=None) -> list[dict]",
+        "returns": "newest-first entries; truncated tail skipped"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_types_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_paths_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/plan_journal.py` as the Append-only JSON Lines journal at plans/<slug>/journal.jsonl, one valid JSON value per line written with compact separators. append(slug, actor, action, detail, rev_before, rev_after, author=None) issues a single O_APPEND write with no read-modify-write, so concurrent ThreadingHTTPServer threads cannot interleave a partial record. actor is validated against plan_types.Actor and author independently against plan_types.Author (actor=cli with author=llm is legal and is the case the PRD cares about); an unknown value for either raises. read(slug, limit, actor=None, author=None) returns newest-first and TOLERATES a truncated final line by skipping it rather than raising, because a crash mid-append must not make the whole journal unreadable. Lines written before the author field existed read back as author=None: the journal is append-only and cannot be rewritten.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Reject malformed, stale, ambiguous, or unsafe writes explicitly instead of silently losing plan data.
+- Keep the implementation deterministic where the contract describes deterministic behavior.
+- Target Python 3.13+ for Python modules and baseline browser JavaScript without a bundler for browser modules.
+- Inspect the current implementation, its declared dependency modules, and the focused tests before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+Append-only JSON Lines journal at plans/<slug>/journal.jsonl, one valid JSON value per line written with compact separators. append(slug, actor, action, detail, rev_before, rev_after, author=None) issues a single O_APPEND write with no read-modify-write, so concurrent ThreadingHTTPServer threads cannot interleave a partial record. actor is validated against plan_types.Actor and author independently against plan_types.Author (actor=cli with author=llm is legal and is the case the PRD cares about); an unknown value for either raises. read(slug, limit, actor=None, author=None) returns newest-first and TOLERATES a truncated final line by skipping it rather than raising, because a crash mid-append must not make the whole journal unreadable. Lines written before the author field existed read back as author=None: the journal is append-only and cannot be rewritten.
+
+% Output
+
+- Primary output: `brain/plan_journal.py`.
+- PDD context tags: backend, plan, provenance.
+- Keep changes scoped to the primary output and the smallest necessary caller/test adaptations.
+
+% Verification
+
+- Run the focused tests that cover `brain/plan_journal.py` and every declared interface.
+- Run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m unittest discover -s tests` before accepting a repository-wide sync.
+- For Python modules, also run `UV_CACHE_DIR=/private/tmp/claw-dj-uv-cache uv run python -m py_compile brain/plan_journal.py`.
+- Verify revision-conflict, missing-file, malformed-input, and legacy-compatibility paths relevant to this module.
+- Do not require a model, GitHub, Mixxx playback, or network access for deterministic tests.
+
+% References
+
+- https://jsonlines.org/ — one_valid_json_value_per_line
+- https://docs.python.org/3/library/os.html — o_append_single_write_no_read_modify_write
+- https://docs.python.org/3/library/json.html — compact_separators_single_line_dumps
+- https://docs.python.org/3/whatsnew/3.14.html — sqlite3_version_removed_and_313_vs_314_floor
+- https://docs.python.org/3/library/unittest.mock.html — patch_where_the_name_is_looked_up

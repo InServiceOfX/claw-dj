@@ -1,0 +1,94 @@
+<pdd-reason>The GUI's build_mix calls compose_mix_plan IN-PROCESS against the module-level MIX_PLAN_PATH, so adding a --plan flag to build_mix_plan.py would never reach it and the Arrange tab would be permanently empty.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "build",
+        "signature": "build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **opts) -> dict",
+        "sideEffects": "writes plans/<slug>/mix_plan.json, one journal entry"
+      },
+      {
+        "name": "playlist_path",
+        "signature": "playlist_path(slug: str) -> Path"
+      },
+      {
+        "name": "mix_plan_path",
+        "signature": "mix_plan_path(slug: str) -> Path"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/plan_paths_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_journal_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_notes_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/transition_overrides_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/order_constraints_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/plan_mix_envelope_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement the single plan-aware entry to mix composition used by both the playlist-editor GUI and CLI. Preserve the proven composition and transition logic in `brain/build_mix_plan.py`; this module adapts plan-scoped inputs and outputs, enforces the accepted ordering invariant, and carries forward the effective Mixxx control API port information needed for downstream execution coordination. Honor any explicit Mixxx control API port override first, and otherwise preserve the discovered or reused validated localhost control port rather than defaulting to `9995`. This module preserves and passes through runtime/coordination metadata for later execution consistency; it does not start playback.
+
+% Existing code to inspect before implementation
+
+- `brain/build_mix_plan.py`: `compose_mix_plan` and CLI behavior.
+- `brain/mix_graph.py`: `pair_score` and `greedy_mix_order` deterministic mix-quality ordering.
+- `brain/mix_order_brief.py`: optional natural-language ordering constraints.
+- `brain/pick_candidates.py`: NemoClaw and H Company model calls.
+- `brain/playlist_editor.py`: in-process Build mix plan, Start mix, enrichment, and legacy constants.
+- `brain/web/playlist.html`: Build mix plan controls and dry-run preview.
+- Plan modules named by the dependencies above.
+
+% Caller adaptation requirements
+
+Because `build(slug, *, profile=None, dj_format=None, seconds_per_track=None, **opts) -> dict` must now preserve effective downstream Mixxx control API port metadata in the build artifact, every affected caller must handle that metadata explicitly and consistently:
+
+- `brain/playlist_editor.py`: the in-process Build mix plan path, Arrange refresh path, Start mix preparation path, re-export path, and enrichment-related plan reload path must preserve and reuse the effective control-port metadata returned in the built plan artifact. If an explicit override exists in the current call context, this caller must pass it through `build(..., **opts)` and must not replace the returned value with an assumed `9995`.
+- `brain/web/playlist.html`: the Build mix plan controls and dry-run preview path must preserve equivalent port-related metadata from the build result so later downstream execution uses the same effective control connection details. Preview/build handling must not silently normalize a validated non-default port back to `9995`.
+- `brain/build_mix_plan.py`: any CLI behavior or compatibility path that invokes or is adapted to the new plan-aware `build(...)` flow must pass through any explicit control-port override when available and must preserve the artifact’s effective control-port metadata rather than assuming the legacy default port.
+- CLI callers invoking `brain.plan_mix_build.build(...)`: when an explicit Mixxx control API port override is present, it must be passed through `**opts`; when no explicit override is present, the caller must consume and preserve the returned discovered/reused validated localhost control-port metadata from the build artifact. CLI handling must remain behaviorally consistent with GUI handling and must not substitute `9995` if a validated non-default port is already known.
+
+% Requirements
+
+1. Add `brain/plan_mix_build.py` with the exact public interface in `<pdd-interface>`.
+2. `build(slug, **opts)` MUST resolve plan-specific paths through `PlanPaths`; it MUST NOT silently write the legacy singleton `MIX_PLAN_PATH` or read `DEFAULT_PLAYLIST_JSON` when a plan slug is active.
+3. Inject effective plan notes, order constraints, bunch constraints, and transition overrides into the existing `compose_mix_plan` pipeline rather than duplicating composition logic.
+4. For every build mode, including NemoClaw order, H Company order, and local/Feel-only mode, selected tracks are an AVAILABLE POOL and not a required playback order.
+5. Every mode MUST run deterministic mix-quality ordering using the existing analyzed BPM, key, sample/cover lineage, chroma, artist, genre, and tempo-direction signals. No-LLM/local mode MUST reorder when the deterministic score prefers another sequence.
+6. An empty natural-language brief MUST NOT disable deterministic ordering.
+7. NemoClaw and H Company MAY interpret optional natural-language constraints, but the resulting constraints are inputs to deterministic ordering. An LLM is not required to calculate the mix-quality sequence.
+8. If optional model interpretation fails, report the model warning and fall back to unconstrained deterministic optimization rather than failing the complete mix build.
+9. H Company planning-only ordering MUST use a model-only path and MUST NOT initialize, require, or start a desktop environment or local desktop bridge.
+10. Preserve every selected track exactly once unless an explicit, successfully parsed subset constraint requests otherwise. Reject or safely fall back from outputs containing unknown, duplicate, or missing track IDs.
+11. Treat explicit opener, adjacency, region, subset, and bunch constraints as authoritative. Optimize all remaining freedom.
+12. The build result MUST contain the complete candidate order for human review before Start mix. Building a plan MUST NOT start playback.
+13. Wrap the result through `plan_mix_envelope.decorate`, write `plans/<slug>/mix_plan.json` atomically, and append exactly one journal entry after a successful write. The resulting artifact MUST also preserve any effective downstream Mixxx control-port information needed for later execution consistency.
+14. Export `playlist_path(slug)` and `mix_plan_path(slug)` so Build, Arrange refresh, Start mix, re-export, and enrichment share path resolution.
+15. Any explicit Mixxx control API port override supplied through options or existing call context has highest priority. If no explicit override is supplied, the implementation MUST preserve and propagate the discovered or reused validated localhost control port used by the current plan/run context. The implementation MUST NOT silently substitute or assume `9995` when a validated non-default port is available. GUI and CLI behavior MUST stay consistent for this port handling. This requirement is about preserving runtime/coordination metadata for downstream execution only and MUST NOT be interpreted as permission for this module to initialize Mixxx, start playback, or start a runtime bridge.
+16. Keep legacy singleton constants as explicit fallback only for legacy/non-plan callers so existing patch-the-constant tests remain valid.
+17. The implementation MUST be deterministic for identical tracks, analysis, constraints, and options. Resolve equal-score ties stably by track identity.
+18. Add unittest coverage for: no-LLM reordering; empty-brief reordering; exact-once preservation; deterministic tie behavior; LLM failure fallback; invalid LLM output fallback; H planning without desktop initialization; explicit constraints; plan-scoped paths; preview payload; legacy fallback; explicit control-port override precedence; and discovered/reused validated localhost control-port propagation without fallback to `9995`.
+
+% User story acceptance
+
+As a DJ, when I finalize a playlist I am declaring which songs are available, not fixing playback order. When I build a mix plan with NemoClaw, H Company, or no LLM, claw-dj optimizes the sequence for musical compatibility, preserves the intended track set, and shows me the candidate order before I choose Start mix. When I later proceed to Start mix, the plan produced by Build must not lose the chosen or discovered Mixxx control connection details and must not accidentally target the wrong default port.
+
+% Non-goals
+
+- Do not replace the established transition/event derivation algorithm.
+- Do not start Mixxx or playback from this module.
+- Do not redesign unrelated plan storage or browser UI.
+- Do not require network or model access for deterministic ordering.
+- Do not hardcode runtime connection assumptions such as silently defaulting downstream coordination to `9995` when validated control-port metadata is already available; preserving port metadata is required, but this module still must not itself initialize playback or runtime execution.
+
+% Verification
+
+- Run the focused unittest modules for mix graph, order brief, plan mix build, and playlist editor.
+- Verify a no-brief/no-LLM fixture changes a deliberately poor input order while preserving the exact track-id multiset.
+- Verify the H planning test fails if any desktop environment constructor or bridge startup path is called.
+- Verify an explicit Mixxx control API port override wins over any discovered or default value in the built artifact metadata.
+- Verify that when a validated non-default localhost control port is already known, the built artifact preserves and propagates that port rather than falling back to `9995`.
+- Verify GUI and CLI build paths produce equivalent port-related metadata for the same inputs.
