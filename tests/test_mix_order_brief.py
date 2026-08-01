@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest import TestCase
+from unittest.mock import patch
 
 from brain.mix_order_brief import (
     apply_constraints,
@@ -28,6 +30,49 @@ def _rows(n: int = 8) -> list[dict]:
 
 
 class MixOrderBriefTest(TestCase):
+    def test_no_model_and_empty_brief_still_reorder_exactly_once(self) -> None:
+        rows = [
+            {"track_id": "/b.mp3", "artist": "B", "title": "B", "bpm": 140.0, "key": "F#"},
+            {"track_id": "/a.mp3", "artist": "A", "title": "A", "bpm": 90.0, "key": "Am"},
+            {"track_id": "/c.mp3", "artist": "C", "title": "C", "bpm": 92.0, "key": "C"},
+        ]
+        ordered, notes, _ = order_from_brief(rows, "", engine="none")
+        self.assertNotEqual([r["track_id"] for r in ordered], [r["track_id"] for r in rows])
+        self.assertCountEqual([r["track_id"] for r in ordered], [r["track_id"] for r in rows])
+        self.assertEqual(len({r["track_id"] for r in ordered}), len(rows))
+        self.assertTrue(any("deterministic" in note for note in notes))
+
+    def test_invalid_model_ids_raise_for_caller_fallback(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown track ids"):
+            order_from_brief(
+                _rows(3),
+                "put the unknown song first",
+                engine="nemoclaw",
+                ask=lambda _prompt: json.dumps({"opener_id": "t999"}),
+            )
+
+    def test_h_planning_uses_no_desktop_environment(self) -> None:
+        from brain.pick_candidates import ask_h_agent
+
+        seen: dict = {}
+
+        class FakeAgents:
+            async def create_agent(self, **kwargs):
+                seen.update(kwargs)
+                return "planning-agent"
+
+        class FakeClient:
+            def __init__(self, **_kwargs):
+                self.agents = FakeAgents()
+
+            async def run_session(self, **_kwargs):
+                return SimpleNamespace(answer="{}", error=None)
+
+        with patch("hai_agents.AsyncClient", FakeClient), patch.dict(
+            "os.environ", {"HAI_API_KEY": "test"}
+        ):
+            self.assertEqual(ask_h_agent("plan"), "{}")
+        self.assertEqual(seen["environments"], [])
     def test_force_adjacent_and_region(self) -> None:
         order = [f"t{i:03d}" for i in range(10)]
         order = force_adjacent(order, "t008", "t001", ordered=False)
@@ -36,7 +81,7 @@ class MixOrderBriefTest(TestCase):
         mid = (order.index("t008") + order.index("t001")) / 2
         self.assertLess(mid, len(order) * 0.55)
 
-    def test_parse_constraints_filters_unknown_ids(self) -> None:
+    def test_parse_constraints_rejects_unknown_ids(self) -> None:
         allowed = {"t000", "t001", "t002"}
         text = json.dumps(
             {
@@ -47,10 +92,36 @@ class MixOrderBriefTest(TestCase):
                 "notes": ["pair opener with closer"],
             }
         )
-        constraints = parse_constraints(text, allowed)
-        self.assertEqual(constraints["adjacent"], [("t000", "t002")])
-        self.assertTrue(constraints["adjacent_ordered"])
-        self.assertEqual(constraints["regions"][0]["where"], "first_half")
+        with self.assertRaisesRegex(ValueError, "unknown track ids"):
+            parse_constraints(text, allowed)
+
+    def test_compose_falls_back_when_model_fails(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from brain.build_mix_plan import compose_mix_plan
+
+        rows = _rows(4)
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            playlist = root / "playlist.json"
+            out = root / "mix_plan.json"
+            playlist.write_text(json.dumps(rows))
+            plan = compose_mix_plan(
+                playlist=playlist,
+                mix_brief="put an unknown track first",
+                order_engine="nemoclaw",
+                tracks=None,
+                out=out,
+                ask=lambda _prompt: json.dumps({"opener_id": "t999"}),
+            )
+        self.assertCountEqual(
+            [track["track_id"] for track in plan["tracks"]],
+            [row["track_id"] for row in rows],
+        )
+        self.assertTrue(
+            any("failed; used local ordering" in note for note in plan["profile"]["order_notes"])
+        )
 
     def test_apply_constraints_subset_and_adjacent(self) -> None:
         rows = _rows(6)

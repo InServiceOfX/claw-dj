@@ -8,7 +8,7 @@ usage() {
 Run the last mix plan built by `brain.build_mix_plan` (the same file the
 playlist editor's "Build mix plan" writes and "Start mix" reads) — so you
 don't have to remember `python -m hands.run_mix_plan --plan
-brain/data/mix_plan.json --port 9995`.
+brain/data/mix_plan.json`.
 
 Defaults to LIVE — this drives Mixxx. Pass --dry-run to only rehearse.
 
@@ -22,7 +22,6 @@ EOF
 }
 
 PLAN="brain/data/mix_plan.json"
-PORT=9995
 DRY_RUN=0
 EXTRA_ARGS=()
 
@@ -59,10 +58,6 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run (no Mixxx moves):"
   uv run python -m hands.run_mix_plan --plan "$PLAN" --dry-run ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 else
-  if ! nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
-    echo "Mixxx control API is not up on port $PORT — run scripts/start.sh first." >&2
-    exit 1
-  fi
-  echo "Running LIVE — this will drive Mixxx."
-  uv run python -m hands.run_mix_plan --plan "$PLAN" --port "$PORT" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+  echo "Running LIVE — this will drive Mixxx using an explicit --port, plan metadata, or validated Mixxx discovery."
+  uv run python -m hands.run_mix_plan --plan "$PLAN" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 fi

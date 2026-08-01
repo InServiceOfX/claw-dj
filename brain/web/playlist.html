@@ -8,7 +8,7 @@
     :root { color-scheme: light; --ink:#171717; --muted:#696969; --line:#d8d8d3; --paper:#f7f7f3; --panel:#fff; --green:#176b4d; --red:#a53a2a; --focus:#2367b1; }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.4 ui-sans-serif,system-ui,sans-serif; letter-spacing:0; }
-    header { min-height:64px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:12px 24px; background:#171717; color:white; }
+    header { min-height:64px; display:grid; grid-template-columns:auto minmax(520px,1fr) auto; align-items:center; gap:20px; padding:12px 24px; background:#171717; color:white; }
     h1 { margin:0; font-size:20px; font-weight:700; letter-spacing:0; }
     .brand span { color:#78d7ac; }
     .summary { color:#d0d0ca; font-variant-numeric:tabular-nums; }
@@ -77,6 +77,14 @@
     .nav { display:flex; gap:8px; align-items:center; }
     .nav button { background:transparent; color:#d0d0ca; border-color:#444; min-height:32px; }
     .nav button.active { background:#2a2a2a; color:#78d7ac; border-color:#78d7ac; }
+    .scope-navigation { display:flex; flex-direction:column; align-items:center; gap:7px; }
+    .plan-picker-row { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:5px; }
+    .plan-picker-row label { color:#d0d0ca; font-weight:700; }
+    .plan-picker-row select,.plan-picker-row button { min-height:30px; padding:4px 7px; }
+    #plan-picker-select { min-width:210px; max-width:340px; }
+    .plan-picker-message { min-height:18px; color:#d0d0ca; text-align:center; font-size:12px; }
+    .stale-dot { color:#78d7ac; font-size:12px; }
+    .stale-dot.is-stale { color:#ffce63; }
     .page[hidden] { display:none !important; }
     .finalized-box { margin-top:12px; border:1px solid var(--line); background:#fafaf7; }
     .finalized-head { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; border-bottom:1px solid var(--line); align-items:center; }
@@ -85,14 +93,60 @@
     .warn { color:var(--red); }
     .banner { margin-top:10px; padding:10px 12px; border:1px solid #e0c36a; background:#fff8e1; color:#5c4a12; border-radius:4px; }
     .banner[hidden] { display:none; }
+    .conflict-banner { max-width:1500px; margin:12px auto 0; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .arrange-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+    .arrange-add-form { display:flex; align-items:center; gap:6px; }
+    .arrange-add-form label { font-weight:700; }
+    .arrange-state { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 18px; padding:10px 12px; border:1px solid var(--line); background:var(--panel); color:var(--muted); }
+    .arrange-state.is-stale { border-color:#e0c36a; background:#fff8e1; color:#5c4a12; }
+    .arrange-list { margin-top:12px; }
+    .arrange-unit { border:1px solid var(--line); background:var(--panel); }
+    .arrange-unit:focus { outline:2px solid var(--focus); outline-offset:2px; }
+    .arrange-unit.is-bunch { border:2px solid #8c6f2d; background:#fffdf6; }
+    .unit-head { min-height:40px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 10px; background:#f0f0eb; color:var(--muted); font-weight:700; }
+    .is-bunch .unit-head { background:#f3ead2; color:#654d16; }
+    .unit-actions { display:flex; flex-wrap:wrap; gap:5px; }
+    .unit-actions button { min-height:30px; padding:4px 7px; }
+    .arrange-track { display:grid; grid-template-columns:90px 38px minmax(180px,1.5fr) minmax(150px,.7fr) minmax(210px,1fr) auto; align-items:center; gap:10px; min-height:72px; padding:8px 10px; border-top:1px solid #ecece8; }
+    .arrange-track.is-unavailable { opacity:.6; background:#eee; }
+    .arrange-select { color:var(--muted); font-size:12px; }
+    .arrange-select input { min-height:16px; width:16px; vertical-align:middle; }
+    .arrange-position { color:var(--muted); font-variant-numeric:tabular-nums; }
+    .track-facts,.effective-note { display:flex; flex-direction:column; color:var(--muted); font-size:12px; }
+    .effective-note strong { color:var(--ink); }
+    .transition-card { width:calc(100% - 32px); margin:5px 16px; display:grid; grid-template-columns:30px minmax(190px,1fr) minmax(100px,.5fr) minmax(160px,1fr); align-items:center; gap:10px; min-height:52px; text-align:left; border-style:dashed; background:#f8fbfa; color:var(--ink); }
+    .transition-card small { display:block; color:var(--muted); }
+    .transition-card.is-overridden { border-style:solid; border-color:var(--green); }
+    .transition-card.is-orphaned,.transition-editor.is-orphaned { filter:grayscale(1); opacity:.72; }
+    .transition-arrow { color:var(--green); font-size:20px; text-align:center; }
+    .arrange-pending { padding:36px; border:1px solid var(--line); background:var(--panel); text-align:center; color:var(--muted); }
+    #arrange-journal { margin-top:14px; border:1px solid var(--line); background:var(--panel); }
+    #arrange-journal summary { cursor:pointer; padding:10px 12px; font-weight:700; }
+    .journal-entry { display:grid; grid-template-columns:minmax(180px,1fr) minmax(160px,.6fr) auto; gap:10px; padding:8px 12px; border-top:1px solid #ecece8; }
+    .journal-entry span,.journal-entry time { color:var(--muted); }
+    .transition-editor { margin-top:14px; padding:14px; border:1px solid var(--line); background:var(--panel); }
+    .transition-editor-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .transition-pair,.transition-author,.transition-editor-status { color:var(--muted); }
+    .orphaned-message { margin:8px 0; padding:8px; background:#eee; }
+    .transition-field { display:grid; grid-template-columns:minmax(220px,1fr) auto; align-items:end; gap:8px; margin-top:10px; padding:8px; border-left:3px solid transparent; }
+    .transition-field.is-overridden { border-color:var(--green); background:#f2f8f5; }
+    .transition-field label { display:flex; flex-direction:column; gap:4px; font-weight:700; }
+    .transition-field textarea { resize:vertical; border:1px solid var(--line); border-radius:4px; padding:7px 10px; font:inherit; }
+    .override-mark { color:var(--green); font-size:11px; text-transform:uppercase; }
+    .transition-editor-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .orphaned-transitions { margin-top:14px; }
     .picks-anchor { scroll-margin-top:12px; }
     @media (max-width:850px) { .brain-form, .mix-form { grid-template-columns:1fr; } }
     @media (max-width:850px) {
-      header { align-items:flex-start; padding:12px 14px; }
+      header { grid-template-columns:1fr; align-items:flex-start; padding:12px 14px; }
+      .scope-navigation { align-items:flex-start; }
       main { padding:12px; }
       .toolbar { grid-template-columns:1fr 1fr; }
       .toolbar input { grid-column:1 / -1; }
       .workspace { grid-template-columns:1fr; }
+      .arrange-track { grid-template-columns:70px 30px minmax(0,1fr); }
+      .track-facts,.effective-note { grid-column:3; }
+      .transition-card { grid-template-columns:24px 1fr; }
       section + section { border-left:0; border-top:1px solid var(--line); }
       .rows { height:48vh; }
     }
@@ -101,12 +155,20 @@
 <body>
   <header>
     <div class="brand"><h1><span>claw</span>-dj playlist</h1></div>
-    <div class="nav" role="navigation" aria-label="Pages">
-      <button type="button" id="nav-curate" class="active" data-page="curate">1 · Curate set</button>
-      <button type="button" id="nav-mix" data-page="mix">2 · Create the mix</button>
+    <div class="scope-navigation">
+      <div id="plan-picker" aria-label="Mix plan chooser"></div>
+      <div class="nav" role="navigation" aria-label="Workflow pages">
+        <button type="button" id="nav-curate" class="active" data-page="curate">1 · Curate set</button>
+        <button type="button" id="nav-mix" data-page="mix">2 · Create the mix</button>
+        <button type="button" id="nav-arrange" data-page="arrange">3 · Arrange</button>
+      </div>
     </div>
     <div class="summary" id="summary">Loading crate...</div>
   </header>
+  <div class="banner conflict-banner" id="plan-conflict-banner" role="alert" hidden>
+    <span id="plan-conflict-text">This plan changed on disk. Refresh before editing.</span>
+    <button type="button" id="plan-conflict-refresh">Refresh</button>
+  </div>
   <main>
     <div class="page" id="page-curate">
       <div class="ingest">
@@ -212,7 +274,7 @@
           <select id="order-engine" aria-label="Order engine for the brief">
             <option value="nemoclaw">NemoClaw · order</option>
             <option value="h-agent">H Company · order</option>
-            <option value="none">Feel only (no reorder)</option>
+            <option value="none">Feel only · local order</option>
           </select>
           <button id="shuffle-opener" title="Pick a random opener and re-unfold the blend graph (nearest-neighbor tour). Adjacent pairs stay mixable; narrative shifts.">Shuffle opener</button>
           <button id="build-mix" class="primary">Build mix plan</button>
@@ -239,6 +301,9 @@
         <div class="mix-summary" id="mix-summary" hidden>
           <div class="mix-stats" id="mix-stats"></div>
           <ul class="order-notes" id="order-notes" hidden></ul>
+          <div class="ingest-detail"><strong>Candidate playback order</strong></div>
+          <div class="mix-segments" id="candidate-order"></div>
+          <div class="ingest-detail" style="margin-top:8px"><strong>Transitions</strong></div>
           <div class="mix-segments" id="mix-segments"></div>
           <div class="mix-actions">
             <button id="start-mix" class="danger" disabled title="Plays through Mixxx / AirPlay — requires confirmation">Start mix</button>
@@ -246,6 +311,16 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="page" id="page-arrange" hidden>
+      <div class="brain">
+        <h2>Arrange the mix</h2>
+        <div class="ingest-detail">Order tracks, keep proven runs together, and inspect or edit every transition. Refresh reads one complete snapshot from disk, including changes made by an external agent.</div>
+      </div>
+      <div id="arrange-root"><div class="arrange-pending" role="status">Loading the active plan…</div></div>
+      <aside id="transition-editor" class="transition-editor" aria-label="Transition editor" hidden></aside>
+      <div id="arrange-live" class="notice" aria-live="polite"></div>
     </div>
   </main>
   <script>
@@ -260,11 +335,13 @@
     }
     async function api(path, options) { const response = await fetch(path, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || response.statusText); return data; }
     function showPage(page) {
-      state.page = page === 'mix' ? 'mix' : 'curate';
+      state.page = ['curate', 'mix', 'arrange'].includes(page) ? page : 'curate';
       el('page-curate').hidden = state.page !== 'curate';
       el('page-mix').hidden = state.page !== 'mix';
+      el('page-arrange').hidden = state.page !== 'arrange';
       el('nav-curate').classList.toggle('active', state.page === 'curate');
       el('nav-mix').classList.toggle('active', state.page === 'mix');
+      el('nav-arrange').classList.toggle('active', state.page === 'arrange');
       if (location.hash !== '#' + state.page) location.hash = state.page;
       if (state.page === 'mix') pollMix();
     }
@@ -353,6 +430,7 @@
     });
     el('nav-curate').addEventListener('click', () => showPage('curate'));
     el('nav-mix').addEventListener('click', () => showPage('mix'));
+    el('nav-arrange').addEventListener('click', () => showPage('arrange'));
     el('back-curate').addEventListener('click', () => showPage('curate'));
     window.addEventListener('hashchange', () => showPage((location.hash || '#curate').slice(1)));
     el('export').addEventListener('click',async()=>{
@@ -561,6 +639,15 @@
       const notes = summary.order_notes || profile.order_notes || [];
       el('order-notes').hidden = notes.length === 0;
       el('order-notes').innerHTML = notes.map(n => `<li>${esc(n)}</li>`).join('');
+      const orderedTracks = summary.tracks || [];
+      el('candidate-order').innerHTML = orderedTracks.length
+        ? orderedTracks.map((track, index) =>
+            `<div class="mix-seg"><span>${String(index+1).padStart(2,'0')}</span>` +
+            `<span class="title">${esc(track.artist)} — ${esc(track.title)}</span>` +
+            `<span class="tech">${esc(track.key || '—')}</span>` +
+            `<span class="bpm">${track.bpm ? Number(track.bpm).toFixed(1)+' BPM' : '—'}</span></div>`
+          ).join('')
+        : '<div class="empty">No candidate order.</div>';
       const segments = summary.segments || [];
       el('mix-segments').innerHTML = segments.length
         ? segments.map(seg =>
@@ -638,7 +725,7 @@
       } else if (data.live_message) {
         el('mix-live').textContent = data.live_message;
       } else {
-        el('mix-live').textContent = canStart ? 'Mixxx must be running with --control-api-port 9995.' : (data.plan_stale ? 'Rebuild required before Start mix.' : '');
+        el('mix-live').textContent = canStart ? `Mixxx control API: localhost:${data.mixxx_control_port}.` : (data.plan_stale ? 'Rebuild required before Start mix.' : '');
       }
       return data;
     }
@@ -714,12 +801,12 @@
     });
     el('enrich-set').addEventListener('click', async () => {
       el('enrich-set').disabled = true;
-      el('enrich-detail').textContent = 'Starting Analyze & enrich… Mixxx must be open with --control-api-port 9995.';
+      el('enrich-detail').textContent = 'Starting Analyze & enrich using the server-selected Mixxx control port…';
       try {
         await api('/api/mix/enrich', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ port: 9995 }),
+          body: JSON.stringify({}),
         });
         pollMixUntilIdle();
         await pollMix();
@@ -828,7 +915,7 @@
       const summary = el('mix-stats').textContent || 'the current plan';
       const ok = window.confirm(
         'Start the live mix now?\n\nThis plays through Mixxx (and AirPlay to the Office HomePod). ' +
-        'Only continue if the dry-run summary looks right and Mixxx is open on port 9995.\n\n' +
+        'Only continue if the candidate order and dry-run summary look right.\n\n' +
         summary.slice(0, 200)
       );
       if (!ok) return;
@@ -854,10 +941,16 @@
       const brain=await pollBrain();
       if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}
       const initialPage = (location.hash || '#curate').slice(1);
-      showPage(initialPage === 'mix' ? 'mix' : 'curate');
+      showPage(['mix', 'arrange'].includes(initialPage) ? initialPage : 'curate');
       const mix=await pollMix();
       if(mix.building || mix.running || mix.enriching) pollMixUntilIdle();
     })().catch(error=>{el('notice').textContent=error.message});
+    window.clawDjLegacy = {
+      refreshForPlan: async () => {
+        await Promise.all([loadMeta(), loadIngest(), loadLibrary(), loadSelected(), pollMix()]);
+      },
+    };
   </script>
+  <script type="module" src="/web/arrange.js"></script>
 </body>
 </html>

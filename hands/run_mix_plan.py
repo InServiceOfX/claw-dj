@@ -1203,7 +1203,10 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, default=PLAN_DEFAULT)
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument(
+        "--port", type=int, default=None,
+        help="explicit override; otherwise use plan metadata, then validated discovery",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-events", type=int, default=None, help="execute only the first N events")
     parser.add_argument(
@@ -1217,7 +1220,17 @@ def main() -> None:
     if not args.plan.exists():
         raise SystemExit(f"missing {args.plan} — run: uv run python -m brain.build_mix_plan")
     plan = json.loads(args.plan.read_text())
-    run_plan(plan, port=args.port, dry_run=args.dry_run, max_events=args.max_events, record=args.record)
+    if args.dry_run:
+        port = args.port or DEFAULT_PORT
+    else:
+        from hands.mixxx_control import discover_mixxx_control_port, plan_control_port
+
+        preserved = plan_control_port(plan)
+        port = discover_mixxx_control_port(
+            preferred=preserved or DEFAULT_PORT,
+            explicit=args.port,
+        )
+    run_plan(plan, port=port, dry_run=args.dry_run, max_events=args.max_events, record=args.record)
 
 
 if __name__ == "__main__":

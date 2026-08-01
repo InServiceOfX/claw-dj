@@ -97,6 +97,23 @@ CREATE TABLE IF NOT EXISTS lyric_timelines (
     lrc TEXT,
     segments TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bunches (
+    bunch_id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    ordered INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT 'human',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    archived_at REAL
+);
+CREATE TABLE IF NOT EXISTS bunch_members (
+    bunch_id TEXT NOT NULL REFERENCES bunches(bunch_id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    track_id TEXT NOT NULL,
+    PRIMARY KEY (bunch_id, position),
+    UNIQUE (bunch_id, track_id)
+);
 CREATE TABLE IF NOT EXISTS scan_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     running INTEGER NOT NULL DEFAULT 0,
@@ -119,6 +136,8 @@ def connect(path: Path = DEFAULT_INDEX) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, timeout=30)
     db.row_factory = sqlite3.Row
+    # Per-connection and ineffective once a transaction has begun.
+    db.execute("PRAGMA foreign_keys = ON")
     db.executescript(SCHEMA)
     # Additive migration for indexes created before human DJ annotations.
     columns = {row[1] for row in db.execute("PRAGMA table_info(tracks)")}

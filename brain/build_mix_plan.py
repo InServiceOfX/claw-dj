@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from contextlib import closing
 from pathlib import Path
@@ -1666,18 +1667,20 @@ def compose_mix_plan(
     phrase_beats: int | None = None,
     out: Path = DEFAULT_PLAN,
     ask=None,
+    control_port: int | None = None,
+    dj_notes_lookup: dict[str, str] | None = None,
+    fixed_groups: list[list[str]] | None = None,
 ) -> dict:
     """Build a mix plan from the finalized playlist and write it to disk.
 
     Same logic as the CLI entrypoint so the playlist editor and
     `python -m brain.build_mix_plan` stay in lockstep. `tracks=None` means
-    "use every analyzed song in the playlist" (the editor default); the CLI
-    still defaults to 8 for short demos.
+    "use every analyzed song in the playlist" (the editor and CLI default);
+    short demos opt into a smaller set with ``--tracks``.
 
-    `order_engine`: when the brief asks for specific pairings / placement /
-    a short subset, use `nemoclaw` or `h-agent` to turn that into order
-    constraints (see `brain.mix_order_brief`). `none` keeps playlist order
-    and only maps feel keywords onto the profile.
+    `order_engine`: optional NemoClaw/H Company interpretation turns a brief
+    into constraints. Deterministic local mix-quality ordering runs in every
+    mode, including no model and an empty brief.
     """
     from brain.dj_formats import get_format
     from brain.mix_profiles import PROFILES, apply_brief, profile_provenance
@@ -1701,7 +1704,7 @@ def compose_mix_plan(
 
     profile, brief_notes = apply_brief(PROFILES[profile_name], mix_brief)
     rows = json.loads(playlist.read_text())
-    dj_notes = load_dj_notes_lookup()
+    dj_notes = load_dj_notes_lookup() if dj_notes_lookup is None else dj_notes_lookup
     for row in rows:
         row["dj_notes"] = dj_notes.get(row.get("track_id"), row.get("dj_notes") or "")
     analyzed = [t for t in rows if t.get("bpm")]
@@ -1711,12 +1714,46 @@ def compose_mix_plan(
 
     order_notes: list[str] = []
     order_constraints: dict | None = None
-    if mix_brief.strip() and order_engine not in (None, "", "none", "off", "profile-only"):
-        from brain.mix_order_brief import order_from_brief
+    from brain.mix_order_brief import order_from_brief
 
+    try:
         pool, order_notes, order_constraints = order_from_brief(
             pool, mix_brief, engine=order_engine, ask=ask
         )
+    except Exception as error:
+        # Model interpretation is optional. Preserve the complete pool and
+        # fall back to the exact same local optimizer used by Feel-only mode.
+        pool, order_notes, order_constraints = order_from_brief(
+            pool, "", engine="none"
+        )
+        order_notes.append(
+            f"{order_engine} constraint interpretation failed; used local ordering: {error}"
+        )
+
+    if fixed_groups:
+        # Bunch activation is a hard structural constraint, independent of
+        # whether an LLM interpreted the optional natural-language brief.
+        from brain.order_constraints import assert_intact
+
+        ordered_ids = [row["track_id"] for row in pool]
+        by_id = {row["track_id"]: row for row in pool}
+        for group in fixed_groups:
+            present = [track_id for track_id in group if track_id in by_id]
+            if len(present) < 2:
+                continue
+            first = min(ordered_ids.index(track_id) for track_id in present)
+            ordered_ids = [track_id for track_id in ordered_ids if track_id not in set(present)]
+            ordered_ids[first:first] = present
+        assert_intact(ordered_ids, fixed_groups)
+        pool = [by_id[track_id] for track_id in ordered_ids]
+        if tracks is not None:
+            count_floor = min(tracks, len(pool))
+            for group in fixed_groups:
+                positions = [ordered_ids.index(track_id) for track_id in group if track_id in by_id]
+                if positions and min(positions) < count_floor <= max(positions):
+                    count_floor = max(positions) + 1
+            tracks = count_floor
+        order_notes.append(f"honored {len(fixed_groups)} active ordered bunch(es)")
 
     count = len(pool) if tracks is None else min(tracks, len(pool))
     # When the agent narrowed to a short showcase, don't re-inflate with tracks.
@@ -1753,8 +1790,12 @@ def compose_mix_plan(
         dj_format=dj_format,
         provenance=provenance,
     )
+    if control_port is not None:
+        plan.setdefault("runtime", {})["mixxx_control_port"] = int(control_port)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(plan, indent=2) + "\n")
+    temporary = out.with_name(f".{out.name}.tmp")
+    temporary.write_text(json.dumps(plan, indent=2) + "\n")
+    temporary.replace(out)
     return plan
 
 
@@ -1806,6 +1847,9 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
         "segments": segments,
         "dry_run_ok": True,
         "dry_run_note": f"{len(events)} events validated in-process (no Mixxx connection)",
+        "mixxx_control_port": (
+            (plan.get("runtime") or {}).get("mixxx_control_port")
+        ),
     }
 
 
@@ -1814,8 +1858,13 @@ def main() -> None:
     from brain.mix_profiles import PROFILES
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--plan",
+        dest="plan_slug",
+        help="build the named workspace plan using only its PlanPaths artifacts",
+    )
     parser.add_argument("--playlist", type=Path, default=DEFAULT_PLAYLIST)
-    parser.add_argument("--tracks", type=int, default=8, help="how many songs in the continuous mix")
+    parser.add_argument("--tracks", type=int, default=None, help="optional explicit subset size; default uses the complete pool")
     parser.add_argument(
         "--profile",
         choices=sorted(PROFILES),
@@ -1840,27 +1889,54 @@ def main() -> None:
         choices=("none", "nemoclaw", "h-agent"),
         default="none",
         help="when the brief asks for pairings/placement/subset, resolve order "
-             "via NemoClaw or H-agent (default: none = playlist order + feel only)",
+             "via NemoClaw or H-agent (all choices use local mix-quality ordering)",
     )
     parser.add_argument("--seconds-per-track", type=float, default=None)
     parser.add_argument("--phrase-analysis", type=Path, default=DEFAULT_PHRASES)
     parser.add_argument("--phrase-beats", type=int, default=None, choices=(16, 32, 48, 64))
     parser.add_argument("--out", type=Path, default=DEFAULT_PLAN)
+    parser.add_argument(
+        "--control-api-port",
+        type=int,
+        default=(
+            int(os.environ["CLAWDJ_MIXXX_CONTROL_PORT"])
+            if os.environ.get("CLAWDJ_MIXXX_CONTROL_PORT")
+            else None
+        ),
+        help="preserve the effective Mixxx control port in the plan for later live execution",
+    )
     args = parser.parse_args()
 
     try:
-        plan = compose_mix_plan(
-            playlist=args.playlist,
-            profile_name=args.profile,
-            dj_format_name=args.dj_format,
-            mix_brief=args.mix_brief,
-            order_engine=args.order_engine,
-            tracks=args.tracks,
-            seconds_per_track=args.seconds_per_track,
-            phrase_analysis=args.phrase_analysis,
-            phrase_beats=args.phrase_beats,
-            out=args.out,
-        )
+        if args.plan_slug:
+            from brain.plan_mix_build import build
+
+            plan = build(
+                args.plan_slug,
+                profile=args.profile,
+                dj_format=args.dj_format,
+                mix_brief=args.mix_brief,
+                order_engine=args.order_engine,
+                tracks=args.tracks,
+                seconds_per_track=args.seconds_per_track,
+                phrase_analysis=args.phrase_analysis,
+                phrase_beats=args.phrase_beats,
+                control_port=args.control_api_port,
+            )
+        else:
+            plan = compose_mix_plan(
+                playlist=args.playlist,
+                profile_name=args.profile,
+                dj_format_name=args.dj_format,
+                mix_brief=args.mix_brief,
+                order_engine=args.order_engine,
+                tracks=args.tracks,
+                seconds_per_track=args.seconds_per_track,
+                phrase_analysis=args.phrase_analysis,
+                phrase_beats=args.phrase_beats,
+                out=args.out,
+                control_port=args.control_api_port,
+            )
     except (FileNotFoundError, ValueError) as error:
         raise SystemExit(f"mix plan build stopped: {error}") from None
     profile = plan.get("profile") or {}
@@ -1874,7 +1950,11 @@ def main() -> None:
         print(f"  brief adjustment: {note}")
     for note in profile.get("order_notes") or []:
         print(f"  order: {note}")
-    print(f"mix plan: {plan['track_count']} tracks -> {args.out}")
+    destination = (
+        __import__("brain.plan_mix_build", fromlist=["mix_plan_path"]).mix_plan_path(args.plan_slug)
+        if args.plan_slug else args.out
+    )
+    print(f"mix plan: {plan['track_count']} tracks -> {destination}")
     for seg in plan["segments"]:
         compliance = (
             f" [{seg['format_compliance']}]"
@@ -1888,7 +1968,11 @@ def main() -> None:
         )
     print("\nMixxx instrument controls used are listed in plan['instrument_map'].")
     print("Run: uv run python -m hands.run_mix_plan --dry-run")
-    print("Live: uv run python -m hands.run_mix_plan   # Mixxx --control-api-port 9995")
+    port_note = (plan.get("runtime") or {}).get("mixxx_control_port")
+    print(
+        "Live: uv run python -m hands.run_mix_plan"
+        + (f"   # preserved Mixxx port {port_note}" if port_note else "")
+    )
 
 
 if __name__ == "__main__":

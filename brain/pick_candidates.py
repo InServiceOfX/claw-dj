@@ -197,18 +197,52 @@ def ask_generic(prompt: str, *, timeout_s: float = 300.0) -> str:
 
 
 def ask_h_agent(prompt: str) -> str:
-    import asyncio
+    """Run an H Company planning agent with no desktop environment.
 
-    from brain.agent import Brain
+    Ordering is a text-only judgment call.  Supplying an empty environments
+    list prevents the SDK from constructing a desktop Environment or starting
+    the local bridge used by ``brain.agent.Brain``.
+    """
+    import asyncio
+    import os
+
+    from dotenv import dotenv_values
+    from hai_agents import AsyncClient
+    from hai_agents.core.api_error import ApiError
+
+    def api_key() -> str | None:
+        if key := os.environ.get("HAI_API_KEY"):
+            return key
+        config_home = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+        for path in (config_home / "hai" / ".env", Path.home() / ".holo" / ".env"):
+            if path.exists() and (key := dotenv_values(path).get("HAI_API_KEY")):
+                return str(key)
+        return None
 
     async def run() -> str:
-        async with Brain() as brain:
-            answer = await brain._run_task(
-                "This is planning-only: do not click, type, or open apps. "
-                "Answer in text.\n\n" + prompt,
-                max_steps=4,
-                max_time_s=240,
+        client = AsyncClient(api_key=api_key())
+        try:
+            agent = await client.agents.create_agent(
+                name="claw-dj-planning",
+                description="Text-only planning for claw-dj; never controls a desktop.",
+                environments=[],
+                instructions="Answer planning questions in text. Do not use desktop tools.",
             )
+        except ApiError as error:
+            if error.status_code != 409:
+                raise
+            agent = await client.agents.get_agent("claw-dj-planning")
+        result = await client.run_session(
+            agent=agent,
+            messages=(
+                "This is planning-only: do not click, type, open apps, or use "
+                "desktop tools. Answer in text.\n\n" + prompt
+            ),
+            timeout_seconds=240,
+        )
+        if result.error:
+            raise RuntimeError(f"hai-agents planning task failed: {result.error}")
+        answer = result.answer
         return json.dumps(answer) if isinstance(answer, (dict, list)) else str(answer)
 
     return asyncio.run(run())

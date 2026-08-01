@@ -13,6 +13,20 @@ from unittest.mock import patch
 
 
 class MixEditorTest(unittest.TestCase):
+    def setUp(self) -> None:
+        """Keep real workspace plans out of tests for legacy fallback paths."""
+        from brain import plan_paths
+
+        self._plan_directory = TemporaryDirectory()
+        self.addCleanup(self._plan_directory.cleanup)
+        self._plan_paths_patch = patch.object(
+            plan_paths,
+            "DEFAULT_PLANS_DIR",
+            Path(self._plan_directory.name) / "plans",
+        )
+        self._plan_paths_patch.start()
+        self.addCleanup(self._plan_paths_patch.stop)
+
     def test_start_mix_requires_confirm(self) -> None:
         from brain.playlist_editor import PlaylistApp
 
@@ -41,7 +55,7 @@ class MixEditorTest(unittest.TestCase):
             plan_path = root / "mix_plan.json"
             playlist.write_text(json.dumps(tracks))
             with patch.object(pe, "DEFAULT_PLAYLIST_JSON", playlist), patch.object(pe, "MIX_PLAN_PATH", plan_path):
-                app = PlaylistApp()
+                app = PlaylistApp(control_port=10443)
                 # Build full finalized set so plan_ready (not stale).
                 status = app.build_mix("dj-showcase", "", tracks=None, order_engine="none")
                 self.assertEqual(status["building"], 1)
@@ -54,6 +68,9 @@ class MixEditorTest(unittest.TestCase):
                 self.assertFalse(final.get("plan_stale"), final)
                 self.assertTrue(final["plan_ready"], final)
                 self.assertEqual(final["summary"]["track_count"], 4)
+                self.assertEqual(final["mixxx_control_port"], 10443)
+                built = json.loads(plan_path.read_text())
+                self.assertEqual(built["runtime"]["mixxx_control_port"], 10443)
                 self.assertTrue(plan_path.exists())
 
     def test_finalized_snapshot_and_plan_stale(self) -> None:

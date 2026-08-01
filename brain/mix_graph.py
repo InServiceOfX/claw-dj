@@ -352,7 +352,24 @@ def greedy_mix_order(
         return not (sim is not None and sim >= CHROMA_MATCH)
 
     remaining = {track.track_id: track for track in tracks}
-    current = start if start and start.track_id in remaining else tracks[0]
+    if start and start.track_id in remaining:
+        current = start
+    else:
+        # A finalized playlist is an available pool, not an opener choice.
+        # Choose the locally strongest-connected opener independently of input
+        # order.  Stable identity tie-breaking keeps identical inputs fully
+        # reproducible even when their selection order differs.
+        current = min(
+            tracks,
+            key=lambda track: (
+                -sum(
+                    pair_score(track, other, lineage=lineage, chroma=chroma).score
+                    for other in tracks
+                    if other.track_id != track.track_id
+                ),
+                track.track_id,
+            ),
+        )
     order = [current]
     del remaining[current.track_id]
     slowdown_streak = 0
@@ -377,7 +394,10 @@ def greedy_mix_order(
             jump = unbacked_jump(current, candidate)
             if jump and jump_cooldown > 0:
                 adjusted -= 0.30  # a second dramatic switch too soon
-            if adjusted > best_score:
+            if adjusted > best_score or (
+                adjusted == best_score
+                and (best is None or candidate.track_id < best.track_id)
+            ):
                 best_score = adjusted
                 best = candidate
                 best_slow = slow

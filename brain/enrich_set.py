@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import math
 import subprocess
 import sys
@@ -496,7 +497,16 @@ def run_enrich(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--playlist", type=Path, default=DEFAULT_PLAYLIST_JSON)
-    parser.add_argument("--port", type=int, default=9995)
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=(
+            int(os.environ["CLAWDJ_MIXXX_CONTROL_PORT"])
+            if os.environ.get("CLAWDJ_MIXXX_CONTROL_PORT")
+            else None
+        ),
+        help="explicit Mixxx control port; otherwise validate/discover it from the running process",
+    )
     parser.add_argument("--status", action="store_true", help="report gaps, change nothing")
     parser.add_argument("--skip-bpm", action="store_true")
     parser.add_argument("--skip-lyrics", action="store_true")
@@ -515,9 +525,15 @@ def main() -> None:
                 print(f"  missing {field}: {row['artist']} — {row['title']}")
         return
 
+    from hands.mixxx_control import DEFAULT_PORT, discover_mixxx_control_port
+
+    port = discover_mixxx_control_port(
+        preferred=DEFAULT_PORT,
+        explicit=args.port,
+    )
     run_enrich(
         playlist_path=args.playlist,
-        port=args.port,
+        port=port,
         skip_bpm=args.skip_bpm,
         skip_lyrics=args.skip_lyrics,
         skip_chroma=args.skip_chroma,

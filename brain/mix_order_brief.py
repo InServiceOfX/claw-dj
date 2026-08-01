@@ -10,7 +10,7 @@ Profile knobs (smooth / no tricks / longer blends) still live in
 Engines (same plumbing as Ask the DJ brain):
   nemoclaw — hermes / Nemotron via OpenAI-compatible API
   h-agent  — H Company planning-only task
-  none     — skip the agent; keep the finalized playlist order
+  none     — skip the agent; run deterministic local mix-quality ordering
 
 The agent returns structured constraints (adjacent pairs, regions, optional
 subset). We then reorder deterministically with the mix-graph greedy tour
@@ -145,7 +145,26 @@ def _normalize_constraints(value: dict, allowed: set[str]) -> dict:
             return item
         return None
 
+    referenced: list[str] = []
     use_only_raw = value.get("use_only")
+    if isinstance(use_only_raw, list):
+        referenced.extend(item for item in use_only_raw if isinstance(item, str))
+        if len(referenced) != len(set(referenced)):
+            raise ValueError("agent use_only contains duplicate track ids")
+    if isinstance(value.get("opener_id"), str):
+        referenced.append(value["opener_id"])
+    for pair in value.get("adjacent") or []:
+        if isinstance(pair, (list, tuple)):
+            referenced.extend(item for item in pair[:2] if isinstance(item, str))
+    for region in value.get("regions") or []:
+        if isinstance(region, dict):
+            referenced.extend(
+                item for item in (region.get("ids") or []) if isinstance(item, str)
+            )
+    unknown = sorted(set(referenced) - allowed)
+    if unknown:
+        raise ValueError(f"agent constraints contain unknown track ids: {unknown}")
+
     use_only: list[str] | None = None
     if isinstance(use_only_raw, list):
         use_only = [i for i in (clean_id(x) for x in use_only_raw) if i]
@@ -246,6 +265,9 @@ def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], 
     """Deterministic reorder: greedy tour, then force adjacency + region windows."""
     from brain.mix_graph import greedy_mix_order, lineage_pairs, load_chroma_pairs, load_lineage
 
+    track_ids = [row.get("track_id") for row in rows]
+    if len(track_ids) != len(set(track_ids)):
+        raise ValueError("candidate pool contains duplicate track ids")
     id_map = short_ids(rows)
     notes = list(constraints.get("notes") or [])
 
@@ -275,13 +297,6 @@ def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], 
     ordered_tracks = greedy_mix_order(tracks, start=start, lineage=lineage, chroma=chroma)
     order = [short_for_path[t.track_id] for t in ordered_tracks]
 
-    ordered_flag = bool(constraints.get("adjacent_ordered"))
-    for left, right in constraints.get("adjacent") or []:
-        if left in order and right in order:
-            order = force_adjacent(order, left, right, ordered=ordered_flag)
-            a, b = id_map[left], id_map[right]
-            notes.append(f"adjacent: {a.get('artist')} — {a.get('title')} ↔ {b.get('artist')} — {b.get('title')}")
-
     for region in constraints.get("regions") or []:
         ids = [i for i in region.get("ids") or [] if i in order]
         where = region.get("where") or "anywhere"
@@ -289,6 +304,26 @@ def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], 
             order = place_block_in_region(order, ids, where)
             labels = [f"{id_map[i].get('title')}" for i in ids]
             notes.append(f"region {where}: {', '.join(labels)}")
+
+    # Coalesce chained pairs before insertion. Repeated pair insertion can
+    # make A-B, then B-C by pulling B out and silently stranding A.
+    from brain.order_constraints import assert_intact, merge_groups
+
+    ordered_flag = bool(constraints.get("adjacent_ordered"))
+    groups = merge_groups(list(constraints.get("adjacent") or []))
+    applied_groups = []
+    for group in groups:
+        present = [item for item in group if item in order]
+        if len(present) < 2:
+            continue
+        anchor = min(order.index(item) for item in present)
+        block = present if ordered_flag else [item for item in order if item in set(present)]
+        order = [item for item in order if item not in set(present)]
+        order[anchor:anchor] = block
+        applied_groups.append(block)
+        labels = [f"{id_map[item].get('artist')} — {id_map[item].get('title')}" for item in block]
+        notes.append(f"adjacent group: {' ↔ '.join(labels)}")
+    assert_intact(order, applied_groups)
 
     result = [id_map[i] for i in order]
     # De-dupe notes while preserving order.
@@ -310,12 +345,21 @@ def order_from_brief(
 ) -> tuple[list[dict], list[str], dict]:
     """Resolve brief → (ordered rows, notes, constraints).
 
-    `ask` is injectable for tests. When engine is none/off or brief empty,
-    returns the input rows unchanged.
+    `ask` is injectable for tests. The model only interprets a non-empty
+    brief; deterministic local ordering runs in every mode.
     """
     text = (brief or "").strip()
     if not text or engine in (None, "", "none", "off", "profile-only"):
-        return rows, [], {"use_only": None, "adjacent": [], "regions": [], "notes": ["playlist order kept (no order engine)"]}
+        constraints = {
+            "use_only": None,
+            "opener_id": None,
+            "adjacent": [],
+            "adjacent_ordered": False,
+            "regions": [],
+            "notes": ["deterministic local mix-quality ordering"],
+        }
+        ordered, notes = apply_constraints(rows, constraints)
+        return ordered, notes, constraints
 
     allowed = set(short_ids(rows))
     prompt = build_order_prompt(rows, text)

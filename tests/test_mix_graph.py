@@ -40,3 +40,14 @@ class MixGraphTest(TestCase):
         self.assertEqual(order[1].title, "C")
         edge = pair_score(order[0], order[1])
         self.assertGreater(edge.score, pair_score(tracks[0], tracks[1]).score)
+
+    def test_default_order_ignores_pool_order_and_breaks_ties_by_identity(self) -> None:
+        tracks = [
+            Track("/c.mp3", "C", "Artist", bpm=100.0, key="Am"),
+            Track("/a.mp3", "A", "Artist", bpm=100.0, key="Am"),
+            Track("/b.mp3", "B", "Artist", bpm=100.0, key="Am"),
+        ]
+        forward = [track.track_id for track in greedy_mix_order(tracks)]
+        reverse = [track.track_id for track in greedy_mix_order(list(reversed(tracks)))]
+        self.assertEqual(forward, ["/a.mp3", "/b.mp3", "/c.mp3"])
+        self.assertEqual(reverse, forward)
