@@ -13,6 +13,8 @@ Build and operate `claw-dj`: an autonomous or semi-autonomous DJ that plays Mixx
    - `docs/ARCHITECTURE.md` — brain/hands split.
    - `docs/MIXXX_CONTROL_SURFACE.md` — reachable Mixxx controls.
    - `docs/DJ_TRANSITIONS_PLAYBOOK.md` and `docs/DJ_STYLE_GUIDE.md` — mixing craft.
+   - `docs/ANTHOLOGY_AND_SHORT_FORM_PROGRAM.md` — named anthology slate,
+     editorial standard, short-form research, and promotion lifecycle.
    - `docs/SETUP_NEW_MACHINE.md` — music/database portability.
    - `docs/HERMES_AGENT_SETUP.md` — lightweight Hermes reconstruction.
 5. In Hermes, load the repository skill from `agent/hermes-skill/` (installed as `clawdj`). Load `agent/pdd-skill/` (installed as `prompt-driven-development`) for PDD work.
@@ -51,6 +53,10 @@ intentional `--force`.
 - Reauthorize model providers and external services separately on each machine.
 
 ## Media publishing
+
+Treat promotion as part of the anthology lifecycle, not an afterthought. Follow
+`docs/ANTHOLOGY_AND_SHORT_FORM_PROGRAM.md` for campaign intent, clip selection,
+current-platform research, experiments, and metrics.
 
 For Mixxx WAV-to-video masters and 9:16 promotional clips, follow:
 
