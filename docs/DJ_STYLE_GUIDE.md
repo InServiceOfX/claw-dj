@@ -118,6 +118,48 @@ sync-skip check is independent of the plan's move list.
   use of `sync` is fine for the close-tempo pairs they're normally chosen
   for.
 
+## The other half of `play_bpm`: riding a track hot on purpose
+
+Everything above treats a deck sitting above its native tempo as a bug to
+be corrected. It usually is. But `play_bpm` is a **tempo hold, not a bug
+fix**, and the same directive has a legitimate affirmative use: keeping a
+track *above* its own native tempo because the sped-up version genuinely
+sounds better and carries the set's energy forward.
+
+Do not "correct" a hot deck back to native just because you found one. If a
+track's dj_notes hold it above native and say why, that is a decision, not
+drift.
+
+**When this applies:** a track gets pulled up during a blend, and the
+sped-up version sounds good on its own terms — the lift keeps the energy
+and tempo going instead of the mix sagging at the handoff. Without a hold,
+`settle_rate` glides it back down to native right after the landing and
+that energy is lost.
+
+- **This is per-track human judgment and must stay that way.** There is no
+  metric, waveform feature, or BPM-gap threshold that predicts which songs
+  survive being sped up. It's a handful of songs, and which ones is an ear
+  call. Never invent a global rule (`allow up to +N%`), a profile setting,
+  or a computed heuristic for it — record the decision in that one track's
+  dj_notes and nowhere else.
+- **The blend tempo is not automatically the right hold.** How hot a track
+  rode during an overlap is whatever the outgoing deck happened to be at.
+  Ask what the track should sit at, not what it got dragged to. Observed
+  case: Groove Theory — Tell Me (native 93.04) was pulled to LL Cool J's
+  101.08 and sounded good, but Ernest's call was ~96.5 (+3.7%) for the
+  body — "slightly sped up," not the full +8.6% of the blend.
+- **A hot hold changes what the NEXT track syncs to.** This is the same
+  chaining described above, just entered deliberately. Before holding a
+  track hot, check the following track: if it has no `play_bpm` of its own,
+  it will beatsync onto the held tempo instead of the native one, and a
+  clean match can quietly become a stretch. Either pin the next track to
+  its own native BPM, or listen first and decide — but know it's a live
+  consequence, not a detail.
+- Record the reasoning in the note, not just the number. "Ernest ok'd
+  up-tempoing this to match Escapade exactly (both are the same high
+  energy)" tells the next agent why the hold exists; a bare
+  `play_bpm=115.24` invites someone to "fix" it later.
+
 ## Showcase flourishes (scratch-in, loop-roll, transformer-cut, stutter/censor)
 
 These rotate automatically per the profile's `flourish_every` setting and
