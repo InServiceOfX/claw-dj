@@ -1,7 +1,9 @@
 """Execute a continuous mix plan against Mixxx's control API.
 
 Plays Mixxx like an instrument: loads tracks, rides EQ/filter/rate, beat-syncs,
-crossfades, effects and beat juggles — all from brain/data/mix_plan.json.
+crossfades, effects and beat juggles. With no ``--plan`` argument it runs the
+active named plan selected in the GUI; legacy single-plan workspaces still use
+``brain/data/mix_plan.json``.
 
 Requires Mixxx launched with the patched control API:
     mixxx --developer --control-api-port 9995
@@ -9,7 +11,7 @@ Requires Mixxx launched with the patched control API:
 Usage:
     uv run python -m hands.run_mix_plan --dry-run
     uv run python -m hands.run_mix_plan
-    uv run python -m hands.run_mix_plan --plan brain/data/mix_plan.json --port 9995
+    uv run python -m hands.run_mix_plan --plan brain/data/plans/<slug>/mix_plan.json --port 9995
 """
 from __future__ import annotations
 
@@ -18,10 +20,10 @@ import json
 import time
 from pathlib import Path
 
+from brain import plan_paths
 from hands.mixxx_control import DEFAULT_PORT, MixxxControl
 from hands.transition import crossfader_target, deck_group, smoothstep, wait_for_beats, wait_for_next_beat
 
-PLAN_DEFAULT = Path(__file__).resolve().parent.parent / "brain" / "data" / "mix_plan.json"
 LOAD_TIMEOUT_S = 30.0
 
 EQ_GROUP = "[EqualizerRack1_{channel}_Effect1]"
@@ -36,6 +38,17 @@ _CLAWDJ_CANDIDATES = (
     Path(__file__).resolve().parent.parent / "core-rust" / "target" / "debug" / "clawdj",
 )
 _clawdj_missing_noted = False
+
+
+def default_plan_path() -> Path:
+    """Return the active GUI plan's artifact, with legacy fallback when applicable."""
+    try:
+        return plan_paths.resolve().mix_plan
+    except plan_paths.PlanNotFound as error:
+        raise SystemExit(
+            "no active named mix plan — select one in the GUI, build it, or pass "
+            "--plan /path/to/mix_plan.json"
+        ) from error
 
 
 def clawdj_binary() -> Path | None:
@@ -113,28 +126,58 @@ def reset_instrument(mixxx: MixxxControl) -> None:
             pass
 
 
-def settle_rate(mixxx: MixxxControl, deck: int, steps: int = 8) -> None:
-    """Glide the deck back to its native tempo after a beatsync landing.
+def settle_rate(
+    mixxx: MixxxControl,
+    deck: int,
+    steps: int = 8,
+    *,
+    settle_bpm: float | None = None,
+    native_bpm: float | None = None,
+) -> None:
+    """Glide the deck back down after a beatsync landing.
 
     Without this, sync chains the first track's tempo through the whole set
     (observed live: every transition anchored at 101 BPM). Riding the pitch
     back to 0 lets each track keep its own energy, and makes the planner's
     tempo-direction choices audible. Keylock is on, so pitch is unaffected.
+
+    `settle_bpm` stops the glide part-way instead of at the track's own
+    tempo. A track can be worth entering matched to a much faster outgoing
+    deck and then riding somewhere between the two -- fully sped up loses
+    the song's feel, but dropping all the way home throws away the lift the
+    blend just built (Ernest, 2026-08-04, Camp Lo's Luchini instrumental
+    entering at Keni Burke's 94 against its own 83). Entering matched is
+    what keeps the overlap drift-free; where it settles afterwards is a
+    separate, purely musical choice.
+
+    The rate slider is linear in tempo, so the rate that yields `settle_bpm`
+    is interpolated from the deck's live (rate, bpm) pair against its native
+    tempo. Interpolating beats reading the slider's configured range, which
+    is orientation- and skin-dependent.
     """
     group = deck_group(deck)
     try:
         current = mixxx.get(group, "rate")
     except Exception:
         return
+    target = 0.0
+    label = "native tempo"
+    if settle_bpm and native_bpm and abs(current) > 1e-6:
+        live = mixxx.get(group, "bpm") or 0.0
+        if live > 0 and abs(live - native_bpm) > 1e-6:
+            fraction = (float(settle_bpm) - native_bpm) / (live - native_bpm)
+            # Never glide the wrong way or past where the blend already was.
+            target = current * max(0.0, min(1.0, fraction))
+            label = f"{float(settle_bpm):.2f} BPM"
     if abs(current) < 0.01:
-        mixxx.set(group, "rate", 0.0)
+        mixxx.set(group, "rate", target)
         return
     bpm = mixxx.get(group, "bpm") or 100.0
     period = 60.0 / max(60.0, min(200.0, bpm))
     for i in range(1, steps + 1):
-        mixxx.set(group, "rate", current * (1.0 - i / steps))
+        mixxx.set(group, "rate", current + (target - current) * (i / steps))
         time.sleep(period)
-    print(f"  rate settled to native tempo on deck {deck}")
+    print(f"  rate settled to {label} on deck {deck}")
 
 
 def set_bpm_target(mixxx: MixxxControl, deck: int, target_bpm: float) -> None:
@@ -387,6 +430,60 @@ def ensure_deck_playing(mixxx: MixxxControl, deck: int) -> None:
     print(f"  (deck {deck} was stopped unexpectedly; resuming at its current cue)")
     mixxx.set(group, "play", 1)
     _wait_for(mixxx, group, "play", lambda value: value >= 0.5, 3.0)
+
+
+def _safe_body_beats(
+    mixxx: MixxxControl,
+    deck: int,
+    requested_beats: int,
+    *,
+    next_transition_beats: int,
+    safety_beats: int = 4,
+) -> int:
+    """Clamp a body ride so the file cannot end before its transition.
+
+    Live playposition already includes the incoming overlap consumed before
+    this body. Reserve the next anchor, the complete outgoing transition, and
+    a small margin. Preserve mod-4 count when shortening.
+    """
+    requested = max(0, int(requested_beats))
+    group = deck_group(deck)
+    duration = mixxx.get(group, "duration")
+    position = mixxx.get(group, "playposition")
+    bpm = mixxx.get(group, "bpm")
+    if duration <= 0 or bpm <= 0 or not 0.0 <= position <= 1.0:
+        return requested
+    remaining_seconds = max(0.0, duration * (1.0 - position))
+    available_beats = int(remaining_seconds * bpm / 60.0)
+    reserved = max(0, int(next_transition_beats)) + 1 + max(0, int(safety_beats))
+    max_body = max(0, available_beats - reserved)
+    if requested <= max_body:
+        return requested
+    reduction = ((requested - max_body + 3) // 4) * 4
+    return max(0, requested - reduction)
+
+
+def _wait_for_anchor_or_continue(
+    mixxx: MixxxControl,
+    *,
+    port: int,
+    out_group: str,
+    in_group: str,
+    to_deck: int,
+) -> bool:
+    """Anchor normally, or continue on the cued deck instead of crashing."""
+    try:
+        wait_for_next_beat(port, out_group)
+        return True
+    except TimeoutError as error:
+        mixxx.set(in_group, "play", 1)
+        mixxx.set("[Master]", "crossfader", crossfader_target(to_deck))
+        mixxx.set(out_group, "play", 0)
+        print(
+            f"  WARNING: {out_group} could not provide a live beat anchor "
+            f"({error}); emergency continuation on deck {to_deck}"
+        )
+        return False
 
 
 def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[str]) -> None:
@@ -818,7 +915,10 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             except Exception:
                 pass
             time.sleep(sweep_beats * beat_seconds / steps)
-        wait_for_next_beat(port, out_g)
+        if not _wait_for_anchor_or_continue(
+            mixxx, port=port, out_group=out_g, in_group=in_g, to_deck=to_deck
+        ):
+            return
         mixxx.set(in_g, "play", 1)
         mixxx.set("[Master]", "crossfader", crossfader_target(to_deck))
         mixxx.set(out_g, "play", 0)
@@ -834,7 +934,10 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     # post-fader tail alive under the incoming track. This is the gentle
     # large-gap exit, with no tempo bridging at all.
     if "echo_out_exit" in moves:
-        wait_for_next_beat(port, out_g)
+        if not _wait_for_anchor_or_continue(
+            mixxx, port=port, out_group=out_g, in_group=in_g, to_deck=to_deck
+        ):
+            return
         if echo_ready(mixxx):
             # The incoming first beat lands with the fader pull; the effect
             # remains routed for four more beats before cleanup.
@@ -861,7 +964,10 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     if "brake_out" in moves or "spinback_out" in moves:
         gesture = ("spinback", "--deck", str(from_deck), "--seconds", "1.6") \
             if "spinback_out" in moves else ("brake", "--deck", str(from_deck), "--seconds", "1.4")
-        wait_for_next_beat(port, out_g)
+        if not _wait_for_anchor_or_continue(
+            mixxx, port=port, out_group=out_g, in_group=in_g, to_deck=to_deck
+        ):
+            return
         if rust_gesture(*gesture, port=port):
             mixxx.set("[Master]", "crossfader", crossfader_target(to_deck))
             mixxx.set(deck_group(to_deck), "play", 1)
@@ -871,7 +977,10 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
 
     print(f"  anchoring on {out_g} beat ({bpm:.2f} BPM)")
     looped_intro = "outgoing_intro_loop_8_bars" in moves
-    wait_for_next_beat(port, out_g)
+    if not _wait_for_anchor_or_continue(
+            mixxx, port=port, out_group=out_g, in_group=in_g, to_deck=to_deck
+        ):
+            return
     if looped_intro:
         duration = mixxx.get(out_g, "duration")
         loop_seconds = float(event["outgoing_loop_seconds"])
@@ -1105,20 +1214,58 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
         elif op == "play_body":
             beats = event.get("beats")
             seconds = float(event.get("seconds", 30))
+            ensure_deck_playing(mixxx, int(event["deck"]))
             if beats is not None:
+                next_transition_beats = 0
+                for future in events[i:]:
+                    if future.get("op") == "transition":
+                        next_transition_beats = int(future.get("transition_beats", 16))
+                        break
+                requested_beats = int(beats)
+                beats = _safe_body_beats(
+                    mixxx,
+                    int(event["deck"]),
+                    requested_beats,
+                    next_transition_beats=next_transition_beats,
+                )
+                if beats < requested_beats:
+                    print(
+                        f"  WARNING: shortening body {requested_beats} -> {beats} beats "
+                        f"to reserve the next {next_transition_beats}-beat transition "
+                        "before end-of-track"
+                    )
                 print(f"  riding {event.get('track')} for {beats} live beats")
             else:
                 print(f"  riding {event.get('track')} for {seconds:.0f}s")
             print(f"  hints: {event.get('instrument_hints')}")
-            ensure_deck_playing(mixxx, int(event["deck"]))
             if beats is not None:
                 ramp_beats = min(int(beats), int(event.get("tempo_ramp_beats") or 0))
                 steady_beats = int(beats) - ramp_beats
+                phase_anchor = event.get("phase_anchor")
+                if phase_anchor is not None:
+                    phase_anchor = dict(phase_anchor)
+                    # wait_for_beats guards the parity immediately after its
+                    # own count.  A following tempo ramp advances the track by
+                    # ramp_beats more grid beats before the transition's next
+                    # edge, so ask the steady counter for the complementary
+                    # parity here.
+                    phase_anchor["target_beat_parity"] = (
+                        int(phase_anchor["target_beat_parity"]) - ramp_beats
+                    ) % 2
+                    if "target_beat_mod4" in phase_anchor:
+                        phase_anchor["target_beat_mod4"] = (
+                            int(phase_anchor["target_beat_mod4"]) - ramp_beats
+                        ) % 4
                 # timeout scales with the ride: full verses (verse tour) can outlast
                 # the old fixed 90s at slower tempos
                 if steady_beats:
-                    wait_for_beats(port, deck_group(int(event["deck"])), steady_beats,
-                                   timeout_s=max(90.0, steady_beats * 1.5))
+                    wait_for_beats(
+                        port,
+                        deck_group(int(event["deck"])),
+                        steady_beats,
+                        timeout_s=max(90.0, steady_beats * 1.5),
+                        phase_anchor=phase_anchor,
+                    )
                 if ramp_beats:
                     ramp_bpm_target(
                         mixxx,
@@ -1156,7 +1303,12 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                     f"{float(event['incoming_bpm_target']):.2f} BPM"
                 )
             else:
-                settle_rate(mixxx, to_deck)
+                settle_rate(
+                    mixxx,
+                    to_deck,
+                    settle_bpm=event.get("incoming_settle_bpm"),
+                    native_bpm=event.get("incoming_native_bpm"),
+                )
             if pending_preload and pending_preload.get("deck") == from_deck:
                 print(f"  preload next into freed deck {from_deck}")
                 load_deck(
@@ -1202,7 +1354,12 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--plan", type=Path, default=PLAN_DEFAULT)
+    parser.add_argument(
+        "--plan",
+        type=Path,
+        default=None,
+        help="mix-plan JSON path; defaults to the active named plan selected in the GUI",
+    )
     parser.add_argument(
         "--port", type=int, default=None,
         help="explicit override; otherwise use plan metadata, then validated discovery",
@@ -1217,9 +1374,13 @@ def main() -> None:
              "that was already running.",
     )
     args = parser.parse_args()
-    if not args.plan.exists():
-        raise SystemExit(f"missing {args.plan} — run: uv run python -m brain.build_mix_plan")
-    plan = json.loads(args.plan.read_text())
+    plan_path = args.plan or default_plan_path()
+    if not plan_path.exists():
+        raise SystemExit(
+            f"missing {plan_path} — build the active plan in the GUI or run: "
+            "uv run python -m brain.plan_cli build"
+        )
+    plan = json.loads(plan_path.read_text())
     if args.dry_run:
         port = args.port or DEFAULT_PORT
     else:

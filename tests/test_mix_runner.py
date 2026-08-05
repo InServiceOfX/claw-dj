@@ -1,8 +1,11 @@
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
+from brain.plan_paths import PlanNotFound
 from hands.run_mix_plan import (
     _run_events,
+    _safe_body_beats,
+    default_plan_path,
     load_deck,
     perform_juggle_brake_intro,
     perform_juggle_intro,
@@ -11,6 +14,7 @@ from hands.run_mix_plan import (
     run_plan,
     set_bpm_target,
 )
+from hands.transition import _phase_corrected_beat_count
 
 
 class FakeMixxx:
@@ -30,6 +34,109 @@ class FakeMixxx:
 
 
 class MixRunnerTests(TestCase):
+    def test_runtime_phase_correction_preserves_full_bar_position(self) -> None:
+        # Parity-only correction would choose 111 (11 + 111 is even) but that
+        # lands on beat index 2 within the bar. The planned bar position is 0,
+        # so the nearest safe reduction is 109 (11 + 109 == 120).
+        self.assertEqual(
+            _phase_corrected_beat_count(
+                112,
+                first_counted_beat_index=11,
+                target_beat_mod4=0,
+            ),
+            109,
+        )
+
+    @patch(
+        "hands.run_mix_plan.wait_for_next_beat",
+        side_effect=TimeoutError("deck is not playing"),
+    )
+    def test_dead_outgoing_anchor_continues_on_incoming_deck(self, _wait) -> None:
+        mixxx = FakeMixxx()
+        perform_transition(  # type: ignore[arg-type]
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 32,
+                "technique": "smooth_blend",
+                "moves": ["sync", "crossfade"],
+            },
+            port=9995,
+        )
+
+        self.assertIn(("[Channel2]", "play", 1), mixxx.writes)
+        self.assertIn(("[Master]", "crossfader", 1.0), mixxx.writes)
+        self.assertIn(("[Channel1]", "play", 0), mixxx.writes)
+
+    def test_safe_body_beats_reserves_anchor_and_next_transition(self) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "duration")] = 60.0
+        mixxx.values[("[Channel1]", "playposition")] = 0.5
+        mixxx.values[("[Channel1]", "bpm")] = 120.0
+
+        # 30 seconds = 60 beats remain. Reserve 32 transition beats, one
+        # anchor beat, and four safety beats. Preserve the requested mod-4
+        # count, so 40 clamps to 20 rather than overrunning the file.
+        self.assertEqual(
+            _safe_body_beats(mixxx, 1, 40, next_transition_beats=32),
+            20,
+        )
+
+    def test_safe_body_beats_leaves_a_safe_ride_unchanged(self) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "duration")] = 180.0
+        mixxx.values[("[Channel1]", "playposition")] = 0.25
+        mixxx.values[("[Channel1]", "bpm")] = 100.0
+
+        self.assertEqual(
+            _safe_body_beats(mixxx, 1, 40, next_transition_beats=32),
+            40,
+        )
+
+    @patch("hands.run_mix_plan.wait_for_beats")
+    def test_play_body_forwards_the_planned_phase_anchor(self, wait) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        anchor = {
+            "grid_bpm": 120.0,
+            "first_beat_seconds": 0.0,
+            "planned_anchor_beat_index": 9,
+            "target_beat_mod4": 1,
+            "target_beat_parity": 1,
+        }
+
+        _run_events(
+            mixxx,
+            [{"op": "play_body", "deck": 1, "beats": 8, "phase_anchor": anchor}],
+            {},
+            port=9995,
+        )
+
+        wait.assert_called_once_with(
+            9995,
+            "[Channel1]",
+            8,
+            timeout_s=90.0,
+            phase_anchor=anchor,
+        )
+
+    @patch("hands.run_mix_plan.plan_paths.resolve")
+    def test_default_plan_path_uses_active_gui_plan(self, resolve) -> None:
+        expected = MagicMock()
+        resolve.return_value.mix_plan = expected
+
+        self.assertIs(default_plan_path(), expected)
+        resolve.assert_called_once_with()
+
+    @patch(
+        "hands.run_mix_plan.plan_paths.resolve",
+        side_effect=PlanNotFound(None),
+    )
+    def test_default_plan_path_refuses_to_guess_when_no_plan_is_active(self, _resolve) -> None:
+        with self.assertRaisesRegex(SystemExit, "no active named mix plan"):
+            default_plan_path()
+
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")
     @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 16.0])
@@ -592,3 +699,221 @@ class LoadDeckBpmTimeoutTests(TestCase):
         # Must have proceeded past the bpm wait (cue_deck ran) rather than
         # raising TimeoutError.
         self.assertIn(("[Channel1]", "volume", 1.0), mixxx.writes)
+
+
+class WaitForBeatsResubscribeTests(TestCase):
+    def test_runtime_phase_guard_corrects_a_delayed_body_start(self) -> None:
+        """A variable preload must not move the planned bar position.
+
+        The plan expects the transition anchor at beat 0 modulo four. By the
+        time the body counter subscribes, the live deck's first counted edge
+        is beat 11. Counting 112 edges would anchor on beat 123 (position 3),
+        so the live counter must stop after 109 and anchor on beat 120.
+        """
+        from hands.transition import wait_for_beats
+
+        class GridAwareMixxx:
+            emitted = 0
+
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, group: str, key: str) -> float:
+                if key == "bpm":
+                    return 120.0
+                if key == "play":
+                    return 1.0
+                if key == "duration":
+                    return 120.0
+                if key == "playposition":
+                    # Beat 11 on a 120 BPM grid whose first beat is at 0.
+                    return 5.5 / 120.0
+                return 0.0
+
+            def subscribe(self, *args) -> None:
+                return None
+
+            def events(self):
+                for _ in range(112):
+                    yield {"value": 0.0}
+                    type(self).emitted += 1
+                    yield {"value": 1.0}
+
+        GridAwareMixxx.emitted = 0
+        with patch("hands.transition.MixxxControl", GridAwareMixxx):
+            wait_for_beats(
+                9995,
+                "[Channel1]",
+                beats=112,
+                timeout_s=180.0,
+                phase_anchor={
+                    "grid_bpm": 120.0,
+                    "first_beat_seconds": 0.0,
+                    "target_beat_mod4": 0,
+                    "target_beat_parity": 0,
+                },
+            )
+
+        self.assertEqual(GridAwareMixxx.emitted, 109)
+
+    @patch("hands.transition.time.sleep")
+    def test_resubscribes_after_mid_ride_stream_gap(self, _sleep) -> None:
+        from hands.transition import wait_for_beats
+
+        class ProbeMixxx:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, group: str, key: str) -> float:
+                if key == "bpm":
+                    return 120.0
+                if key == "play":
+                    return 1.0
+                return 0.0
+
+            def set(self, *args) -> None:
+                return None
+
+        class GapThenRecoverEvents:
+            instances = 0
+            subscribes = 0
+
+            def __init__(self, *args, **kwargs) -> None:
+                type(self).instances += 1
+                self._n = type(self).instances
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def subscribe(self, group: str, key: str) -> None:
+                type(self).subscribes += 1
+
+            def events(self):
+                if self._n == 1:
+                    # First subscription dies after a few beats.
+                    yield {"value": 0.0}
+                    yield {"value": 1.0}
+                    yield {"value": 0.0}
+                    yield {"value": 1.0}
+                    raise TimeoutError("stream quiet")
+                # Second subscription finishes the ride.
+                for _ in range(4):
+                    yield {"value": 0.0}
+                    yield {"value": 1.0}
+
+        GapThenRecoverEvents.instances = 0
+        GapThenRecoverEvents.subscribes = 0
+
+        class Factory:
+            n = 0
+
+            def __call__(self, *args, **kwargs):
+                type(self).n += 1
+                # wait_for_beats alternates probe connections and event streams.
+                if type(self).n % 2 == 1:
+                    return ProbeMixxx()
+                return GapThenRecoverEvents()
+
+        Factory.n = 0
+        with patch("hands.transition.MixxxControl", side_effect=Factory()):
+            wait_for_beats(9995, "[Channel1]", beats=4, timeout_s=30.0)
+
+        self.assertGreaterEqual(GapThenRecoverEvents.subscribes, 2)
+
+    @patch("hands.transition.time.sleep")
+    def test_raises_if_deck_stays_stopped_after_stream_gap(self, _sleep) -> None:
+        from hands.transition import wait_for_beats
+
+        class AliveThenDead:
+            calls = 0
+
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, group: str, key: str) -> float:
+                if key == "bpm":
+                    return 120.0
+                if key == "play":
+                    type(self).calls += 1
+                    # Initial probe only: playing. After the stream gap, stay dead.
+                    return 1.0 if type(self).calls == 1 else 0.0
+                return 0.0
+
+            def set(self, *args) -> None:
+                return None
+
+            def subscribe(self, *args) -> None:
+                return None
+
+            def events(self):
+                yield {"value": 1.0}
+                raise TimeoutError("stream quiet")
+
+        AliveThenDead.calls = 0
+        with patch("hands.transition.MixxxControl", AliveThenDead):
+            with self.assertRaisesRegex(TimeoutError, "stopped during ride"):
+                wait_for_beats(9995, "[Channel1]", beats=8, timeout_s=10.0)
+
+class SettleBpmTests(TestCase):
+    """A track can be entered sped up and then ridden somewhere in between."""
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_settle_bpm_stops_the_glide_part_way_home(self, _sleep) -> None:
+        from hands.run_mix_plan import settle_rate
+
+        mixxx = FakeMixxx()
+        # Luchini's real case: native 83, dragged up to Keni Burke's 94 by the
+        # blend, asked to ride at 90 rather than snapping all the way back.
+        mixxx.values[("[Channel2]", "rate")] = 0.40
+        mixxx.values[("[Channel2]", "bpm")] = 94.0
+        settle_rate(mixxx, 2, steps=4, settle_bpm=90.0, native_bpm=83.0)
+        rates = [value for group, key, value in mixxx.writes if key == "rate"]
+        # (90-83)/(94-83) = 0.636 of the way up, so 0.40 * 0.636 = 0.2545.
+        self.assertAlmostEqual(rates[-1], 0.2545, places=3)
+        # Monotonic downward, never overshooting past the target.
+        self.assertTrue(all(a >= b for a, b in zip(rates, rates[1:])), rates)
+        self.assertGreater(rates[-1], 0.0)
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_without_settle_bpm_it_still_goes_all_the_way_to_native(self, _sleep) -> None:
+        from hands.run_mix_plan import settle_rate
+
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel2]", "rate")] = 0.40
+        mixxx.values[("[Channel2]", "bpm")] = 94.0
+        settle_rate(mixxx, 2, steps=4)
+        rates = [value for group, key, value in mixxx.writes if key == "rate"]
+        self.assertAlmostEqual(rates[-1], 0.0, places=6)
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_a_settle_target_above_the_blend_tempo_never_speeds_up(self, _sleep) -> None:
+        from hands.run_mix_plan import settle_rate
+
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel2]", "rate")] = 0.40
+        mixxx.values[("[Channel2]", "bpm")] = 94.0
+        # Asking for 120 on a deck already at 94 must clamp, not accelerate.
+        settle_rate(mixxx, 2, steps=4, settle_bpm=120.0, native_bpm=83.0)
+        rates = [value for group, key, value in mixxx.writes if key == "rate"]
+        self.assertLessEqual(max(rates), 0.40 + 1e-9)

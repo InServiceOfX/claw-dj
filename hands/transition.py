@@ -72,46 +72,187 @@ def wait_for_next_beat(port: int, group: str, timeout_s: float = 10.0) -> None:
     raise TimeoutError(f"no beat from {group} within {timeout_s}s (deck is not playing)")
 
 
-def wait_for_beats(port: int, group: str, beats: int, timeout_s: float = 90.0) -> None:
-    """Count beat_active rising edges on a dedicated event connection."""
+def _phase_corrected_beat_count(
+    requested_beats: int,
+    *,
+    first_counted_beat_index: int,
+    target_beat_parity: int | None = None,
+    target_beat_mod4: int | None = None,
+) -> int:
+    """Return a nearby positive count preserving the planned anchor phase.
+
+    ``wait_for_beats`` returns on its final counted edge and the transition
+    starts on the following edge.  If its first counted grid edge is ``B``,
+    that transition anchor is therefore ``B + count``.  A synchronous deck
+    preload can delay the beginning of this counter by an arbitrary number of
+    beats. New artifacts preserve the full modulo-four bar position; parity is
+    retained only as a compatibility fallback for older artifacts.
+    """
+    if requested_beats <= 0:
+        return requested_beats
+    modulus = 4 if target_beat_mod4 is not None else 2
+    raw_target = target_beat_mod4 if target_beat_mod4 is not None else target_beat_parity
+    if raw_target is None:
+        return requested_beats
+    target = int(raw_target) % modulus
+    current = (int(first_counted_beat_index) + requested_beats) % modulus
+    if current == target:
+        return requested_beats
+    reduction = (current - target) % modulus
+    if requested_beats - reduction > 0:
+        return requested_beats - reduction
+    return requested_beats + ((target - current) % modulus)
+
+
+def _current_grid_beat_index(port: int, group: str, phase_anchor: dict) -> int:
+    """Resolve the playing source-time position to its analyzed grid index."""
+    grid_bpm = float(phase_anchor["grid_bpm"])
+    first_beat_seconds = float(phase_anchor["first_beat_seconds"])
+    if grid_bpm <= 0:
+        raise ValueError("grid BPM must be positive")
+    with MixxxControl(port=port, timeout_s=2.0) as mixxx:
+        duration = float(mixxx.get(group, "duration"))
+        playposition = float(mixxx.get(group, "playposition"))
+    if duration <= 0 or not 0.0 <= playposition <= 1.0:
+        raise ValueError("deck has no valid duration/playposition")
+    source_seconds = duration * playposition
+    period = 60.0 / grid_bpm
+    return max(0, round((source_seconds - first_beat_seconds) / period))
+
+
+def wait_for_beats(
+    port: int,
+    group: str,
+    beats: int,
+    timeout_s: float = 90.0,
+    *,
+    phase_anchor: dict | None = None,
+) -> None:
+    """Count beat_active rising edges on a dedicated event connection.
+
+    Mixxx's control-API push stream is known to go quiet mid-ride even while
+    the deck keeps playing (seen live on long Paradise rides: stream died
+    around beat 100/143). Do not abandon the whole remainder after the first
+    gap — resubscribe a few times, keep the deck playing, and only then fall
+    back to wall-clock timing for whatever beats are still unpaid.
+    """
     if beats <= 0:
         return
     with MixxxControl(port=port, timeout_s=2.0) as mixxx:
         bpm = mixxx.get(group, "bpm")
         playing = mixxx.get(group, "play") >= 0.5
     if bpm <= 0 or not playing:
-        raise TimeoutError(f"cannot wait for beats from {group}: deck is not playing at a valid BPM")
+        raise TimeoutError(
+            f"cannot wait for beats from {group}: deck is not playing at a valid BPM"
+        )
 
     period = 60.0 / bpm
-    # Four missing beats are enough to decide the subscription is unhealthy;
-    # the old 90-second timeout made a dropped notification stream sound like
-    # the DJ simply stopped. Preserve total musical time with a BPM fallback.
+    # Four missing beats are enough to decide THIS subscription is unhealthy.
     event_timeout_s = min(timeout_s, max(2.0, 4.0 * period))
     started = time.monotonic()
-    with MixxxControl(port=port, timeout_s=event_timeout_s) as events_conn:
-        events_conn.subscribe(group, "beat_active")
-        count = 0
+    deadline = started + timeout_s
+    requested_beats = beats
+    count = 0
+    gaps = 0
+    max_gaps = 8
+    phase_resolved = phase_anchor is None
+
+    while count < beats and time.monotonic() <= deadline:
         previous = 0.0
-        deadline = time.monotonic() + timeout_s
         try:
-            for event in events_conn.events():
-                value = float(event["value"])
-                if value >= 1.0 and previous < 1.0:
-                    count += 1
-                    if count >= beats:
-                        return
-                previous = value
-                if time.monotonic() > deadline:
-                    break
+            with MixxxControl(port=port, timeout_s=event_timeout_s) as events_conn:
+                events_conn.subscribe(group, "beat_active")
+                for event in events_conn.events():
+                    value = float(event["value"])
+                    if value >= 1.0 and previous < 1.0:
+                        if not phase_resolved:
+                            phase_resolved = True
+                            try:
+                                first_beat = _current_grid_beat_index(
+                                    port, group, phase_anchor or {}
+                                )
+                                beats = _phase_corrected_beat_count(
+                                    requested_beats,
+                                    first_counted_beat_index=first_beat,
+                                    target_beat_mod4=(phase_anchor or {}).get(
+                                        "target_beat_mod4"
+                                    ),
+                                    target_beat_parity=(phase_anchor or {}).get(
+                                        "target_beat_parity"
+                                    ),
+                                )
+                                if beats != requested_beats:
+                                    print(
+                                        "  runtime bar guard: first counted grid beat "
+                                        f"{first_beat}; body {requested_beats} -> {beats} "
+                                        "so the transition keeps its planned 1-2-3-4 position"
+                                    )
+                            except (KeyError, TypeError, ValueError, OSError, TimeoutError) as exc:
+                                print(
+                                    "  (runtime snare guard unavailable; using planned "
+                                    f"{requested_beats}-beat body: {exc})"
+                                )
+                        count += 1
+                        if count >= beats:
+                            return
+                    previous = value
+                    if time.monotonic() > deadline:
+                        break
         except TimeoutError:
             pass
+
+        if count >= beats or time.monotonic() > deadline:
+            break
+
+        # Stream gap. Confirm the deck is still alive before resubscribing.
+        with MixxxControl(port=port, timeout_s=2.0) as mixxx:
+            bpm_now = mixxx.get(group, "bpm")
+            playing_now = mixxx.get(group, "play") >= 0.5
+            if bpm_now > 0:
+                bpm = bpm_now
+                period = 60.0 / bpm
+                event_timeout_s = min(timeout_s, max(2.0, 4.0 * period))
+            if not playing_now:
+                mixxx.set(group, "play", 1)
+                time.sleep(0.05)
+                playing_now = mixxx.get(group, "play") >= 0.5
+            if not playing_now:
+                raise TimeoutError(
+                    f"{group} stopped during ride after {count}/{beats} beats"
+                )
+
+        gaps += 1
+        if gaps > max_gaps:
+            break
+        print(
+            f"  (beat_active gap after {count}/{beats} beats; "
+            f"resubscribe {gaps}/{max_gaps} on {group})"
+        )
+
+    if count >= beats:
+        return
+
     elapsed = time.monotonic() - started
     remaining = max(0.0, beats * period - elapsed)
     print(
         f"  (beat_active stream stopped after {count}/{beats} beats; "
         f"timing remaining {remaining:.1f}s at {bpm:.2f} BPM)"
     )
-    time.sleep(remaining)
+    # Keep the deck alive during long wall-clock fallbacks so a silent
+    # transport drop cannot strand the rest of the set.
+    end = time.monotonic() + remaining
+    while True:
+        left = end - time.monotonic()
+        if left <= 0:
+            break
+        time.sleep(min(2.0, left))
+        try:
+            with MixxxControl(port=port, timeout_s=1.0) as mixxx:
+                if mixxx.get(group, "play") < 0.5:
+                    mixxx.set(group, "play", 1)
+        except Exception:
+            # Fallback timing must still finish even if a probe fails.
+            pass
 
 
 def transition(
