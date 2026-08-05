@@ -52,7 +52,10 @@ class MixOrderBriefTest(TestCase):
             )
 
     def test_h_planning_uses_no_desktop_environment(self) -> None:
-        from brain.pick_candidates import ask_h_agent
+        from brain.pick_candidates import (
+            H_PLANNING_ENVIRONMENTS,
+            ask_h_agent,
+        )
 
         seen: dict = {}
 
@@ -72,7 +75,14 @@ class MixOrderBriefTest(TestCase):
             "os.environ", {"HAI_API_KEY": "test"}
         ):
             self.assertEqual(ask_h_agent("plan"), "{}")
-        self.assertEqual(seen["environments"], [])
+        # Platform requires ≥1 environment (or subagents). Planning must not
+        # attach a local desktop bridge — only a cloud web env is allowed.
+        self.assertEqual(seen["environments"], list(H_PLANNING_ENVIRONMENTS))
+        self.assertTrue(seen["environments"], "planning agent needs an environment")
+        for env in seen["environments"]:
+            self.assertNotEqual(env.get("kind"), "desktop")
+            self.assertNotEqual(env.get("host"), "user_device")
+
     def test_force_adjacent_and_region(self) -> None:
         order = [f"t{i:03d}" for i in range(10)]
         order = force_adjacent(order, "t008", "t001", ordered=False)

@@ -196,12 +196,34 @@ def ask_generic(prompt: str, *, timeout_s: float = 300.0) -> str:
     return body["choices"][0]["message"]["content"]
 
 
-def ask_h_agent(prompt: str) -> str:
-    """Run an H Company planning agent with no desktop environment.
+# H Company Agent Platform rejects agents with environments=[] unless they
+# declare subagents (pure orchestrators). Planning does not need a desktop
+# bridge (that is brain.agent.Brain), so we attach a cloud *web* environment in
+# text mode: satisfies the API, does not start hai_agents_local, and keeps
+# Mixxx GUI control out of this path.
+H_PLANNING_AGENT_NAME = "claw-dj-planning"
+H_PLANNING_ENVIRONMENTS = (
+    {
+        "id": "planning-web",
+        "kind": "web",
+        "host": "cloud",
+        "mode": {"type": "text"},
+    },
+)
+H_PLANNING_INSTRUCTIONS = (
+    "Answer planning questions in text only. Do not browse the web, open URLs, "
+    "click, type, use desktop tools, or control any GUI unless the user "
+    "explicitly asks for live web research."
+)
 
-    Ordering is a text-only judgment call.  Supplying an empty environments
-    list prevents the SDK from constructing a desktop Environment or starting
-    the local bridge used by ``brain.agent.Brain``.
+
+def ask_h_agent(prompt: str) -> str:
+    """Run an H Company planning agent without a local desktop bridge.
+
+    Ordering / candidate picking is a text judgment call. We deliberately do
+    **not** use ``brain.agent.Brain``'s desktop environment. The platform now
+    requires at least one environment (or subagents); a cloud web env in text
+    mode meets that rule without starting the local desktop bridge.
     """
     import asyncio
     import os
@@ -223,20 +245,20 @@ def ask_h_agent(prompt: str) -> str:
         client = AsyncClient(api_key=api_key())
         try:
             agent = await client.agents.create_agent(
-                name="claw-dj-planning",
+                name=H_PLANNING_AGENT_NAME,
                 description="Text-only planning for claw-dj; never controls a desktop.",
-                environments=[],
-                instructions="Answer planning questions in text. Do not use desktop tools.",
+                environments=list(H_PLANNING_ENVIRONMENTS),
+                instructions=H_PLANNING_INSTRUCTIONS,
             )
         except ApiError as error:
             if error.status_code != 409:
                 raise
-            agent = await client.agents.get_agent("claw-dj-planning")
+            agent = await client.agents.get_agent(H_PLANNING_AGENT_NAME)
         result = await client.run_session(
             agent=agent,
             messages=(
-                "This is planning-only: do not click, type, open apps, or use "
-                "desktop tools. Answer in text.\n\n" + prompt
+                "This is planning-only: do not click, type, open apps, browse "
+                "the web, or use desktop tools. Answer in text.\n\n" + prompt
             ),
             timeout_seconds=240,
         )
