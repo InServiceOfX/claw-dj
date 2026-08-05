@@ -48,6 +48,10 @@ keys must match exactly):
   ride_phrases=<int>         how many 32-beat phrases to ride before the next transition
   ride_beats=<int>           exact beat count to ride (overrides ride_phrases when set)
   play_bpm=<number>          play this track at a specific BPM instead of its native one
+  settle_bpm=<number>        enter beat-matched to the outgoing deck, then glide to THIS tempo
+                             after the landing instead of all the way back to native. Use when a
+                             song carries being sped up and you want to keep some of the lift
+                             without holding the full blend tempo. Ignored if play_bpm is also set.
   exit_bpm=<number>          gradually bring this track to a target BPM before its exit
   tempo_ramp_beats=<int>     number of final ride beats used for the exit_bpm glide
   entry_style=beat_drop | gentle_blend | halftime_blend | verse_landing

@@ -34,6 +34,16 @@ def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **
     try:
         if "control_api_port" in opts and "control_port" not in opts:
             opts["control_port"] = opts.pop("control_api_port")
+        # Beat-length overrides must reach compose/build_plan so previous_fade and
+        # phase_anchor arithmetic match the runner. Technique/notes can still be
+        # patched onto events after the structural plan exists. Load all stored
+        # pair beat lengths (not only currently-adjacent ones) so a rebuild that
+        # reorders still applies the override if the pair becomes adjacent.
+        beats_by_pair = {
+            (item.from_track_id, item.to_track_id): int(item.beats)
+            for item in transition_overrides.load(slug)
+            if item.beats is not None and not item.clear.get("beats")
+        }
         plan = compose_mix_plan(
             playlist=paths.playlist,
             profile_name=profile or "dj-showcase",
@@ -42,6 +52,7 @@ def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **
             out=type(paths.mix_plan)(temporary_name),
             dj_notes_lookup=notes,
             fixed_groups=[list(group) for group in constraints.groups],
+            transition_beats_by_pair=beats_by_pair,
             **opts,
         )
         built_ids = [track["track_id"] for track in plan.get("tracks", [])]
@@ -74,6 +85,8 @@ def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **
             if override.clear.get("beats"):
                 event.pop("transition_beats", None)
             elif override.beats is not None:
+                # Structural beats already applied inside build_plan; keep the
+                # event field aligned and refuse silent drift.
                 event["transition_beats"] = override.beats
             event["author"] = override.author.value if override.author else None
         inputs_after = plan_rev(paths)

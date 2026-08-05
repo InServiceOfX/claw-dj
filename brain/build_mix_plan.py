@@ -217,6 +217,7 @@ def track_directives(track: dict) -> dict:
         "ride_phrases": int(value) if (value := number("ride_phrases")) is not None else None,
         "ride_beats": int(value) if (value := number("ride_beats")) is not None else None,
         "play_bpm": number("play_bpm"),
+        "settle_bpm": number("settle_bpm"),
         "exit_bpm": number("exit_bpm"),
         "tempo_ramp_beats": int(value) if (value := number("tempo_ramp_beats")) is not None else None,
         "entry_style": word("entry_style"),
@@ -238,6 +239,11 @@ def track_directives(track: dict) -> dict:
         # measurement (seen live 2026-07-19: confidence 0.015 drove a nudge
         # the ear then flagged as off by one).
         "trust_ride_beats": bool(re.search(r"\btrust_ride_beats\b", notes, re.I)),
+        # Rare escape hatch for an ear-certified cue that deliberately sits
+        # between analyzed beatgrid lines. Ordinary cues are snapped to the
+        # nearest real beat below; otherwise a half-beat cue can never be
+        # repaired by changing an integer ride count.
+        "trust_cue_seconds": bool(re.search(r"\btrust_cue_seconds\b", notes, re.I)),
     }
 
 
@@ -429,6 +435,7 @@ def build_plan(
     profile: "MixProfile | None" = None,
     dj_format: "DjFormat | None" = None,
     provenance: dict | None = None,
+    transition_beats_by_pair: dict[tuple[str, str], int] | None = None,
 ) -> dict:
     from brain.dj_formats import format_provenance, get_format
     from brain.mix_profiles import PROFILES
@@ -453,34 +460,76 @@ def build_plan(
     lyric_line_lookup = lyric_line_lookup or {}
     lyric_segment_lookup = lyric_segment_lookup or {}
     beat_phase_lookup = beat_phase_lookup or {}
+    transition_beats_by_pair = transition_beats_by_pair or {}
     # Populated by cue_fields() below every time it resolves an absolute
     # cue_seconds for a track -- lets the phase-parity check (further down)
     # look up each track's OWN entry beat_index without re-deriving it.
     cue_beat_index_cache: dict[str, int] = {}
     format_cue_evidence_cache: dict[str, dict] = {}
     events: list[dict] = []
+    selected_by_id = {track["track_id"]: track for track in selected}
 
     def _remember_cue_beat_index(track_id: str, result: dict) -> dict:
-        """Cache the resolved beat_index for this cue so the phase-parity
-        check further down can find each track's OWN entry beat_index
-        without re-deriving it (needed once this track later becomes the
-        OUTGOING side of a transition)."""
+        """Snap an ordinary cue to its grid and cache its absolute index.
+
+        A lyric timestamp or file fraction is a content marker, not a beat
+        marker.  Rounding only the index while leaving playback at the raw
+        timestamp made the planner reason about one phase while Mixxx played
+        another (Paradise and Late Night Bliss were both almost half a beat
+        out).  Keep the actual cue and cached index as one invariant.
+        """
+        result = dict(result)
         if "format_intro_verified" in result:
             format_cue_evidence_cache[track_id] = {
                 "verified": bool(result["format_intro_verified"]),
                 "source": result.get("cue_source"),
                 "reason": result.get("format_intro_reason"),
             }
-        if result.get("cue_beat_index") is not None:
-            cue_beat_index_cache[track_id] = int(result["cue_beat_index"])
-            return result
         cue_seconds = result.get("cue_seconds")
         phase = beat_phase_lookup.get(track_id) or phrase_lookup.get(track_id)
-        if cue_seconds is not None and phase and phase.get("bpm"):
+        if (
+            cue_seconds is not None
+            and phase
+            and phase.get("bpm")
+            and phase.get("first_beat_seconds") is not None
+        ):
             period = 60.0 / float(phase["bpm"])
-            cue_beat_index_cache[track_id] = round(
-                (cue_seconds - float(phase["first_beat_seconds"])) / period
+            raw_index = (
+                float(cue_seconds) - float(phase["first_beat_seconds"])
+            ) / period
+            # The analyzed grid's public beat indices start at zero.  A cue
+            # near the file head can round to a hypothetical negative beat;
+            # clamping only its seconds would make the stored index disagree
+            # with what Mixxx actually plays.  Clamp the index first.
+            beat_index = max(0, round(raw_index))
+            grid_offset_beats = raw_index - beat_index
+            track = selected_by_id.get(track_id) or {"dj_notes": ""}
+            preserve = (
+                track_directives(track)["trust_cue_seconds"]
+                or result.get("cue_source") == "dj_notes_landing"
             )
+            if preserve and abs(grid_offset_beats) > 0.01:
+                # Do not lie to the parity checker: a deliberately off-grid
+                # cue has no exact beat index, so automatic integer nudges
+                # must leave it alone.
+                result.pop("cue_beat_index", None)
+                result["cue_grid_offset_beats"] = round(grid_offset_beats, 3)
+                return result
+            snapped_seconds = (
+                float(phase["first_beat_seconds"]) + beat_index * period
+            )
+            if abs(grid_offset_beats) > 0.01:
+                result["cue_seconds_requested"] = round(float(cue_seconds), 4)
+                result["cue_seconds"] = round(max(0.0, snapped_seconds), 4)
+                source = str(result.get("cue_source") or "analyzed")
+                if not source.endswith("+beat_snap"):
+                    result["cue_source"] = f"{source}+beat_snap"
+            result["cue_beat_index"] = beat_index
+            result["cue_grid_offset_beats"] = round(grid_offset_beats, 3)
+            cue_beat_index_cache[track_id] = beat_index
+            return result
+        if result.get("cue_beat_index") is not None:
+            cue_beat_index_cache[track_id] = int(result["cue_beat_index"])
         return result
 
     def strict_intro_cue(track: dict) -> dict:
@@ -706,11 +755,14 @@ def build_plan(
             if duration:
                 raw = fallback_fraction * duration
                 snapped, did_snap = snap_to_lyric_line(raw, track["track_id"], lyric_line_lookup)
-                if did_snap:
-                    return _remember_cue_beat_index(track["track_id"], {
-                        "cue_seconds": round(snapped, 3),
-                        "cue_source": "fraction_fallback+lyric_snap",
-                    })
+                return _remember_cue_beat_index(track["track_id"], {
+                    "cue_seconds": round(snapped if did_snap else raw, 3),
+                    "cue_source": (
+                        "fraction_fallback+lyric_snap"
+                        if did_snap
+                        else "fraction_fallback"
+                    ),
+                })
             return {"cue_fraction": fallback_fraction, "cue_source": "fraction_fallback"}
         body = phrase.get("body")
         intro = phrase.get("intro")
@@ -1053,6 +1105,9 @@ def build_plan(
     play_s = seconds_per_track
     segments = []
     previous_fade_beats = 0
+    # Hard-cut budget for the whole mix; see the enforcement block below.
+    hard_cuts_used = 0
+    previous_was_hard_cut = False
 
     for index in range(len(selected) - 1):
         outgoing = selected[index]
@@ -1062,6 +1117,45 @@ def build_plan(
         aff = affinity_lookup.get(tuple(sorted((outgoing["track_id"], incoming["track_id"]))))
         tech = pick_technique(outgoing, incoming, aff, avoid_silence=profile.avoid_silence)
         incoming_directive = track_directives(incoming)
+
+        # "Use sparingly" has to be enforced, not just written in the recipe's
+        # own notes (Ernest, 2026-08-03, after hearing two brake-and-drop cuts
+        # land back to back -- "it's almost lazy. Use sparingly really means
+        # use sparingly"). A hard cut stops the music dead; one per mix can be
+        # a deliberate statement, two is a habit, and two in a row reads as the
+        # planner giving up on beatmatching. Profiles with avoid_silence=True
+        # never reach this because pick_technique won't propose the recipe at
+        # all -- this is the backstop for every other profile.
+        if tech["technique"] == "half_time_or_cut":
+            reason = (
+                "back-to-back hard cut" if previous_was_hard_cut
+                else ("mix already spent its one hard cut" if hard_cuts_used else "")
+            )
+            if reason:
+                tech.update(
+                    technique="tempo_gap_blend",
+                    # Same downgrade shape the smooth-opening path already
+                    # uses; "sync" stays out for the reason documented on the
+                    # other tempo_gap_blend definition.
+                    moves=[
+                        "rate_nudge_in", "filter_sweep_out",
+                        "crossfade", "filter_reset", "eq_restore",
+                    ],
+                    notes=(
+                        "Extreme tempo gap, but a hard cut was declined here "
+                        f"({reason}) — rate-nudge into a longer EQ/filter "
+                        "blend instead. At most one hard cut per mix, never "
+                        "two in a row."
+                    ),
+                )
+                print(
+                    f"  [hard-cut budget] {outgoing['artist']} — {outgoing['title']} -> "
+                    f"{incoming['artist']} — {incoming['title']}: downgraded "
+                    f"half_time_or_cut to tempo_gap_blend ({reason})"
+                )
+            else:
+                hard_cuts_used += 1
+        previous_was_hard_cut = tech["technique"] == "half_time_or_cut"
 
         # Compatibility chooses the base recipe; the profile controls how
         # often we show off and how long the landing takes.
@@ -1133,8 +1227,8 @@ def build_plan(
                 ],
                 showcase_move="gentle_blend",
                 notes=(
-                    "Human DJ note: use a gentle, longer synced blend from "
-                    "the outgoing track's held bridge tempo."
+                    "Human DJ note: use a gentle blend with both decks at one "
+                    "true synced tempo; do not hold a midpoint bridge BPM."
                 ),
             )
         elif incoming_directive["entry_style"] == "halftime_blend":
@@ -1170,6 +1264,14 @@ def build_plan(
             )
         if incoming_directive["play_bpm"] is not None:
             tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
+        if incoming_directive["settle_bpm"] is not None and incoming.get("bpm"):
+            # Enter matched to the outgoing deck (ordinary sync, so the
+            # overlap stays drift-free), then glide to this tempo instead of
+            # all the way home. Meaningless alongside a play_bpm hold, which
+            # skips the settle entirely -- play_bpm wins and this is dropped.
+            if tech.get("incoming_bpm_target") is None:
+                tech["incoming_settle_bpm"] = incoming_directive["settle_bpm"]
+                tech["incoming_native_bpm"] = float(incoming["bpm"])
 
         # Reserve the final beat for perform_transition() to anchor on. After
         # the first fade, the incoming deck has already consumed fade beats of
@@ -1448,6 +1550,17 @@ def build_plan(
                 format_phrase_bars=dj_format.phrase_bars,
             )
 
+        # Human pair beat overrides must win before phase/anchor math and before
+        # previous_fade_beats is advanced. Post-build patching of transition
+        # events alone left phase_anchor assuming the default ~24-beat fade
+        # while the runner executed the overridden 64-beat blend (audible
+        # one-count lineage defects, 2026-08-04).
+        override_beats = transition_beats_by_pair.get(
+            (outgoing["track_id"], incoming["track_id"])
+        )
+        if override_beats is not None:
+            tech["transition_beats"] = max(1, int(override_beats))
+
         # Real onset/waveform check (brain.onset_analysis): a standard
         # backbeat puts the snare on every OTHER beat, so which beat-in-bar
         # the transition anchors on (kick vs. snare position) is a real,
@@ -1460,28 +1573,47 @@ def build_plan(
         # cached analysis (brain.enrich_set.fill_beat_phase) -- silently
         # skipped otherwise, same graceful-degradation pattern as
         # phrase_lookup/lyric_line_lookup.
+        #
+        # Hard rule for every format: when both sides have usable snare-phase
+        # reads, 2-and-4 must land together. Low-confidence snare reads are
+        # NOT trusted (Tell Me / Risin instrumental style false parity); in
+        # that case keep bar-count alignment only so cues still share 1-2-3-4.
         outgoing_phase = beat_phase_lookup.get(outgoing["track_id"])
         incoming_phase = beat_phase_lookup.get(incoming["track_id"])
         outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
         incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
+        min_snare_confidence = 0.15
         if (
-            dj_format.planner is None
-            and
             not directive["trust_ride_beats"]
             and outgoing_phase and incoming_phase
             and outgoing_entry_beat is not None and incoming_entry_beat is not None
         ):
-            shift = count_shift_beats(
-                outgoing_snare_parity=outgoing_phase["snare_parity"],
-                outgoing_anchor_beat_index=outgoing_entry_beat + ride_beats,
-                incoming_snare_parity=incoming_phase["snare_parity"],
-                incoming_cue_beat_index=incoming_entry_beat,
-            )
+            # The executor counts ``ride_beats`` edges, then the transition
+            # waits for the NEXT edge. The audible anchor is therefore N+1.
+            # Evaluating N here made corrections one count early.
+            anchor = outgoing_entry_beat + previous_fade_beats + ride_beats + 1
+            out_conf = float(outgoing_phase.get("confidence") or 0.0)
+            in_conf = float(incoming_phase.get("confidence") or 0.0)
+            if out_conf >= min_snare_confidence and in_conf >= min_snare_confidence:
+                shift = count_shift_beats(
+                    outgoing_snare_parity=outgoing_phase["snare_parity"],
+                    outgoing_anchor_beat_index=anchor,
+                    incoming_snare_parity=incoming_phase["snare_parity"],
+                    incoming_cue_beat_index=incoming_entry_beat,
+                )
+                reason = "snare parity + bar count"
+            else:
+                bar_shift = (incoming_entry_beat - anchor) % 4
+                shift = bar_shift if bar_shift <= 2 else bar_shift - 4
+                reason = (
+                    f"bar count only (weak snare conf "
+                    f"{out_conf:.3f}/{in_conf:.3f})"
+                )
             if shift:
                 print(
                     f"  [beat-phase] {outgoing['artist']} — {outgoing['title']} -> "
                     f"{incoming['artist']} — {incoming['title']}: nudging ride_beats "
-                    f"{ride_beats} -> {ride_beats + shift} to match snare parity"
+                    f"{ride_beats} -> {ride_beats + shift} to match {reason}"
                 )
                 ride_beats += shift
 
@@ -1498,6 +1630,38 @@ def build_plan(
                     "Optional: beatjump_1_forward to skip to chorus",
                     "Optional: beatloop_4_toggle for a loop-roll fill",
                 ],
+            }
+        if directive["trust_ride_beats"]:
+            body_event["trust_ride_beats"] = True
+        # Loading the next track happens synchronously while this outgoing
+        # track keeps playing. That variable delay means the live body
+        # counter may begin on a different grid beat than cue arithmetic
+        # assumed. Persist the intended absolute bar position so hands can
+        # re-check the first beat they actually count and correct load
+        # jitter without discarding the planned 1-2-3-4 relationship.
+        #
+        # trust_ride_beats still emits phase_anchor: the human lock blocks
+        # planner auto-nudges of ride_beats, but the listener-approved count
+        # defines a planned anchor that runtime must preserve when preload
+        # timing shifts the first counted edge. Omitting the anchor (2026-08-04)
+        # left approved 279/103/111 rides free to land one count off under
+        # ordinary load delay.
+        outgoing_grid = outgoing_phase or phrase_lookup.get(outgoing["track_id"])
+        if (
+            outgoing_entry_beat is not None
+            and outgoing_grid
+            and outgoing_grid.get("bpm")
+            and outgoing_grid.get("first_beat_seconds") is not None
+        ):
+            planned_anchor_beat = (
+                outgoing_entry_beat + previous_fade_beats + ride_beats + 1
+            )
+            body_event["phase_anchor"] = {
+                "grid_bpm": float(outgoing_grid["bpm"]),
+                "first_beat_seconds": float(outgoing_grid["first_beat_seconds"]),
+                "planned_anchor_beat_index": planned_anchor_beat,
+                "target_beat_mod4": planned_anchor_beat % 4,
+                "target_beat_parity": planned_anchor_beat % 2,
             }
         if directive["exit_bpm"] is not None:
             body_event["exit_bpm_target"] = directive["exit_bpm"]
@@ -1670,6 +1834,7 @@ def compose_mix_plan(
     control_port: int | None = None,
     dj_notes_lookup: dict[str, str] | None = None,
     fixed_groups: list[list[str]] | None = None,
+    transition_beats_by_pair: dict[tuple[str, str], int] | None = None,
 ) -> dict:
     """Build a mix plan from the finalized playlist and write it to disk.
 
@@ -1789,6 +1954,7 @@ def compose_mix_plan(
         profile=profile,
         dj_format=dj_format,
         provenance=provenance,
+        transition_beats_by_pair=transition_beats_by_pair,
     )
     if control_port is not None:
         plan.setdefault("runtime", {})["mixxx_control_port"] = int(control_port)
