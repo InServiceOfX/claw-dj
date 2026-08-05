@@ -71,16 +71,32 @@ editor_page="$(curl -fsS --max-time 2 "$EDITOR_URL/" 2>/dev/null || true)"
 case "$editor_page" in
   *"<title>claw-dj playlist</title>"*)
     echo "Playlist editor already running on port $EDITOR_PORT — reusing it."
-    curl -fsS --max-time 2 -X POST \
+    # Multi-plan UI loads /web/*.js and /api/plans. An old editor process can
+    # still serve the HTML shell while those routes 404 — force a restart then.
+    if ! curl -fsS --max-time 2 -o /dev/null "$EDITOR_URL/web/plan_picker.js" 2>/dev/null \
+      || ! curl -fsS --max-time 2 -o /dev/null "$EDITOR_URL/api/plans" 2>/dev/null; then
+      echo "That editor looks stale (missing multi-plan routes)." >&2
+      echo "Stop it, then start again:" >&2
+      echo "  scripts/stop.sh" >&2
+      echo "  scripts/start.sh" >&2
+      exit 1
+    fi
+    if ! curl -fsS --max-time 2 -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"port\":${MIXXX_PORT}}" \
-      "$EDITOR_URL/api/mix/control-port" >/dev/null
+      "$EDITOR_URL/api/mix/control-port" >/dev/null; then
+      echo "Could not push Mixxx control port $MIXXX_PORT to the running editor." >&2
+      echo "Stop and restart the editor:" >&2
+      echo "  scripts/stop.sh && scripts/start.sh" >&2
+      exit 1
+    fi
     open "$EDITOR_URL"
     ;;
   *)
     if nc -z 127.0.0.1 "$EDITOR_PORT" 2>/dev/null; then
       echo "Port $EDITOR_PORT is already used by something other than the claw-dj playlist editor." >&2
       echo "Inspect it with: lsof -nP -iTCP:$EDITOR_PORT -sTCP:LISTEN" >&2
+      echo "If it is a leftover editor, stop it with: scripts/stop.sh" >&2
       exit 1
     fi
     uv run python -m brain.playlist_editor --host 127.0.0.1 --port "$EDITOR_PORT" \
