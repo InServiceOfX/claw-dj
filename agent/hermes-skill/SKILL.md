@@ -121,11 +121,26 @@ Inspect destinations before copying into a profile that is not new.
 
 1. Hardcoded stale paths: discover the repository root and media paths on the current machine.
 2. Wrong implementation: consult `docs/HANDOFF.md` before choosing between overlapping code paths.
-3. Wrong YouTube identity: verify the canonical channel ID before writes.
-4. Media that merely exists: fully verify outputs; do not stop after FFmpeg exits zero.
-5. Profile-as-distribution: do not ship private state when reviewed Markdown and scripts are enough.
-6. Credentials in Git/chat: store and authorize them locally on each machine.
-7. Unattended public actions: private-first and confirmation-gated is mandatory.
+3. BPM is not a beatgrid: tag BPM can exist while Mixxx still has no persisted
+   `BeatGrid-2.0`; phrase and guided-format work requires the written grid.
+4. Exactly one persistent beatgrid gap: Mixxx commits the analyzed deck's
+   pending grid only after loading a different track; eject and quit do not.
+   Current `analyze_via_mixxx` performs this flush, so verify it if the symptom
+   returns.
+5. Planner/executor count drift: a body ride of N beat events transitions on
+   the next beat, N+1. Verify that phase arithmetic models that actual anchor.
+6. Human ride lock overridden at runtime: `trust_ride_beats` bodies must not
+   carry a runtime phase anchor; automatic correction must preserve modulo-four
+   bar position, not only odd/even parity.
+7. End-of-track arithmetic that ignores overlaps: incoming audio is already
+   advancing during its fade-in, and the outgoing fade also needs runway. The
+   runtime reserves the next anchor, full transition, and safety margin from
+   live Mixxx duration/playposition; do not remove that clamp.
+8. Wrong YouTube identity: verify the canonical channel ID before writes.
+9. Media that merely exists: fully verify outputs; do not stop after FFmpeg exits zero.
+10. Profile-as-distribution: do not ship private state when reviewed Markdown and scripts are enough.
+11. Credentials in Git/chat: store and authorize them locally on each machine.
+12. Unattended public actions: private-first and confirmation-gated is mandatory.
 
 ## Verification checklist
 

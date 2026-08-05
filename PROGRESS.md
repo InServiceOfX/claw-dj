@@ -6,7 +6,67 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
-## Active cross-machine priorities (2026-07-23)
+## Active cross-machine priorities (updated 2026-08-02)
+
+- [x] **Runtime 2-and-4 parity survives variable deck-load timing (2026-08-04).**
+      The recurring one-count fixes were not sticking because the newly live
+      deck kept advancing during the post-transition eight-beat rate settle
+      and synchronous preload, but the next body count still assumed it began
+      at the original planned cue phase. `build_mix_plan` now stores each
+      body's intended absolute odd/even grid anchor. On the first live counted
+      edge, `wait_for_beats` resolves Mixxx duration/playposition against the
+      track's analyzed source grid and changes the count by one only when the
+      pending transition would otherwise land on the opposite backbeat parity.
+      Current `imported-working-mix` ear overrides are All Night Long 279,
+      Around The Way Girl 112, and Tell Me 191; Smooth Operator remains the
+      approved 104/64 handoff. Exact command dry-runs at 56 events, the plan is
+      current/not stale, and all 231 Python tests pass.
+
+- [x] **Long-ride beat_active drop no longer abandons the set (2026-08-03).**
+      `hands.transition.wait_for_beats` resubscribes through mid-ride control-API
+      gaps (seen live on Paradise at ~100/143 beats), re-asserts deck play, and
+      only then falls back to wall-clock timing while keeping transport alive.
+
+- [x] **All Night Long sample-lineage chapter + longer snare-safe blends (2026-08-03).**
+      Active plan `imported-working-mix` opens on Mary Jane Girls — All Night
+      Long; Boss removed; ordered bunch now locks the sample-lineage eight:
+      All Night Long → Smooth Operator → Around The Way Girl → Tell Me →
+      Risin' instrumental → Paradise (~2:50) → Risin' vocal → Da Brat Give It
+      2 You. Lineage cues prefer instrumental intros (not mid-verse body
+      picks); Smooth Operator is a short 2-phrase feature; Around→Tell Me no
+      longer uses an off-tempo `play_bpm=96.5` hold that phase-locked while
+      tempos disagreed. Chapter transitions are 48–64 beat smooth blends;
+      beat-phase correction runs for every format with snare-confidence gate.
+
+- [x] **Persistent “one missing beatgrid” enrichment bug fixed (2026-08-02).**
+      BPM imported from file tags no longer prevents a phrase-missing track
+      from being sent through Mixxx analysis: `run_enrich` now separately
+      checks for a persisted `BeatGrid-2.0`. `analyze_via_mixxx` also loads a
+      different silent-deck track after the final target, the measured trigger
+      Mixxx requires to commit that last pending grid. The previously blocked
+      active-plan track now has phrases and beat-phase data, and a temporary
+      18-track `hiphop-rnb-guided` build completes successfully.
+
+- [x] **CLI runner follows the active named GUI plan (2026-08-02).**
+      `uv run python -m hands.run_mix_plan` and `--record` now resolve
+      `brain/data/plans/active.json` through `brain.plan_paths` instead of
+      silently defaulting to the stale legacy singleton
+      `brain/data/mix_plan.json`. An explicit `--plan` still wins; a workspace
+      with named plans but no active selection fails clearly rather than
+      guessing. Focused runner tests pass, and the live active artifact was
+      resolved successfully in a zero-event dry run.
+
+- [x] **Anthology and short-form program recorded (2026-08-02).**
+      `docs/ANTHOLOGY_AND_SHORT_FORM_PROGRAM.md` makes named multi-plan
+      workspaces the home of a living slate of hip-hop/R&B anthologies,
+      including early Chronic/Doggystyle/Dogg Pound West Coast, *2001* sample
+      lineage, conscious rap, Wu-Tang, Biggie/Shyne, East Coast jazz-informed,
+      Shiny Suit, and Drake-season projects. It also makes promotion part of
+      the release lifecycle: agents research current short-form behavior,
+      select real musical payoffs rather than fixed intervals, direct reviewed
+      tools, render and verify reproducibly, run attributable clip experiments,
+      and learn from views plus deeper metrics when available. `AGENTS.md`
+      routes every agent working on anthology or media tasks to the program.
 
 - [x] **Multi-plan frontend modules 32–35 (2026-07-31).** Added the vanilla
       ES-module plan client, header-level colloquial plan picker, `3 · Arrange`
@@ -77,6 +137,52 @@
 - [x] **Reusable social-teaser workflow.** The repository skill now includes
       verified 9:16 media instructions plus a Swift/AppKit card renderer and
       FFmpeg orchestration/verification script.
+
+### Count-correct lineage anchors and end-of-track safety (2026-08-03)
+
+- Fixed an executor/planner off-by-one: `play_body` counts N beat edges and the
+  transition anchors on the next edge, so phase correction now evaluates N+1.
+- Runtime rides reserve the next anchor, full outgoing transition, and four
+  safety beats from live Mixxx duration/playposition. A shortening preserves
+  the planned mod-4 count. A stopped outgoing deck now continues immediately
+  on the cued incoming deck instead of terminating the set with `TimeoutError`.
+- The current artifact uses a 16-beat Around The Way Girl -> Tell Me intro
+  blend; Tell Me's first detected vocal is 3.67s after that blend lands.
+- Tell Me -> Risin' instrumental executes outgoing beat 104 against incoming
+  beat 16 (both bar position 1). Local transition-window onset correlation is
+  strongest at zero-beat shift.
+- Paradise enters at 139.728s (bar beat 228, just before the 140.89s chorus),
+  rides 95 body beats, and retains a nine-beat margin after reserving its full
+  48-beat exit.
+- Verification: 69 focused tests and all 220 Python tests pass; active plan
+  `imported-working-mix` is current, not stale.
+
+### Human ride locks and runtime bar guard (2026-08-04)
+
+- Live feedback proved the runtime parity guard was overriding explicit
+  `trust_ride_beats` decisions (`192 -> 191` on Tell Me and the same class of
+  risk on Keni). Trusted rides now carry a flag in the executable event.
+  Planner auto-nudge of ride length is still blocked, but trusted bodies keep
+  a `phase_anchor` so load jitter can preserve the planned 1-2-3-4 position.
+- Automatic rides preserve the planned full modulo-four bar position at
+  runtime, not only odd/even parity. Planner anchor math includes the incoming
+  overlap already consumed before the body.
+
+### Lineage one-count + midpoint bridge fix (2026-08-04)
+
+- Root cause of ANL→SO / SO→ATWG one-count errors after long-blend overrides:
+  `plan_mix_build` patched `transition_beats` onto events after `build_plan`,
+  so `phase_anchor` still assumed the default ~24-beat previous fade while the
+  runner executed 64-beat blends. Beat overrides now enter `build_plan` via
+  `transition_beats_by_pair` before previous-fade/anchor arithmetic.
+- Rebuilt anchors: ANL 280, Smooth Operator 168, Around The Way Girl 176,
+  Tell Me 225 (with ride locks 279 / 103 / 111 / 192 unchanged).
+- Around → Tell Me no longer holds midpoint `play_bpm=96.5` during the blend.
+  Ernest's energy lift is now `settle_bpm=96.5`: true-sync to Around during the
+  overlap, then hold 96.5 after landing. Log must not show
+  `incoming_bpm_target` / `tempo held at play_bpm` on that pair.
+- Verification: 81 focused mix-plan/runner tests and 233 full-suite tests pass;
+  active artifact current.
 
 ## How to run everything (quick reference)
 

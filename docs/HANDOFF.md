@@ -14,7 +14,92 @@ Written 2026-07-11 mid-hackathon so work can resume on a different machine
 
 Both goals point at the same architecture, so there's one codebase.
 
+## Anthology and short-form program (2026-08-02)
+
+The long-running product direction is now explicit in
+`docs/ANTHOLOGY_AND_SHORT_FORM_PROGRAM.md`. Named multi-plan workspaces are not
+only convenient parallel sets: they are the working surface for definitive,
+living anthologies in mix form. The initial slate covers the early
+Chronic/Doggystyle/Dogg Pound West Coast era, an expanded *2001* sample-lineage
+mix, conscious rap, Wu-Tang and its East Coast orbit, Biggie/Shyne, East Coast
+jazz-informed hip-hop, the Shiny Suit era, and a researched Drake-season arc.
+The standard is an editorial and performed musical argument—lineage, lyrics,
+chapters, phrase-aware transitions, cueing, EQ, loops, effects, and human ear
+review—not a chronological playlist with automatic crossfades.
+
+Promotion is part of the same lifecycle. Agents are expected to help research
+current TikTok/Reels/Shorts conventions and comparable music/DJ performance,
+mine recordings for attention-earning transitions and historical revelations,
+direct reviewed tools such as OpenCut or Hyperframes where useful, and keep
+FFmpeg-based rendering and verification as the deterministic backbone. View
+count is the easiest reach measure, not a complete quality measure; compare
+retention/completion, rewatches, shares, saves, follows, and anthology
+click-through when those metrics are available. Keep variants attributable,
+do not infer a universal viral formula from one post, keep generated media out
+of Git, and confirmation-gate uploads and all publication.
+
+This is portfolio-level strategy, so it lives in normal repository Markdown
+and is linked from `AGENTS.md`. Each anthology itself lives in a named plan.
+Future bounded automation—such as cue-sheet clip extraction, campaign
+manifests, or metrics ingestion—belongs in the affected PDD `.prompt` and tests
+when its observable behavior is concrete; a user story is selective acceptance
+coverage, not a substitute for that prompt.
+
+## Mix runner count/EOF invariants (2026-08-03)
+
+`brain/build_mix_plan.py` phase correction must model the executor's actual
+anchor: after N `play_body` beat events, `perform_transition` waits for the next
+beat, so the anchor is N+1. `hands/run_mix_plan.py` treats remaining audio as a
+hard runtime constraint: a body ride reserves the next anchor, the complete
+outgoing transition, and four safety beats using live Mixxx duration and
+playposition. A clamp preserves the requested mod-4 count. If a stale artifact
+still reaches a stopped outgoing deck, transition execution starts the cued
+incoming deck and moves the crossfader instead of aborting the whole set.
+
+Listener-locked `trust_ride_beats` values block planner auto-nudges of ride
+length, but the trusted count still defines a planned `phase_anchor` so runtime
+can absorb preload/settle jitter without abandoning the 1-2-3-4 target.
+Transition beat overrides must enter `build_plan` before previous-fade math;
+post-build event patching alone left anchors assuming the default fade while
+the runner executed longer human blends (one-count lineage defects on
+2026-08-04). For energy holds after a true-synced blend, prefer `settle_bpm`
+over midpoint `play_bpm` / `incoming_bpm_target`.
+
+Variable loading and rate-settle time can still make an automatic body's first
+counted edge differ from cue arithmetic. Automatic and trusted events therefore
+retain a `phase_anchor` targeting the complete modulo-four bar position.
+
+The active `imported-working-mix` build following the latest ear pass keeps
+Tell Me at 192 and Keni Burke at 80 with phase anchors, ANL/SO/ATWG at
+279/103/111 with anchors 280/168/176 after 64-beat override-aware previous-fade
+math, and Around→Tell Me as settle_bpm=96.5 with no incoming_bpm_target. Camp
+Lo instrumental remains on beat 101 (`73.237s`). The plan reports current with
+56 events; live listening remains the acceptance gate.
+
 ## Current-path ordering and flexible control port (2026-07-31)
+
+The recurring “Analyze always leaves exactly one track without a beatgrid” gap
+had two reinforcing causes. `brain.enrich_set.status()` correctly treated a
+positive tag-derived BPM as enough for ordinary planning, but `run_enrich()`
+then used that same status to decide whether to invoke Mixxx—even when phrase
+analysis proved no persisted Mixxx `BeatGrid-2.0` existed. Separately, Mixxx
+does not commit the final analyzed deck's grid on eject or quit; measured
+behavior requires loading a different track. `run_enrich()` now adds
+phrase-missing tracks with absent Mixxx grids to its muted-deck analysis
+targets regardless of tag BPM, and `brain.analyze_via_mixxx.analyze_tracks()`
+performs and verifies a different-track flush after the final successful
+target. Regression coverage is in `tests/test_enrich_set.py` and
+`tests/test_analyze_via_mixxx.py`.
+
+The standalone runner now follows the active named plan selected in the GUI.
+Before 2026-08-02, running `uv run python ./hands/run_mix_plan.py --record`
+without `--plan` always opened the legacy `brain/data/mix_plan.json`; this could
+record a completely different historical set even though the browser showed a
+current named plan. `hands.run_mix_plan.default_plan_path()` now delegates to
+`brain.plan_paths.resolve()`, preserving legacy fallback only for an actual
+legacy workspace. An explicit `--plan` remains available for archived or
+non-active artifacts. If named plans exist but none is active, the runner stops
+with a selection/build instruction instead of guessing.
 
 ## Multi-plan foundation implementation (2026-07-31)
 
@@ -52,10 +137,11 @@ application and the multi-plan graph is now wired through the local server and
 offline CLI. `brain.build_mix_plan.compose_mix_plan` always runs the deterministic
 mix graph, even with no model or an empty brief. Optional NemoClaw/H Company
 responses are constraint interpretation only, invalid/failed responses preserve
-the full pool and fall back locally, and H planning uses an agent with
-`environments=[]` rather than `brain.agent.Brain` or a desktop bridge. The
-playlist editor dry-run now lists the complete candidate playback order before
-Start mix.
+the full pool and fall back locally, and H planning uses a non-desktop agent
+(cloud web env in text mode — the platform rejects `environments=[]` unless
+the agent is a pure orchestrator with subagents) rather than
+`brain.agent.Brain` or a local desktop bridge. The playlist editor dry-run now
+lists the complete candidate playback order before Start mix.
 
 Port 9995 is now preferred rather than required. `hands.mixxx_control` discovers
 only the preferred port and TCP listeners owned by detected Mixxx processes,
