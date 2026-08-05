@@ -127,6 +127,30 @@ def pending_grid_ids(track_ids: list[str]) -> list[str] | None:
     return [track_id for track_id in track_ids if track_id not in persisted]
 
 
+def _flush_track_id(exclude: str) -> str | None:
+    """Find a different existing library track to force Mixxx's final grid write."""
+    try:
+        from shared.mixxx_db import connect_readonly
+
+        conn = connect_readonly()
+    except Exception:
+        return None
+    try:
+        rows = conn.execute(
+            """SELECT track_locations.location
+               FROM library
+               JOIN track_locations ON library.location = track_locations.id
+               WHERE track_locations.location != ?
+               ORDER BY library.id""",
+            (exclude,),
+        ).fetchall()
+    except Exception:
+        return None
+    finally:
+        conn.close()
+    return next((row[0] for row in rows if Path(row[0]).exists()), None)
+
+
 def analyze_tracks(
     records: list[dict],
     *,
@@ -206,6 +230,38 @@ def analyze_tracks(
                     "ok": bpm is not None and bpm > 0,
                 }
             )
+
+        # Mixxx does not persist the current deck's pending beatgrid when the
+        # deck is merely ejected or when Mixxx quits. Loading a DIFFERENT track
+        # is the reliable commit trigger. Without this pass, the final target
+        # of every Analyze batch remains the one permanent phrase/beat-phase
+        # gap, no matter how many times the user reruns enrichment.
+        last_ok = next((row for row in reversed(results) if row["ok"]), None)
+        if last_ok is not None:
+            flush_id = next(
+                (
+                    record["track_id"]
+                    for record in records
+                    if record["track_id"] != last_ok["track_id"]
+                    and Path(record["track_id"]).exists()
+                ),
+                None,
+            ) or _flush_track_id(last_ok["track_id"])
+            if flush_id is None:
+                emit(
+                    "    WARNING: no different library track was available to "
+                    "flush the final Mixxx beatgrid"
+                )
+            else:
+                emit("    flushing final Mixxx beatgrid…")
+                mixxx.load(deck, flush_id)
+                deadline = time.monotonic() + 10.0
+                while time.monotonic() < deadline:
+                    pending = pending_grid_ids([last_ok["track_id"]])
+                    if pending == []:
+                        emit("    final Mixxx beatgrid persisted")
+                        break
+                    time.sleep(0.5)
     ok = sum(1 for row in results if row["ok"])
     print(f"\n{ok}/{len(records)} analyzed via control API (live reading).")
     print("Persist with brain.enrich_set / apply_analysis — Mixxx DB flush is lazy.")
@@ -225,9 +281,8 @@ def analyze_tracks(
         for track_id in pending:
             print(f"    pending: {Path(track_id).name}")
         print(
-            "  Mixxx writes the grid minutes later on its own schedule; a clean "
-            "quit does not force it. Re-run Analyze & enrich later to pick them "
-            "up, or right-click → Analyze in Mixxx, which always persists."
+            "  The automatic flush did not persist these grids; right-click → "
+            "Analyze in Mixxx, then load a different track on that deck."
         )
     return results
 
