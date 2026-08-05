@@ -22,6 +22,7 @@ import json
 import os
 import socket
 import subprocess
+from collections import deque
 from collections.abc import Callable
 
 DEFAULT_PORT = 9995
@@ -43,6 +44,7 @@ class MixxxControl:
     def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT, timeout_s: float = 5.0):
         self._sock = socket.create_connection((host, port), timeout=timeout_s)
         self._recv_buffer = b""
+        self._pending_events: deque[dict] = deque()
 
     def __enter__(self) -> MixxxControl:
         return self
@@ -65,9 +67,12 @@ class MixxxControl:
     def _request(self, payload: dict) -> dict:
         self._sock.sendall(json.dumps(payload).encode() + b"\n")
         reply = self._read_line()
-        # Pushed subscription events can interleave with replies; skip them
-        # here (use a dedicated connection if you need the event stream).
+        # Pushed subscription events can interleave with replies. Preserve
+        # them for events() instead of dropping them: losing a beat_active
+        # edge during the subscribe acknowledgement makes a long ride finish
+        # exactly one count late.
         while "event" in reply:
+            self._pending_events.append(reply)
             reply = self._read_line()
         if not reply.get("ok"):
             raise MixxxControlError(reply.get("error", "unknown control API error"))
@@ -91,8 +96,10 @@ class MixxxControl:
 
     def events(self):
         """Yield pushed change events forever: {"event","group","key","value"}.
-        Use on a connection dedicated to subscriptions — interleaving
-        request/reply calls on the same connection would eat the replies."""
+        Events that raced with a request acknowledgement are yielded first.
+        Use on a connection dedicated to subscriptions."""
+        while self._pending_events:
+            yield self._pending_events.popleft()
         while True:
             message = self._read_line()
             if "event" in message:

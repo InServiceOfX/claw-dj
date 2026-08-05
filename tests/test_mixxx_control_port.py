@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from hands.mixxx_control import (
+    MixxxControl,
     MixxxControlUnavailable,
     discover_mixxx_control_port,
     mixxx_listener_ports,
@@ -12,6 +14,33 @@ from hands.mixxx_control import (
 
 
 class MixxxControlPortTest(unittest.TestCase):
+    def test_subscription_event_interleaved_before_ack_is_not_lost(self) -> None:
+        class FakeSocket:
+            def __init__(self) -> None:
+                self.payload = (
+                    b'{"event":"change","group":"[Channel1]",'
+                    b'"key":"beat_active","value":1.0}\n'
+                    b'{"ok":true}\n'
+                )
+
+            def sendall(self, _payload: bytes) -> None:
+                pass
+
+            def recv(self, _size: int) -> bytes:
+                payload, self.payload = self.payload, b""
+                return payload
+
+            def close(self) -> None:
+                pass
+
+        with patch("hands.mixxx_control.socket.create_connection", return_value=FakeSocket()):
+            mixxx = MixxxControl()
+            mixxx.subscribe("[Channel1]", "beat_active")
+            event = next(mixxx.events())
+
+        self.assertEqual(event["key"], "beat_active")
+        self.assertEqual(event["value"], 1.0)
+
     def test_process_and_owned_listener_candidates(self) -> None:
         ps = "  12 /Applications/Mixxx.app/Contents/MacOS/Mixxx /Applications/Mixxx.app/Contents/MacOS/Mixxx\n  99 python python worker.py\n"
         self.assertEqual(mixxx_process_ids(ps_output=ps), [12])
