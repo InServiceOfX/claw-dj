@@ -1191,11 +1191,11 @@ class PlaylistApp:
         elif summary_port is not None:
             status["mixxx_control_port"] = int(summary_port)
             self.mix_state["mixxx_control_port"] = int(summary_port)
+        # Build-control default is always "none" (No expert format). Do not
+        # restore the last on-disk plan's format into the dropdown — ear tests
+        # preferred plain none, and experimental formats must stay opt-in.
         if not status.get("dj_format"):
-            status["dj_format"] = (
-                ((status.get("summary") or {}).get("dj_format") or {}).get("name")
-                or "none"
-            )
+            status["dj_format"] = "none"
         finalized = self.finalized_snapshot(active_slug)
         status["finalized"] = finalized
         status["profiles"] = [

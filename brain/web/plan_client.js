@@ -220,6 +220,14 @@ export function updateBunch(bunchId, patch) {
   return request(`/api/bunches/${encodeURIComponent(bunchId)}`, json('POST', patch));
 }
 
+export async function setBunchTracks(bunchId, trackIds) {
+  // Membership lives on the reusable library bunch, not the activation, so
+  // this edits the bunch itself; the server reconciles every plan that has
+  // it active. Deliberately NOT revision-guarded the way plan mutations are
+  // -- the bunch is a library object with its own identity.
+  return request(`/api/bunches/${encodeURIComponent(bunchId)}`, json('POST', {track_ids: trackIds}));
+}
+
 export async function archiveBunch(bunchId) {
   const result = await request(`/api/bunches/${encodeURIComponent(bunchId)}`, json('POST', {action: 'archive'}));
   for (const slug of result.affected_slugs || []) forgetRevision(slug);

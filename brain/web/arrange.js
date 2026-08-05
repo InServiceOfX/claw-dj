@@ -115,6 +115,7 @@ function initialize() {
         </form>
         <button id="arrange-add-curate" type="button">Add from Curate selection</button>
         <button id="arrange-bunch" type="button" ${state.selected.size < 2 ? 'disabled' : ''}>Bunch these (${state.selected.size})</button>
+        ${renderAddToBunch(snapshot)}
       </div>
       <div class="arrange-state ${snapshot.stale ? 'is-stale' : ''}">
         <span><strong>${snapshot.stale ? 'Stale' : 'Current'}</strong>${changed.length ? ` · changed: ${escapeHtml(changed.join(', '))}` : ''}</span>
@@ -150,12 +151,20 @@ function initialize() {
       await mutate(() => client.addTracks(state.slug, {add: trackIds}), `Added ${trackIds.length} Curate track(s).`);
     });
     document.getElementById('arrange-bunch').addEventListener('click', createBunch);
+    document.getElementById('arrange-bunch-add')?.addEventListener('click', addSelectedToBunch);
+    root.querySelectorAll('[data-unbunch-track]').forEach(button => button.addEventListener('click', () =>
+      removeTrackFromBunch(button.dataset.unbunchFrom, button.dataset.unbunchTrack)));
     root.querySelectorAll('input[data-select-track]').forEach(box => box.addEventListener('change', () => {
       if (box.checked) state.selected.add(box.dataset.selectTrack);
       else state.selected.delete(box.dataset.selectTrack);
       const button = document.getElementById('arrange-bunch');
       button.disabled = state.selected.size < 2;
       button.textContent = `Bunch these (${state.selected.size})`;
+      const add = document.getElementById('arrange-bunch-add');
+      if (add) {
+        add.disabled = state.selected.size < 1;
+        add.textContent = `Add to bunch (${state.selected.size})`;
+      }
     }));
     root.querySelectorAll('[data-remove-track]').forEach(button => button.addEventListener('click', () =>
       mutate(() => client.addTracks(state.slug, {remove: [button.dataset.removeTrack]}), `Removed ${button.dataset.removeTrack}.`)));
@@ -186,6 +195,56 @@ function initialize() {
     } catch (error) {
       if (!(error instanceof client.PlanConflictError)) announce(error.message);
     }
+  }
+
+  function bunchById(bunchId) {
+    return (state.snapshot?.bunches || []).find(item => item.bunch_id === bunchId) || null;
+  }
+
+  async function writeBunchTracks(bunchId, trackIds, message) {
+    try {
+      await client.setBunchTracks(bunchId, trackIds);
+    } catch (error) {
+      announce(error.message || 'The bunch could not be updated.');
+      return;
+    }
+    announce(message);
+    await refresh();
+  }
+
+  async function addSelectedToBunch() {
+    const bunchId = document.getElementById('arrange-bunch-target')?.value;
+    const bunch = bunchById(bunchId);
+    if (!bunch || !state.selected.size) return;
+    const members = new Set(bunch.track_ids || []);
+    // Append in the plan's own running order so the bunch's exact order
+    // stays something the arrangement can actually satisfy.
+    const added = state.snapshot.tracks
+      .map(track => track.track_id)
+      .filter(id => state.selected.has(id) && !members.has(id));
+    if (!added.length) {
+      announce(`Every selected song is already in “${bunch.label}”.`);
+      return;
+    }
+    await writeBunchTracks(
+      bunchId,
+      [...(bunch.track_ids || []), ...added],
+      `Added ${added.length} song(s) to “${bunch.label}”.`,
+    );
+  }
+
+  async function removeTrackFromBunch(bunchId, trackId) {
+    const bunch = bunchById(bunchId);
+    if (!bunch) return;
+    const remaining = (bunch.track_ids || []).filter(id => id !== trackId);
+    if (remaining.length === (bunch.track_ids || []).length) return;
+    // A bunch of one has no ordering left to enforce; say so rather than
+    // leaving a meaningless single-song "exact order" unit on the page.
+    if (remaining.length < 2) {
+      announce(`“${bunch.label}” would have fewer than two songs left — un-bunch it instead.`);
+      return;
+    }
+    await writeBunchTracks(bunchId, remaining, `Removed 1 song from “${bunch.label}”.`);
   }
 
   async function createBunch() {
@@ -317,8 +376,27 @@ function buildUnits(snapshot) {
     const bunch = starts.get(index);
     if (bunch) {
       const members = new Set(bunch.track_ids || []);
-      const tracks = snapshot.tracks.slice(index, Number(bunch.span.end) + 1).filter(track => members.has(track.track_id));
+      const span = snapshot.tracks.slice(index, Number(bunch.span.end) + 1);
+      const tracks = span.filter(track => members.has(track.track_id));
       units.push({key: `bunch:${bunch.bunch_id}`, label: bunch.label, bunch, tracks});
+      // A bunch is meant to be contiguous, but nothing guarantees the current
+      // order agrees -- an unbunched track can sit between the bunch's first
+      // and last member. Those used to be filtered out of the unit AND
+      // skipped by the cursor below, so they vanished from Arrange entirely
+      // and every drag then computed an order missing them, which the server
+      // correctly rejected as not_a_permutation (reported 2026-08-03:
+      // "when I bunch songs it makes the songs I didn't bunch go away", and
+      // drags silently doing nothing). Surface them as their own units
+      // immediately after the bunch so they stay visible and draggable.
+      for (const track of span) {
+        if (members.has(track.track_id)) continue;
+        units.push({
+          key: `track:${track.track_id}`,
+          label: track.title || track.track_id,
+          bunch: null,
+          tracks: [track],
+        });
+      }
       index = Number(bunch.span.end) + 1;
     } else {
       const track = snapshot.tracks[index];
@@ -334,7 +412,7 @@ function renderUnits(units, snapshot) {
   const notes = new Map((snapshot.notes || []).map(note => [note.track_id, note]));
   return units.map((unit, unitIndex) => {
     const startIndex = trackIndex;
-    const cards = unit.tracks.map(track => renderTrack(track, trackIndex++, notes.get(track.track_id))).join('');
+    const cards = unit.tracks.map(track => renderTrack(track, trackIndex++, notes.get(track.track_id), unit.bunch)).join('');
     const transition = trackIndex < snapshot.tracks.length ? renderTransition(snapshot, trackIndex - 1) : '';
     return `<div class="arrange-unit ${unit.bunch ? 'is-bunch' : ''}" role="listitem" tabindex="0" draggable="true" data-unit-key="${escapeHtml(unit.key)}" aria-label="${escapeHtml(unit.label)}, position ${unitIndex + 1} of ${units.length}">
       <div class="unit-head">
@@ -348,7 +426,26 @@ function renderUnits(units, snapshot) {
   }).join('');
 }
 
-function renderTrack(track, index, note) {
+function renderAddToBunch(snapshot) {
+  // Adding and removing deliberately use DIFFERENT gestures. Driving both
+  // from one checkbox set would require every existing member to render
+  // pre-selected, so "deselect to remove" and "select to add" would fight
+  // over the same state (Ernest raised exactly this, 2026-08-03). Instead:
+  // selection always means "tracks I am acting on" and never comes
+  // pre-checked, adding is selection + this picker, and removing is the
+  // per-row "Leave bunch" button inside the bunch itself.
+  const bunches = (snapshot.bunches || []).filter(bunch => bunch.enabled !== false);
+  if (!bunches.length) return '';
+  const options = bunches
+    .map(bunch => `<option value="${escapeHtml(bunch.bunch_id)}">${escapeHtml(bunch.label)}</option>`)
+    .join('');
+  return `<span class="arrange-add-bunch">
+    <select id="arrange-bunch-target" aria-label="Bunch to add the selected tracks to">${options}</select>
+    <button id="arrange-bunch-add" type="button" ${state.selected.size < 1 ? 'disabled' : ''}>Add to bunch (${state.selected.size})</button>
+  </span>`;
+}
+
+function renderTrack(track, index, note, bunch) {
   const available = note?.available ?? track.available ?? true;
   return `<article class="arrange-track ${available ? '' : 'is-unavailable'}">
     <label class="arrange-select"><input type="checkbox" data-select-track="${escapeHtml(track.track_id)}"> Select track ${index + 1}</label>
@@ -357,6 +454,7 @@ function renderTrack(track, index, note) {
     <div class="track-facts"><span>${track.bpm ? `${Number(track.bpm).toFixed(1)} BPM` : 'BPM —'}</span><span>${escapeHtml(track.key || 'Key —')}</span><span>${available ? 'Available' : 'Unavailable'}</span></div>
     <div class="effective-note"><strong>${escapeHtml(note?.layer || 'global')} note${note?.diverged ? ' · diverged' : ''}</strong><span>${escapeHtml(note?.note || 'No DJ note')}</span></div>
     <button type="button" data-remove-track="${escapeHtml(track.track_id)}" aria-label="Remove ${escapeHtml(track.title || track.track_id)} from plan">Remove</button>
+    ${bunch ? `<button type="button" class="unbunch-one" data-unbunch-track="${escapeHtml(track.track_id)}" data-unbunch-from="${escapeHtml(bunch.bunch_id)}" aria-label="Remove ${escapeHtml(track.title || track.track_id)} from bunch ${escapeHtml(bunch.label)}">Leave bunch</button>` : ''}
   </article>`;
 }
 

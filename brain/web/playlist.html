@@ -95,8 +95,15 @@
     .banner[hidden] { display:none; }
     .conflict-banner { max-width:1500px; margin:12px auto 0; display:flex; align-items:center; justify-content:space-between; gap:12px; }
     .arrange-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+    /* Refresh is the one oversized control here: it is how an external agent's
+       edits reach the page, so it has to be findable without hunting. */
+    #arrange-refresh { min-height:48px; padding:11px 26px; font-size:16px; font-weight:700; background:var(--green); border-color:var(--green); color:#fff; margin-right:10px; }
+    #arrange-refresh:hover:not(:disabled) { background:#12583f; border-color:#12583f; }
+    #arrange-refresh:disabled { background:#8fb3a6; border-color:#8fb3a6; color:#f2f2f0; opacity:1; }
     .arrange-add-form { display:flex; align-items:center; gap:6px; }
     .arrange-add-form label { font-weight:700; }
+    .arrange-add-bunch { display:flex; align-items:center; gap:6px; }
+    .arrange-track .unbunch-one { font-size:12px; min-height:30px; padding:4px 8px; color:#5c4a12; border-color:#c9ad63; background:#fffdf6; }
     .arrange-state { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 18px; padding:10px 12px; border:1px solid var(--line); background:var(--panel); color:var(--muted); }
     .arrange-state.is-stale { border-color:#e0c36a; background:#fff8e1; color:#5c4a12; }
     .arrange-list { margin-top:12px; }
@@ -661,7 +668,11 @@
     async function pollMix() {
       const data = await api('/api/mix');
       if (data.profile) mixState.profile = data.profile;
-      if (data.dj_format) mixState.djFormat = data.dj_format;
+      // Only adopt the server's dj_format while a build is in flight (it
+      // mirrors the request). Idle polls must not re-select the last plan's
+      // experimental format over the "No expert format" default.
+      if (data.building && data.dj_format) mixState.djFormat = data.dj_format;
+      else if (!mixState.djFormat) mixState.djFormat = 'none';
       if (data.order_engine) el('order-engine').value = data.order_engine;
       renderPresets(data.profiles);
       renderDjFormats(data.dj_formats);
