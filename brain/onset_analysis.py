@@ -35,10 +35,21 @@ DEFAULT_SR = 22050
 # Snare energy lives mostly in the snap/rattle, well above a kick's thump.
 SNARE_HIGHPASS_HZ = 1500.0
 DEFAULT_MAX_SECONDS = 120.0
+# Below this many measured beats an "alternating pattern" is not a claim
+# worth making; report zero confidence and let the caller fall back.
+MIN_BEATS_FOR_PARITY = 16
 
 
-def load_audio(path: str, *, sr: int = DEFAULT_SR, max_seconds: float = DEFAULT_MAX_SECONDS) -> np.ndarray:
-    y, _ = librosa.load(path, sr=sr, mono=True, duration=max_seconds)
+def load_audio(
+    path: str,
+    *,
+    sr: int = DEFAULT_SR,
+    max_seconds: float = DEFAULT_MAX_SECONDS,
+    offset_seconds: float = 0.0,
+) -> np.ndarray:
+    y, _ = librosa.load(
+        path, sr=sr, mono=True, duration=max_seconds, offset=max(0.0, offset_seconds)
+    )
     return y
 
 
@@ -98,6 +109,50 @@ def beat_phase_energies(
     return [e / c if c else 0.0 for e, c in zip(energies, counts)]
 
 
+def per_beat_energies(
+    envelope: np.ndarray,
+    *,
+    sr: int,
+    hop_length: int,
+    bpm: float,
+    first_beat_seconds: float,
+    window_seconds: float = 0.08,
+    envelope_start_seconds: float = 0.0,
+) -> dict[int, float]:
+    """Snare-band onset energy at every individual beat, keyed by beat index.
+
+    Same measurement as `beat_phase_energies`, but WITHOUT collapsing into
+    four bar-slot buckets. Keeping the per-beat sequence is what lets
+    `detect_snare_phase` ask whether the energy *alternates*, rather than
+    only comparing two grand totals.
+
+    `envelope_start_seconds` is where the envelope begins within the track,
+    so beat indices stay ABSOLUTE (counted from the track's own first beat)
+    even when only a later window was decoded. Parity is meaningless unless
+    the index it refers to is the same one the planner uses.
+    """
+    period = 60.0 / bpm
+    frame_seconds = hop_length / sr
+    total_seconds = len(envelope) * frame_seconds
+    half_window = max(1, int(round(window_seconds / frame_seconds)))
+    energies: dict[int, float] = {}
+    beat = max(0, int(np.ceil((envelope_start_seconds - first_beat_seconds) / period)))
+    while True:
+        t = first_beat_seconds + beat * period - envelope_start_seconds
+        if t > total_seconds:
+            break
+        if t < 0:
+            beat += 1
+            continue
+        center_frame = int(round(t / frame_seconds))
+        lo = max(0, center_frame - half_window)
+        hi = min(len(envelope), center_frame + half_window)
+        if hi > lo:
+            energies[beat] = float(np.sum(envelope[lo:hi]))
+        beat += 1
+    return energies
+
+
 def detect_snare_phase(
     path: str,
     *,
@@ -105,8 +160,15 @@ def detect_snare_phase(
     first_beat_seconds: float,
     sr: int = DEFAULT_SR,
     max_seconds: float = DEFAULT_MAX_SECONDS,
+    offset_seconds: float = 0.0,
 ) -> dict:
     """Estimate the snare/backbeat's beat parity (even beats vs. odd beats).
+
+    Pass `offset_seconds` (normally the track's planned cue) to measure the
+    section that will actually be mixed. Analyzing from 0 measures whatever
+    the first two minutes happen to contain, which for a track cued late is
+    a different arrangement entirely -- Top Of The World, cued at 105s,
+    reads 0.009 from the track top and 0.301 from its cue.
 
     A standard 4/4 backbeat puts the snare on every OTHER beat (musically
     "2 and 4"), not on one specific beat-in-bar -- so beats 1&3 (0-indexed:
@@ -119,23 +181,56 @@ def detect_snare_phase(
 
     Returns {"snare_parity": 0 or 1, "confidence": float, "slot_energies": [...]}.
     `snare_parity` is `beat_index % 2` for the beats that carry the snare.
-    `confidence` is the normalized margin between odd-sum and even-sum
-    energy -- low confidence means no clear, consistent backbeat pattern
-    was found (or the read is unreliable).
+    `confidence` measures how strongly the per-beat energy ALTERNATES.
+
+    Confidence is the normalized period-2 Fourier component of the per-beat
+    energy sequence, i.e. the mean-removed sequence correlated against
+    (+1, -1, +1, -1, ...). The earlier estimator compared the odd-beat sum
+    against the even-beat sum and divided by the larger; on real records a
+    hi-hat or shaker plays every beat, and that constant floor lands in BOTH
+    sums, so a genuine backbeat showed up as a small margin on top of a big
+    number. Subtly-mixed snares (soul, quiet-storm R&B, live drums) scored
+    near zero and fell below the planner's trust gate, which silently
+    downgraded those transitions to bar-count-only alignment -- bars matched
+    while 2-and-4 did not. Removing the mean first makes any constant floor
+    contribute exactly nothing, so the statistic answers "does this
+    alternate?" instead of "which total is bigger?".
+
+    Measured over the 18 tracks of the 2026-08-03 sample-lineage mix, every
+    track's confidence roughly doubled, four tracks crossed the 0.15 gate for
+    the first time (Groove Theory 0.051 -> 0.239, Keni Burke instrumental
+    0.034 -> 0.273, Ice Cream 0.105 -> 0.370, Top Of The World 0.094 ->
+    0.301), and the Keni Burke instrumental's parity came out INVERTED from
+    the old read -- that track sat on both transitions Ernest called the
+    worst in the set.
     """
-    y = load_audio(path, sr=sr, max_seconds=max_seconds)
+    y = load_audio(path, sr=sr, max_seconds=max_seconds, offset_seconds=offset_seconds)
     envelope, hop_length = snare_band_onset_envelope(y, sr)
-    energies = beat_phase_energies(
-        envelope, sr=sr, hop_length=hop_length, bpm=bpm, first_beat_seconds=first_beat_seconds
+    slot_energies = beat_phase_energies(
+        envelope, sr=sr, hop_length=hop_length, bpm=bpm,
+        first_beat_seconds=first_beat_seconds - offset_seconds,
     )
-    even_energy = energies[0] + energies[2]
-    odd_energy = energies[1] + energies[3]
-    top = max(even_energy, odd_energy)
-    confidence = 0.0 if top <= 0 else abs(odd_energy - even_energy) / top
+    per_beat = per_beat_energies(
+        envelope, sr=sr, hop_length=hop_length, bpm=bpm,
+        first_beat_seconds=first_beat_seconds, envelope_start_seconds=offset_seconds,
+    )
+    beats = sorted(per_beat)
+    parity, confidence = 0, 0.0
+    # Too few beats to claim an alternating pattern exists at all.
+    if len(beats) >= MIN_BEATS_FOR_PARITY:
+        values = np.array([per_beat[b] for b in beats], dtype=float)
+        values -= values.mean()
+        signs = np.where(np.array(beats) % 2 == 0, 1.0, -1.0)
+        component = float(np.dot(values, signs))
+        spread = float(np.sum(np.abs(values)))
+        if spread > 0:
+            # component < 0 means the odd-indexed beats carry the accents.
+            parity = 1 if component < 0 else 0
+            confidence = abs(component) / spread
     return {
-        "snare_parity": 1 if odd_energy >= even_energy else 0,
+        "snare_parity": parity,
         "confidence": round(confidence, 3),
-        "slot_energies": [round(e, 4) for e in energies],
+        "slot_energies": [round(e, 4) for e in slot_energies],
     }
 
 

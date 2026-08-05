@@ -370,13 +370,38 @@ def run_enrich(
         for field, rows in need.items():
             note(f"missing {field}: {len(rows)}")
 
-        if need["bpm_key"] and not skip_bpm:
-            note(f"[bpm/key] analyzing {len(need['bpm_key'])} tracks via muted Mixxx deck…")
-            fill_bpm(need["bpm_key"], port, progress=note)
-            summary["bpm_analyzed"] = len(need["bpm_key"])
+        bpm_targets = list(need["bpm_key"])
+        if need["phrases"] and not skip_bpm:
+            # A BPM imported from tags is enough for ordinary mix planning but
+            # does not prove Mixxx has a persisted BeatGrid-2.0. Phrase and
+            # guided-format analysis require that written grid. Include any
+            # phrase-missing tracks whose Mixxx grid is absent even when their
+            # local BPM field is already populated.
+            from brain.analyze_via_mixxx import pending_grid_ids
+
+            pending = pending_grid_ids(
+                [track["track_id"] for track in need["phrases"]]
+            )
+            if pending is not None:
+                pending_set = set(pending)
+                known = {track["track_id"] for track in bpm_targets}
+                bpm_targets.extend(
+                    track
+                    for track in need["phrases"]
+                    if track["track_id"] in pending_set
+                    and track["track_id"] not in known
+                )
+
+        if bpm_targets and not skip_bpm:
+            note(
+                f"[bpm/grid] analyzing {len(bpm_targets)} tracks via muted "
+                "Mixxx deck…"
+            )
+            fill_bpm(bpm_targets, port, progress=note)
+            summary["bpm_analyzed"] = len(bpm_targets)
             # Re-read playlist rows from disk after crate sync? fill_bpm only
             # updates index/crate; playlist.json is refreshed by the editor.
-            note("[bpm/key] Mixxx analysis + sync_mixxx_analysis done")
+            note("[bpm/grid] Mixxx analysis + sync_mixxx_analysis done")
         elif skip_bpm:
             note("[bpm/key] skipped")
 

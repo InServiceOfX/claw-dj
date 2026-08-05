@@ -98,6 +98,34 @@ class BeatPhaseWiringTests(unittest.TestCase):
             )
         mock_fill.assert_not_called()
 
+    def test_phrase_gap_with_tag_bpm_still_requests_mixxx_grid_analysis(self) -> None:
+        with closing(real_connect(self.index_path)) as db:
+            db.execute("DELETE FROM phrases WHERE track_id=?", (self.track_id,))
+            db.commit()
+
+        analyzed = []
+
+        def fake_fill_bpm(tracks, _port, **_kwargs):
+            analyzed.extend(track["track_id"] for track in tracks)
+
+        with (
+            patch(
+                "brain.analyze_via_mixxx.pending_grid_ids",
+                return_value=[self.track_id],
+            ),
+            patch("brain.enrich_set.fill_bpm", side_effect=fake_fill_bpm),
+            patch("brain.enrich_set.fill_phrases", return_value=0),
+        ):
+            run_enrich(
+                playlist_path=self.playlist_path,
+                skip_lyrics=True,
+                skip_chroma=True,
+                skip_beat_phase=True,
+                skip_timelines=True,
+            )
+
+        self.assertEqual(analyzed, [self.track_id])
+
 
 if __name__ == "__main__":
     unittest.main()
