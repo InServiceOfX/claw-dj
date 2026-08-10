@@ -73,3 +73,15 @@ Each accepted change links to an immutable intent event.
 >
 > Also: when we do Analyze and Enrich songs, Mixxx asks for file permission for some songs and I have to manually click, whereas for other songs it happens automatically. I want to understand why, and to fix -- or ask the user for permission to fix -- these file permission problems before starting up Mixxx to find key and BPM data via Mixxx.
 <!-- pdd-intent-entry:load-a-new-music-collection-from-a-chosen-volume-1830f5e2:end -->
+
+<!-- pdd-intent-entry:if-you-re-able-to-scan-and-see-i-have-a-volume-c-a1c09a58:start -->
+## If you're able to scan and see I have a volume called "Elements". In...
+
+- Intent event: [`docs/intents/intent__if-you-re-able-to-scan-and-see-i-have-a-volume-c-a1c09a58.md`](intents/intent__if-you-re-able-to-scan-and-see-i-have-a-volume-c-a1c09a58.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `sqlite`
+
+> If you're able to scan and see I have a volume called "Elements". In the GUI I have, http://127.0.0.1:8787/#curate is there a way to "switch" to the new music collection and restart "the scan" of the music collection for useful metadata? Also would need to create a new sqlite on the volume if it's not there. It's ok upon start.sh or start of GUI to default to the previously used music collection. so that start up isn't asking use which music collection. But help me implement ability to start a new music collection while saving the previous music collection "settings" if any.
+<!-- pdd-intent-entry:if-you-re-able-to-scan-and-see-i-have-a-volume-c-a1c09a58:end -->

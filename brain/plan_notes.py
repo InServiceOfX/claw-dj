@@ -24,7 +24,12 @@ def _global(track_ids: list[str]) -> dict[str, tuple[str, bool]]:
     if not track_ids:
         return {}
     marks = ",".join("?" for _ in track_ids)
-    with closing(library_index.connect(DEFAULT_INDEX)) as db:
+    index_path = (
+        DEFAULT_INDEX
+        if DEFAULT_INDEX != library_index.DEFAULT_INDEX
+        else library_index.current_index_path()
+    )
+    with closing(library_index.connect(index_path)) as db:
         rows = db.execute(f"SELECT track_id,dj_notes,available FROM tracks WHERE track_id IN ({marks})", track_ids)
         return {r["track_id"]: (r["dj_notes"] or "", bool(r["available"])) for r in rows}
 

@@ -11,6 +11,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
+from brain import collection_registry
 from brain.library import DEFAULT_CRATE_CACHE
 
 DEFAULT_INDEX = DEFAULT_CRATE_CACHE.parent / "library.sqlite3"
@@ -132,12 +133,32 @@ INSERT OR IGNORE INTO scan_state(id) VALUES (1);
 """
 
 
-def connect(path: Path = DEFAULT_INDEX) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=30)
-    db.row_factory = sqlite3.Row
-    # Per-connection and ineffective once a transaction has begun.
-    db.execute("PRAGMA foreign_keys = ON")
+def current_index_path(path: Path | None = None) -> Path:
+    """Resolve the active SQLite at call time unless a caller chose a path."""
+    if path is not None:
+        return Path(path)
+    return collection_registry.active_index_path(
+        registry_path=collection_registry.DEFAULT_REGISTRY,
+        fallback=DEFAULT_INDEX,
+    )
+
+
+# Paths that already received SCHEMA + additive migrations in this process.
+# Re-running executescript(SCHEMA) on every GUI poll (/api/ingest every ~750ms)
+# contending with a long incremental_scan write is what produced
+# "database is locked" traceback storms during "Check for new music".
+_SCHEMA_READY: set[str] = set()
+
+
+def _path_key(path: Path) -> str:
+    try:
+        return str(path.expanduser().resolve())
+    except OSError:
+        return str(path.expanduser())
+
+
+def _apply_schema(db: sqlite3.Connection) -> None:
+    """Create tables and run additive migrations (write-heavy; call sparingly)."""
     db.executescript(SCHEMA)
     # Additive migration for indexes created before human DJ annotations.
     columns = {row[1] for row in db.execute("PRAGMA table_info(tracks)")}
@@ -157,29 +178,114 @@ def connect(path: Path = DEFAULT_INDEX) -> sqlite3.Connection:
     collection_columns = {row[1] for row in db.execute("PRAGMA table_info(collections)")}
     if collection_columns and "data_dir" not in collection_columns:
         db.execute("ALTER TABLE collections ADD COLUMN data_dir TEXT NOT NULL DEFAULT ''")
+    db.commit()
+
+
+def connect(
+    path: Path | None = None,
+    *,
+    ensure_schema: bool = True,
+    timeout: float = 60.0,
+) -> sqlite3.Connection:
+    """Open the library index.
+
+    ``ensure_schema=True`` (default) applies CREATE/migrations once per path
+    per process. Pass ``ensure_schema=False`` for hot read paths (scan status
+    polls) so they do not take a schema write lock while a scan is running.
+    """
+    path = current_index_path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    key = _path_key(path)
+    db = sqlite3.connect(path, timeout=timeout)
+    db.row_factory = sqlite3.Row
+    # Milliseconds. Independent of the connect() timeout (seconds spent waiting
+    # for a locked database before OperationalError).
+    db.execute("PRAGMA busy_timeout = 60000")
+    # Per-connection and ineffective once a transaction has begun.
+    db.execute("PRAGMA foreign_keys = ON")
+    # Concurrent readers during a long scan. Harmless no-op if the volume
+    # cannot support WAL (some network mounts); ignore failures.
+    try:
+        db.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.Error:
+        pass
+    if key not in _SCHEMA_READY:
+        if ensure_schema:
+            _apply_schema(db)
+            _SCHEMA_READY.add(key)
+        else:
+            # Hot read path (status polls): never rewrite schema if the writer
+            # already created tables. Only CREATE when the file is brand new.
+            try:
+                db.execute("SELECT 1 FROM scan_state WHERE id = 1").fetchone()
+            except sqlite3.Error:
+                _apply_schema(db)
+            _SCHEMA_READY.add(key)
     return db
 
 
-def configured_roots(path: Path = DEFAULT_INDEX) -> list[str]:
+def configured_roots(path: Path | None = None) -> list[str]:
     with closing(connect(path)) as db:
         return [row["path"] for row in db.execute("SELECT path FROM roots ORDER BY path")]
 
 
-def scan_status(path: Path = DEFAULT_INDEX) -> dict:
-    with closing(connect(path)) as db:
-        state = dict(db.execute("SELECT * FROM scan_state WHERE id = 1").fetchone())
-        state["roots"] = [row["path"] for row in db.execute("SELECT path FROM roots ORDER BY path")]
-        state["track_count"] = db.execute(
-            "SELECT count(*) FROM tracks WHERE available = 1"
-        ).fetchone()[0]
-        state["untagged_count"] = db.execute(
-            "SELECT count(*) FROM tracks WHERE available = 1 AND tag_status != 'ok'"
-        ).fetchone()[0]
-        state["new_since_last_scan"] = state["new_count"]
-        return state
+def _locked_scan_status_placeholder() -> dict:
+    """Safe payload when the index is briefly unreadable during a write."""
+    return {
+        "running": 1,
+        "started_at": None,
+        "finished_at": None,
+        "discovered": 0,
+        "processed": 0,
+        "new_count": 0,
+        "changed_count": 0,
+        "unchanged_count": 0,
+        "missing_count": 0,
+        "skipped_count": 0,
+        "error": None,
+        "warnings": "",
+        "roots": [],
+        "track_count": 0,
+        "untagged_count": 0,
+        "new_since_last_scan": 0,
+        "locked": True,
+    }
 
 
-def export_records(path: Path = DEFAULT_INDEX) -> list[dict]:
+def scan_status(path: Path | None = None) -> dict:
+    """Read scan progress without taking a schema write lock.
+
+    GUI polls this every ~750ms during "Check for new music". Competing with
+    the scan writer's commits used to raise sqlite3.OperationalError and
+    dump ThreadingHTTPServer tracebacks in the start.sh terminal.
+    """
+    index = current_index_path(path)
+    try:
+        with closing(connect(index, ensure_schema=False, timeout=5.0)) as db:
+            row = db.execute("SELECT * FROM scan_state WHERE id = 1").fetchone()
+            if row is None:
+                return _locked_scan_status_placeholder()
+            state = dict(row)
+            state["roots"] = [
+                r["path"] for r in db.execute("SELECT path FROM roots ORDER BY path")
+            ]
+            state["track_count"] = db.execute(
+                "SELECT count(*) FROM tracks WHERE available = 1"
+            ).fetchone()[0]
+            state["untagged_count"] = db.execute(
+                "SELECT count(*) FROM tracks WHERE available = 1 AND tag_status != 'ok'"
+            ).fetchone()[0]
+            state["new_since_last_scan"] = state["new_count"]
+            state["locked"] = False
+            return state
+    except sqlite3.OperationalError as error:
+        message = str(error).lower()
+        if "locked" in message or "busy" in message:
+            return _locked_scan_status_placeholder()
+        raise
+
+
+def export_records(path: Path | None = None) -> list[dict]:
     fields = (
         "track_id", "title", "artist", "album", "genre", "duration_seconds",
         "size_bytes", "bpm", "key", "energy",

@@ -132,6 +132,52 @@ hook after plan switches. The browser never chooses or submits a Mixxx port.
 verifies HTML, JavaScript MIME responses, and real plan/Arrange GETs; the
 top-level suite is 211/211.
 
+## Per-volume music collections (2026-08-06)
+
+The local playlist editor can now switch between independent music volumes
+without restarting. `brain/collection_registry.py` keeps a versioned atomic
+registry at gitignored `brain/data/collections.json`; it records collection
+identity, mount/data/database paths, and the last-used active pointer. The
+pointer is deliberately machine-local. The portable identity marker remains
+on the collection at `<data-dir>/collection.json`. Startup reads the last-used
+choice without prompting, scanning volumes, or creating a replacement
+database. If that active volume/database is missing, access fails visibly and
+does not fall back to another collection.
+
+`brain.library_index.current_index_path()` is the sole default resolution
+boundary. An explicit SQLite path still has absolute precedence for tests,
+migrations and portable import/export. An omitted path resolves the active
+collection at call time, so a running `PlaylistApp`, enrichment workflow,
+DJ-note writer, bunch store, and plan hydration follow an explicit switch.
+`brain.scan_library.incremental_scan()` freezes that resolved path once at
+scan start; a later switch cannot redirect the in-flight scan, and legacy
+crate bootstrap data is never imported into a per-volume database.
+
+The shared lifecycle in `brain.collection` creates or reuses the collection
+marker and SQLite, initializes only schema and chosen roots, preserves a
+pre-existing local `brain/data/library.sqlite3` as the switchable “Legacy
+local library,” and does not scan unless explicitly requested. Its path-only
+estimate opens no tags and performs no external calls. CLI and GUI both use
+this lifecycle:
+
+```bash
+uv run python -m brain.collection list
+uv run python -m brain.collection status
+uv run python -m brain.collection new /path/to/volume \
+  --root /path/to/volume/Music --name "Collection name"
+uv run python -m brain.collection new /path/to/volume \
+  --root /path/to/volume/Music --scan
+uv run python -m brain.collection use <collection-id>
+```
+
+On `#curate`, the collection panel lists known/mounted state and keeps the old
+Add music folder / Check for new music controls scoped to the active database.
+Starting a collection first gets `/api/collections` estimate results, shows
+the count/time estimate, and requires browser confirmation. Clearing “Scan
+after creating” registers and activates without scanning. A confirmed initial
+scan is ordinary local Mutagen metadata ingest only: no lyrics, chroma, Mixxx,
+playback or network enrichment is triggered.
+
 The two approved PDD amendments are implemented in the working brownfield
 application and the multi-plan graph is now wired through the local server and
 offline CLI. `brain.build_mix_plan.compose_mix_plan` always runs the deterministic

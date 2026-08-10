@@ -1,0 +1,40 @@
+<pdd-reason>A collection lifecycle must create or reuse the marker and per-volume SQLite safely, expose the same outcome to CLI and GUI callers, and preserve the legacy local library as a switchable collection.</pdd-reason>
+<pdd-interface>
+{"type":"module","module":{"functions":[
+  {"name":"create_collection","signature":"create_collection(mount_base: Path, *, roots: list[Path] | None = None, display_name: str | None = None, data_dir: Path | None = None, registry_path: Path = DEFAULT_REGISTRY) -> dict"},
+  {"name":"activate_collection","signature":"activate_collection(collection_id: str, *, registry_path: Path = DEFAULT_REGISTRY) -> dict"},
+  {"name":"ensure_legacy_collection","signature":"ensure_legacy_collection(*, legacy_index: Path = DEFAULT_INDEX, registry_path: Path = DEFAULT_REGISTRY) -> dict | None"},
+  {"name":"estimate_scan","signature":"estimate_scan(roots: list[Path]) -> dict"},
+  {"name":"main","signature":"main() -> None"}
+]}}
+</pdd-interface>
+<pdd-dependency>brain/collection_registry_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/library_index_Python.prompt</pdd-dependency>
+
+% Goal
+
+Maintain `brain/collection.py` as the shared GUI/CLI lifecycle for per-volume music collections while preserving its existing marker and portable-database APIs.
+
+% Contract
+
+R1 (MUST): A new collection reuses or creates `<data_dir>/collection.json` and `<data_dir>/library.sqlite3`; the default data directory is the nearest existing `clawdj/` at or above the chosen mount, otherwise `<mount>/clawdj/`.
+R2 (MUST): Initialize a new SQLite with the normal library schema and persist validated scan roots only in that collection database.
+R3 (MUST): Reusing an existing marker/database preserves all metadata, enrichment, dj_notes, bunches, roots and scan state.
+R4 (MUST): The first explicit create/switch operation records a pre-existing local `brain/data/library.sqlite3` as a legacy collection without moving, deleting, merging or rewriting it.
+R5 (MUST): GUI and CLI call the same lifecycle functions and produce the same registry/database state.
+R6 (MUST): Estimate audio-file count without reading tags or calling any network/API service; scanning still requires explicit confirmation by the caller.
+R7 (MUST NOT): Never run lyrics, chroma, Mixxx, network enrichment, playback, or a metadata scan merely by registering/activating a collection.
+R8 (MUST NOT): Never overwrite a readable collection marker with a new identity or merge two collection databases during switching.
+R9 (MUST): Keep absolute-path track identity unchanged.
+
+% CLI
+
+Support `python -m brain.collection list`, `status`, `new MOUNT [--root ROOT ...] [--name NAME] [--scan]`, and `use COLLECTION_ID`. `--scan` must use the same incremental scanner after showing the estimate; without `--scan`, creation only registers and activates.
+
+% Output
+
+- Primary output: `brain/collection.py`.
+
+% Verification
+
+- Run focused collection, CLI, marker, legacy and isolation tests; then full unittest and py_compile.

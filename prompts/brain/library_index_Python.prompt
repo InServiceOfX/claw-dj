@@ -1,0 +1,33 @@
+<pdd-reason>Every library reader and writer must resolve the same active per-volume SQLite at call time; a module-import-time path would keep writing the previous collection after a live GUI switch.</pdd-reason>
+<pdd-interface>
+{"type":"module","module":{"functions":[
+  {"name":"current_index_path","signature":"current_index_path(path: Path | None = None) -> Path"},
+  {"name":"connect","signature":"connect(path: Path | None = None) -> sqlite3.Connection"},
+  {"name":"configured_roots","signature":"configured_roots(path: Path | None = None) -> list[str]"},
+  {"name":"scan_status","signature":"scan_status(path: Path | None = None) -> dict"},
+  {"name":"export_records","signature":"export_records(path: Path | None = None) -> list[dict]"}
+]}}
+</pdd-interface>
+<pdd-dependency>brain/collection_registry_Python.prompt</pdd-dependency>
+
+% Goal
+
+Maintain `brain/library_index.py` as the schema and sole active-index resolution boundary for all collection-scoped SQLite access.
+
+% Contract
+
+R1 (MUST): Explicit `path` always wins and preserves tests, migrations and one-off tools.
+R2 (MUST): An omitted path resolves the active collection at call time, not import time, and falls back to legacy `DEFAULT_INDEX` when no registry exists.
+R3 (MUST): All schema creation/additive migrations apply equally to legacy and per-volume databases.
+R4 (MUST): Existing callers using `connect()` immediately follow a live collection switch without process restart.
+R5 (MUST NOT): Never mutate the registry from `connect`, and never silently fall back to another database when a registered active collection is unavailable.
+R6 (MUST NOT): Never merge collection rows, scan roots or enrichment caches across databases.
+R7 (MUST): Keep the existing absolute-path track primary key and all current schema/data-preservation behavior.
+
+% Output
+
+- Primary output: `brain/library_index.py`.
+
+% Verification
+
+- Run active-resolution, explicit-path, missing-volume and cross-collection isolation tests, all existing collection/scan tests, full unittest, and py_compile.

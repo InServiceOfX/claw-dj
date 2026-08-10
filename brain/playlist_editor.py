@@ -15,8 +15,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from brain.library import Track, load_crate
-from brain.library_index import configured_roots, scan_status
+from brain import collection_registry, library_index
+from brain.library import DEFAULT_CRATE_CACHE, Energy, Track, load_crate
+from brain.library_index import configured_roots, export_records, scan_status
 from brain.playlist import (
     DATA_DIR,
     export_playlist,
@@ -71,10 +72,13 @@ def ensure_plan_workspace() -> dict:
 
 class PlaylistApp:
     def __init__(self, *, control_port: int | None = None) -> None:
+        self.registry_path = collection_registry.DEFAULT_REGISTRY
+        self.legacy_index = library_index.DEFAULT_INDEX
         self.control_port_override = int(control_port) if control_port is not None else None
         self.explicit_control_port = control_port is not None
         self.scan_thread: threading.Thread | None = None
         self.scan_error: str | None = None
+        self.collection_error: str | None = None
         self.brain_thread: threading.Thread | None = None
         self.brain_state: dict = {"running": 0, "error": None, "picks": None,
                                   "brief": None, "engine": None}
@@ -139,7 +143,41 @@ class PlaylistApp:
         return None
 
     def reload(self) -> None:
-        self.tracks = load_crate()
+        self.collection_error = None
+        if Path(self.registry_path).exists():
+            try:
+                index_path = collection_registry.active_index_path(
+                    registry_path=self.registry_path,
+                    fallback=self.legacy_index,
+                )
+                records = export_records(index_path)
+                self.tracks = [
+                    Track(
+                        track_id=record["track_id"],
+                        title=record["title"],
+                        artist=record["artist"],
+                        genre=record.get("genre"),
+                        album=record.get("album"),
+                        bpm=record.get("bpm"),
+                        key=record.get("key"),
+                        energy=Energy(record.get("energy", Energy.MEDIUM.value)),
+                        duration_seconds=record.get("duration_seconds"),
+                        size_bytes=record.get("size_bytes"),
+                        dj_notes=record.get("dj_notes") or "",
+                    )
+                    for record in records
+                ]
+                # Existing modules still consume the ignored crate compatibility
+                # export. Keep it scoped to the same active database as Curate.
+                DEFAULT_CRATE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                DEFAULT_CRATE_CACHE.write_text(json.dumps(records, indent=2))
+            except collection_registry.CollectionUnavailable as error:
+                # Keep the server/selector reachable without loading any other
+                # collection. An explicit activation is required to recover.
+                self.collection_error = str(error)
+                self.tracks = []
+        else:
+            self.tracks = load_crate()
         self.by_id = {track.track_id: track for track in self.tracks}
         paths = self._scoped_paths()
         selection = load_selection(paths.selection) if paths else load_selection()
@@ -174,7 +212,38 @@ class PlaylistApp:
         return selected
 
     def ingest_status(self) -> dict:
-        status = scan_status()
+        if self.collection_error:
+            return {
+                "running": 0,
+                "roots": [],
+                "track_count": 0,
+                "untagged_count": 0,
+                "new_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "error": self.collection_error,
+            }
+        try:
+            status = scan_status(self._collection_index_path())
+        except Exception as error:  # never crash the HTTP thread on status polls
+            scanning = bool(self.scan_thread and self.scan_thread.is_alive())
+            return {
+                "running": int(scanning),
+                "roots": [],
+                "track_count": 0,
+                "untagged_count": 0,
+                "new_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "discovered": 0,
+                "processed": 0,
+                "error": None if scanning else str(error),
+                "locked": True,
+            }
+        # If a scan thread is alive, never report idle just because a locked
+        # placeholder lacked running=1 yet or the writer lagged one commit.
+        if self.scan_thread and self.scan_thread.is_alive():
+            status["running"] = 1
         if self.scan_error:
             status["error"] = self.scan_error
         return status
@@ -182,7 +251,8 @@ class PlaylistApp:
     def start_scan(self, extra_root: str | None = None) -> dict:
         if self.scan_thread and self.scan_thread.is_alive():
             return self.ingest_status()
-        roots = [Path(path) for path in configured_roots()]
+        index_path = self._collection_index_path()
+        roots = [Path(path) for path in configured_roots(index_path)]
         if extra_root:
             candidate = Path(extra_root).expanduser()
             if not candidate.is_dir():
@@ -201,13 +271,12 @@ class PlaylistApp:
                 from brain.library_index import export_records
                 from brain.scan_library import incremental_scan
 
-                summary = incremental_scan(roots)
-                records = export_records()
-                from brain.library import DEFAULT_CRATE_CACHE
+                summary = incremental_scan(roots, index_path=index_path)
+                records = export_records(index_path)
                 DEFAULT_CRATE_CACHE.write_text(json.dumps(records, indent=2))
                 write_catalog(records, roots=[str(root) for root in roots])
                 if summary.get("new"):
-                    self._refresh_new_music_view()
+                    self._refresh_new_music_view(index_path)
                 self.reload()
             except Exception as error:  # surfaced in the local UI
                 self.scan_error = str(error)
@@ -216,14 +285,20 @@ class PlaylistApp:
         self.scan_thread.start()
         return {**self.ingest_status(), "running": 1}
 
-    def _refresh_new_music_view(self) -> None:
+    def _collection_index_path(self) -> Path:
+        return collection_registry.active_index_path(
+            registry_path=self.registry_path,
+            fallback=self.legacy_index,
+        )
+
+    def _refresh_new_music_view(self, index_path: Path | None = None) -> None:
         """Rebuild the agent-facing new-music view from the newest scan batch,
         so 'Ask the DJ brain' always reasons over what the last scan found."""
         from contextlib import closing
 
         from brain.library_index import connect
 
-        with closing(connect()) as db:
+        with closing(connect(index_path or self._collection_index_path())) as db:
             started = db.execute("SELECT started_at FROM scan_state WHERE id=1").fetchone()[0]
             rows = [dict(r) for r in db.execute(
                 "SELECT track_id, artist, title, album, genre, duration_seconds "
@@ -340,10 +415,10 @@ class PlaylistApp:
             try:
                 from brain.mix_directives import build_prompt, load_playlist, parse_directives
                 from brain.pick_candidates import ask_h_agent
-                from brain.library_index import DEFAULT_INDEX
+                from brain.library_index import current_index_path
 
                 tracks = load_playlist(DEFAULT_PLAYLIST_JSON)
-                prompt = build_prompt(tracks, brief, DEFAULT_INDEX)
+                prompt = build_prompt(tracks, brief, current_index_path())
                 reply = ask_h_agent(prompt) if engine == "h-agent" else ENGINES[engine](prompt)
                 notes, reorder = parse_directives(reply, tracks)
                 by_id = {t["track_id"]: t for t in tracks}
@@ -1428,6 +1503,7 @@ class PlaylistApp:
 def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
     from brain import api_router, plan_paths
     from brain.api import (
+        api_collections,
         api_bunch_item,
         api_bunches_collection,
         api_plan_arrange,
@@ -1446,7 +1522,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
 
     api_router.clear()
     route_modules = (
-        api_static_assets, api_plans_collection, api_plans_active, api_plan_detail,
+        api_static_assets, api_collections, api_plans_collection, api_plans_active, api_plan_detail,
         api_plan_duplicate, api_plan_journal, api_plan_arrange, api_plan_order,
         api_plan_tracks, api_plan_notes, api_plan_transitions, api_plan_bunches,
         api_bunches_collection, api_bunch_item,

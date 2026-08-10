@@ -2606,5 +2606,97 @@
         "io": {"stdout": "selected Mixxx control port and editor startup status", "stderr": "distinct unsafe or unavailable conditions"}
       }
     }
+  },
+  {
+    "reason": "Per-volume databases need one machine-local source of truth for known collections and the last active choice.",
+    "description": "Versioned atomic local registry containing collection identity, mount/data/database paths and active_collection_id. Missing registry preserves the legacy local database. Activation validates availability and never silently falls back.",
+    "dependencies": [],
+    "priority": 38,
+    "filename": "brain/collection_registry_Python.prompt",
+    "filepath": "brain/collection_registry.py",
+    "tags": ["backend", "collection", "registry"],
+    "context_urls": [],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "list_collections", "signature": "list_collections(*, registry_path: Path = DEFAULT_REGISTRY) -> list[dict]"},
+      {"name": "active_collection", "signature": "active_collection(*, registry_path: Path = DEFAULT_REGISTRY) -> dict | None"},
+      {"name": "active_index_path", "signature": "active_index_path(*, registry_path: Path = DEFAULT_REGISTRY, fallback: Path) -> Path"},
+      {"name": "register", "signature": "register(record: dict, *, activate: bool = True, registry_path: Path = DEFAULT_REGISTRY) -> dict"},
+      {"name": "activate", "signature": "activate(collection_id: str, *, registry_path: Path = DEFAULT_REGISTRY) -> dict"}
+    ]}}
+  },
+  {
+    "reason": "GUI and CLI must share one safe create/reuse/activate lifecycle while preserving the legacy local library.",
+    "description": "Creates or reuses collection.json and library.sqlite3 on the selected volume, initializes collection-local roots/schema, records the legacy local database on first explicit switch, estimates scans without tags or network work, and exposes list/status/new/use CLI commands.",
+    "dependencies": ["brain/collection_registry_Python.prompt", "brain/library_index_Python.prompt"],
+    "priority": 40,
+    "filename": "brain/collection_Python.prompt",
+    "filepath": "brain/collection.py",
+    "tags": ["backend", "collection", "cli"],
+    "context_urls": [],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "create_collection", "signature": "create_collection(mount_base: Path, *, roots: list[Path] | None = None, display_name: str | None = None, data_dir: Path | None = None, registry_path: Path = DEFAULT_REGISTRY) -> dict"},
+      {"name": "activate_collection", "signature": "activate_collection(collection_id: str, *, registry_path: Path = DEFAULT_REGISTRY) -> dict"},
+      {"name": "ensure_legacy_collection", "signature": "ensure_legacy_collection(*, legacy_index: Path = DEFAULT_INDEX, registry_path: Path = DEFAULT_REGISTRY) -> dict | None"},
+      {"name": "estimate_scan", "signature": "estimate_scan(roots: list[Path]) -> dict"},
+      {"name": "main", "signature": "main() -> None"}
+    ]}}
+  },
+  {
+    "reason": "All library readers and writers must resolve the active database at call time after a live switch.",
+    "description": "Explicit paths retain precedence; omitted paths resolve the registry's active SQLite for every call and fall back to the legacy DEFAULT_INDEX only when no registry exists. Schema and absolute track identity remain unchanged.",
+    "dependencies": ["brain/collection_registry_Python.prompt"],
+    "priority": 39,
+    "filename": "brain/library_index_Python.prompt",
+    "filepath": "brain/library_index.py",
+    "tags": ["backend", "collection", "sqlite"],
+    "context_urls": [],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "current_index_path", "signature": "current_index_path(path: Path | None = None) -> Path"},
+      {"name": "connect", "signature": "connect(path: Path | None = None) -> sqlite3.Connection"},
+      {"name": "configured_roots", "signature": "configured_roots(path: Path | None = None) -> list[str]"},
+      {"name": "scan_status", "signature": "scan_status(path: Path | None = None) -> dict"},
+      {"name": "export_records", "signature": "export_records(path: Path | None = None) -> list[dict]"}
+    ]}}
+  },
+  {
+    "reason": "A scan started after switching must target only the active collection database.",
+    "description": "Resolves the database once at scan start, preserves incremental and availability safety behavior, and writes roots, scan state and metadata only to that collection.",
+    "dependencies": ["brain/library_index_Python.prompt"],
+    "priority": 41,
+    "filename": "brain/scan_library_Python.prompt",
+    "filepath": "brain/scan_library.py",
+    "tags": ["backend", "collection", "scan"],
+    "context_urls": [],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "incremental_scan", "signature": "incremental_scan(roots: list[Path], *, index_path: Path | None = None, min_age_seconds: float = 300, workers: int = 8, progress_every: int = 100, allow_bulk_removal: bool = False, max_missing_fraction: float = 0.5, min_tracks_for_guard: int = 20) -> dict"}
+    ]}}
+  },
+  {
+    "reason": "Curate and agent harnesses need one loopback collection endpoint without duplicating lifecycle rules.",
+    "description": "GET lists known/active/available collections. POST estimate/register/activate validates inputs, rejects unsafe busy switching, reloads app state, and starts a scan only after an explicit scan=true request.",
+    "dependencies": ["brain/collection_Python.prompt", "brain/api_router_Python.prompt"],
+    "priority": 42,
+    "filename": "brain/api/api_collections_Python.prompt",
+    "filepath": "brain/api/api_collections.py",
+    "tags": ["backend", "api", "collection"],
+    "context_urls": [],
+    "interface": {"type": "api", "api": {"endpoints": [
+      {"method": "GET", "path": "/api/collections", "responseSchema": "{active_collection_id,collections}"},
+      {"method": "POST", "path": "/api/collections", "requestSchema": "{action,mount_base?,roots?,display_name?,collection_id?,scan?}"}
+    ]}}
+  },
+  {
+    "reason": "Curate needs a visible selector and explicit create/estimate/confirm/scan flow while startup stays silent.",
+    "description": "Vanilla ES module showing the active and previously registered collections, activating in one explicit action, and starting a new collection only after an estimate and confirmation. Existing active-collection ingest controls remain available.",
+    "dependencies": ["brain/api/api_collections_Python.prompt"],
+    "priority": 43,
+    "filename": "brain/web/collection_picker_JavaScript.prompt",
+    "filepath": "brain/web/collection_picker.js",
+    "tags": ["frontend", "browser", "collection"],
+    "context_urls": [],
+    "interface": {"type": "component", "component": {"props": [], "emits": ["collectionchange"], "dataSources": [
+      {"kind": "api", "source": "/api/collections", "method": "GET"},
+      {"kind": "api", "source": "/api/collections", "method": "POST"}
+    ]}}
   }
 ]

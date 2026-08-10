@@ -6,7 +6,24 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
-## Active cross-machine priorities (updated 2026-08-02)
+## Active cross-machine priorities (updated 2026-08-06)
+
+- [x] **Per-volume music collections with live Curate switching (2026-08-06).**
+      `brain/data/collections.json` is now the gitignored, atomic machine-local
+      registry for known collections and the last-used active pointer. Explicit
+      creation preserves the existing local `library.sqlite3` as a switchable
+      legacy collection, creates/reuses `<volume>/clawdj/collection.json` plus
+      `library.sqlite3`, and keeps roots, metadata, enrichment, DJ notes and
+      bunches isolated in that database. Omitted library-index paths resolve
+      the active database at call time; explicit paths still win; an unavailable
+      active volume fails instead of falling back. Curate has a silent-start
+      selector and estimate/confirm flow with register-without-scan support;
+      `/api/collections` backs the same lifecycle used by
+      `python -m brain.collection list|status|new|use`. Initial scans remain
+      metadata-only and require explicit `scan=true` / `--scan`; nothing starts
+      lyrics, chroma, Mixxx, playback or network work. Strict TDD evidence:
+      13/13 focused tests failed before production modules existed, then 19/19
+      focused frontend/API tests and all 247 Python tests passed.
 
 - [x] **Runtime 2-and-4 parity survives variable deck-load timing (2026-08-04).**
       The recurring one-count fixes were not sticking because the newly live
@@ -198,6 +215,12 @@ open -a Mixxx --args --control-api-port 9995
 
 # Playlist editor UI (scan / ask-the-DJ-brain / suggest / finalize):
 uv run python -m brain.playlist_editor --open
+
+# Per-volume collections (no scan unless --scan is explicit):
+uv run python -m brain.collection list
+uv run python -m brain.collection new /path/to/mounted-volume \
+  --root /path/to/mounted-volume/Music --name "Main collection"
+uv run python -m brain.collection use <collection-id>
 
 # Post-finalize enrichment (bpm/key, lyrics, chroma, phrases, lyric timelines):
 uv run python -m brain.enrich_set            # --status to just report

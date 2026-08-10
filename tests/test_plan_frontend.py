@@ -20,7 +20,13 @@ from brain.playlist_editor import make_handler
 
 ROOT = Path(__file__).parents[1]
 WEB = ROOT / "brain" / "web"
-MODULES = ("plan_client.js", "plan_picker.js", "arrange.js", "transition_editor.js")
+MODULES = (
+    "plan_client.js",
+    "plan_picker.js",
+    "arrange.js",
+    "transition_editor.js",
+    "collection_picker.js",
+)
 
 
 class PlanFrontendStaticTest(TestCase):

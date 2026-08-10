@@ -36,7 +36,10 @@ import uuid
 from contextlib import closing
 from pathlib import Path
 
+from brain import collection_registry
+from brain.collection_registry import DEFAULT_REGISTRY
 from brain.library_index import DEFAULT_INDEX, configured_roots, connect
+from brain.scan_library import AUDIO_EXTENSIONS
 
 # claw-dj's own files on the drive (portable database, archives, the identity
 # marker) live together in one directory, kept out of the music tree.
@@ -228,20 +231,169 @@ def resolve_portable_db(index_path: Path = DEFAULT_INDEX) -> Path:
     return portable_db_path(Path(collection["data_dir"]))
 
 
+def _validated_roots(mount_base: Path, roots: list[Path] | None) -> list[Path]:
+    selected = list(roots) if roots is not None else [mount_base]
+    if not selected:
+        raise CollectionNotConfiguredError("at least one scan root is required")
+    normalized: list[Path] = []
+    for root in selected:
+        candidate = Path(root).expanduser().resolve()
+        if not candidate.is_dir():
+            raise CollectionNotConfiguredError(f"not a directory: {candidate}")
+        try:
+            candidate.relative_to(mount_base)
+        except ValueError as error:
+            raise CollectionNotConfiguredError(
+                f"scan root is outside the chosen collection {mount_base}: {candidate}"
+            ) from error
+        if candidate not in normalized:
+            normalized.append(candidate)
+    return normalized
+
+
+def ensure_legacy_collection(
+    *,
+    legacy_index: Path = DEFAULT_INDEX,
+    registry_path: Path = DEFAULT_REGISTRY,
+) -> dict | None:
+    """Record the pre-existing local index without moving or rewriting it."""
+    legacy_index = Path(legacy_index).expanduser().resolve()
+    if not legacy_index.is_file():
+        return None
+    for record in collection_registry.list_collections(registry_path=registry_path):
+        if Path(record["index_path"]) == legacy_index:
+            if collection_registry.active_collection(registry_path=registry_path) is None:
+                return collection_registry.activate(
+                    record["collection_id"], registry_path=registry_path
+                )
+            return record
+    legacy_id = "legacy-local-" + uuid.uuid5(
+        uuid.NAMESPACE_URL, f"claw-dj:{legacy_index}"
+    ).hex
+    record = {
+        "collection_id": legacy_id,
+        "display_name": "Legacy local library",
+        "mount_base": str(legacy_index.parent),
+        "data_dir": str(legacy_index.parent),
+        "index_path": str(legacy_index),
+        "volume_label": legacy_index.parent.name,
+        "last_used_at": None,
+    }
+    return collection_registry.register(
+        record,
+        activate=collection_registry.active_collection(registry_path=registry_path) is None,
+        registry_path=registry_path,
+    )
+
+
+def create_collection(
+    mount_base: Path,
+    *,
+    roots: list[Path] | None = None,
+    display_name: str | None = None,
+    data_dir: Path | None = None,
+    registry_path: Path = DEFAULT_REGISTRY,
+) -> dict:
+    """Create or reuse one per-volume marker/database, then activate it.
+
+    This performs schema and configured-root initialization only.  It never
+    scans tags or starts any analysis/enrichment work.
+    """
+    base = Path(mount_base).expanduser().resolve()
+    if not base.is_dir():
+        raise CollectionNotConfiguredError(f"not a directory: {base}")
+    normalized_roots = _validated_roots(base, roots)
+    resolved_data_dir = (
+        Path(data_dir).expanduser().resolve()
+        if data_dir is not None
+        else find_data_dir(base).resolve()
+    )
+    resolved_data_dir.mkdir(parents=True, exist_ok=True)
+    collection_id, marker_created = read_or_create_marker(resolved_data_dir)
+    index_path = portable_db_path(resolved_data_dir).resolve()
+
+    # Explicit create/switch is the migration boundary. Startup never calls
+    # this and therefore remains silent and non-mutating.
+    ensure_legacy_collection(
+        legacy_index=DEFAULT_INDEX,
+        registry_path=registry_path,
+    )
+    with closing(connect(index_path)) as db:
+        added_at = time.time()
+        for root in normalized_roots:
+            db.execute(
+                "INSERT INTO roots(path, added_at) VALUES (?, ?) "
+                "ON CONFLICT(path) DO NOTHING",
+                (str(root), added_at),
+            )
+        db.commit()
+
+    record = {
+        "collection_id": collection_id,
+        "display_name": (display_name or base.name or collection_id).strip(),
+        "mount_base": str(base),
+        "data_dir": str(resolved_data_dir),
+        "index_path": str(index_path),
+        "volume_label": base.name,
+        "last_used_at": None,
+    }
+    registered = collection_registry.register(
+        record, activate=True, registry_path=registry_path
+    )
+    return {**registered, "marker_created": marker_created, "roots": [str(root) for root in normalized_roots]}
+
+
+def activate_collection(
+    collection_id: str, *, registry_path: Path = DEFAULT_REGISTRY
+) -> dict:
+    ensure_legacy_collection(
+        legacy_index=DEFAULT_INDEX,
+        registry_path=registry_path,
+    )
+    return collection_registry.activate(collection_id, registry_path=registry_path)
+
+
+def estimate_scan(roots: list[Path]) -> dict:
+    """Count candidate paths only; do not open tags or call external services."""
+    normalized: list[Path] = []
+    paths: set[str] = set()
+    for root in roots:
+        candidate = Path(root).expanduser().resolve()
+        if not candidate.is_dir():
+            raise CollectionNotConfiguredError(f"not a directory: {candidate}")
+        normalized.append(candidate)
+        paths.update(
+            str(path.resolve())
+            for path in candidate.rglob("*")
+            if path.suffix.lower() in AUDIO_EXTENSIONS and not path.name.startswith("._")
+        )
+    # Existing scans range widely with storage contention. This is presented
+    # as an estimate, not a deadline; 20 path/tag records per second is a
+    # deliberately conservative local-only baseline.
+    count = len(paths)
+    estimated_seconds = round(count / 20, 1)
+    return {
+        "roots": [str(root) for root in normalized],
+        "audio_file_count": count,
+        "estimated_seconds": estimated_seconds,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
+    parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    register = subparsers.add_parser(
+    register_parser = subparsers.add_parser(
         "register", help="record where the collection is mounted on this machine"
     )
-    register.add_argument(
+    register_parser.add_argument(
         "mount_base",
         type=Path,
         nargs="?",
         help="collection root; derived from configured scan roots when omitted",
     )
-    register.add_argument(
+    register_parser.add_argument(
         "--data-dir",
         type=Path,
         default=None,
@@ -250,7 +402,19 @@ def main() -> None:
             "directory at or above the collection is discovered automatically"
         ),
     )
+    subparsers.add_parser("list", help="list known per-volume collections")
     subparsers.add_parser("status", help="show the registered collection")
+    create_parser = subparsers.add_parser("new", help="create or reuse a per-volume collection")
+    create_parser.add_argument("mount_base", type=Path)
+    create_parser.add_argument("--root", action="append", type=Path, dest="roots")
+    create_parser.add_argument("--name", dest="display_name")
+    create_parser.add_argument(
+        "--scan",
+        action="store_true",
+        help="explicitly run the incremental metadata scan after creation",
+    )
+    use_parser = subparsers.add_parser("use", help="activate a known collection")
+    use_parser.add_argument("collection_id")
     args = parser.parse_args()
 
     if args.command == "register":
@@ -271,10 +435,69 @@ def main() -> None:
             print("reused the marker already on the drive")
         return
 
+    if args.command == "list":
+        active = collection_registry.active_collection(registry_path=args.registry)
+        active_id = active["collection_id"] if active else None
+        for item in collection_registry.list_collections(registry_path=args.registry):
+            marker = "*" if item["collection_id"] == active_id else " "
+            print(f"{marker} {item['collection_id']}  {item['display_name']}  {item['mount_base']}")
+        return
+
+    if args.command == "new":
+        requested_roots = args.roots or [args.mount_base]
+        estimate = estimate_scan(requested_roots)
+        print(
+            f"estimated {estimate['audio_file_count']} audio files "
+            f"(~{estimate['estimated_seconds']:.1f}s metadata scan)"
+        )
+        result = create_collection(
+            args.mount_base,
+            roots=requested_roots,
+            display_name=args.display_name,
+            registry_path=args.registry,
+        )
+        print(f"active collection: {result['display_name']} ({result['collection_id']})")
+        print(f"database: {result['index_path']}")
+        if args.scan:
+            from brain.library import DEFAULT_CRATE_CACHE
+            from brain.library_index import export_records
+            from brain.scan_library import incremental_scan
+
+            summary = incremental_scan(
+                [Path(root) for root in result["roots"]],
+                index_path=Path(result["index_path"]),
+            )
+            DEFAULT_CRATE_CACHE.write_text(json.dumps(export_records(Path(result["index_path"])), indent=2))
+            print(
+                f"scan complete: {summary['new']} new, {summary['changed']} changed, "
+                f"{summary['unchanged']} unchanged"
+            )
+        return
+
+    if args.command == "use":
+        try:
+            result = activate_collection(args.collection_id, registry_path=args.registry)
+        except (KeyError, collection_registry.CollectionUnavailable) as error:
+            raise SystemExit(f"could not activate collection: {error}") from None
+        print(f"active collection: {result['display_name']} ({result['collection_id']})")
+        print(f"database: {result['index_path']}")
+        return
+
+    active = collection_registry.active_collection(registry_path=args.registry)
+    if active is not None:
+        print(f"collection id : {active['collection_id']}")
+        print(f"display name  : {active['display_name']}")
+        print(f"mount base    : {active['mount_base']}")
+        print(f"data dir      : {active['data_dir']}")
+        print(f"volume label  : {active['volume_label']}")
+        print(f"mounted now   : {'yes' if Path(active['mount_base']).is_dir() else 'NO'}")
+        print(f"database      : {active['index_path']}")
+        return
+
     collection = configured_collection(args.index)
     if collection is None:
         print("no collection registered on this machine yet")
-        print("run: uv run python -m brain.collection register")
+        print("run: uv run python -m brain.collection new MOUNT --root ROOT")
         return
     mount_base = Path(collection["mount_base"])
     portable_db = portable_db_path(Path(collection["data_dir"]))

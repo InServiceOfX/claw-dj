@@ -282,6 +282,52 @@ contexts:
           path: "scripts/start.sh"
 
   # ==========================================================
+  # Per-volume music collections
+  # ==========================================================
+
+  collection_registry:
+    paths: ["*collection_registry*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/collection_registry.py"
+
+  collection:
+    paths: ["*collection_Python*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/collection.py"
+
+  library_index:
+    paths: ["*library_index*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/library_index.py"
+
+  scan_library:
+    paths: ["*scan_library*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/scan_library.py"
+
+  api_collections:
+    paths: ["*api_collections*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/api/api_collections.py"
+
+  collection_picker:
+    paths: ["*collection_picker*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/web/collection_picker.js"
+
+  # ==========================================================
   # Default fallback — prompts_dir belongs ONLY here
   # ==========================================================
 

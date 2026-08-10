@@ -1,0 +1,29 @@
+<pdd-reason>Curate needs a visible, non-blocking collection selector and an explicit create/scan flow while startup remains silent and defaults to the last active collection.</pdd-reason>
+<pdd-interface>
+{"type":"component","component":{"props":[],"emits":["collectionchange"],"dataSources":[{"method":"GET","source":"/api/collections"},{"method":"POST","source":"/api/collections"}]}}
+</pdd-interface>
+<pdd-dependency>brain/api/api_collections_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement `brain/web/collection_picker.js` as a vanilla ES module integrated above the Curate ingest controls.
+
+% Contract
+
+R1 (MUST): Show the active collection name/path and a selector for previously registered collections; startup makes no prompt.
+R2 (MUST): Activating a known collection requires one explicit user action and then refreshes Curate metadata/roots/tracks without reloading into a different collection silently.
+R3 (MUST): “Start new collection” accepts a mount/folder and one or more scan roots, requests an estimate, presents file count/estimated duration, and asks for confirmation before submitting `scan=true`.
+R4 (MUST): Allow register-without-scan when the user declines or chooses not to scan.
+R5 (MUST): Disable switch/register controls while the API reports a busy operation and show actionable errors in an aria-live status region.
+R6 (MUST NOT): Never request or send a SQLite path, collection UUID, Mixxx port, credentials, or enrichment options.
+R7 (MUST NOT): Never trigger Analyze & enrich, Mixxx, playback, network lyrics, or APIs for the full collection.
+R8 (MUST): Keep the existing Add music folder and Check for new music controls usable for the active collection.
+
+% Output
+
+- Primary output: `brain/web/collection_picker.js`.
+- Minimal `playlist.html` markup/script integration is allowed; no framework or bundler.
+
+% Verification
+
+- Run node --check, static contract checks, and real loopback UI/API tests; then full unittest.

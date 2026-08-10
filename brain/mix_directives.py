@@ -288,10 +288,10 @@ def apply_directives(
     selection_path: Path = DEFAULT_SELECTION,
     db_path: Path | None = None,
 ) -> None:
-    from brain.library_index import DEFAULT_INDEX, connect
+    from brain.library_index import connect, current_index_path
     from brain.playlist import save_selection
 
-    db_path = db_path or DEFAULT_INDEX
+    db_path = current_index_path(db_path)
 
     if notes:
         with closing(connect(db_path)) as db:
@@ -322,9 +322,9 @@ def run(
     playlist_path: Path = DEFAULT_PLAYLIST_JSON,
     db_path: Path | None = None,
 ) -> None:
-    from brain.library_index import DEFAULT_INDEX
+    from brain.library_index import current_index_path
 
-    db_path = db_path or DEFAULT_INDEX
+    db_path = current_index_path(db_path)
     tracks = load_playlist(playlist_path)
     prompt = build_prompt(tracks, brief, db_path)
 

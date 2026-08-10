@@ -18,7 +18,7 @@ def hydrate(bunch):
     if bunch.track_ids:
         try:
             marks = ",".join("?" for _ in bunch.track_ids)
-            with library_index.connect(library_index.DEFAULT_INDEX) as db:
+            with library_index.connect() as db:
                 titles = {row["track_id"]: dict(row) for row in db.execute(f"SELECT track_id,title,artist FROM tracks WHERE track_id IN ({marks})", list(bunch.track_ids))}
         except Exception:
             pass

@@ -24,7 +24,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from brain.library_index import DEFAULT_INDEX, connect
+from brain.library_index import connect
 from brain.portable_library import _CACHE_TABLES, _TRACK_COLUMNS
 
 
@@ -123,7 +123,7 @@ def convert_playlist(*, dry_run: bool = False) -> dict:
 
     new_order = []
     updated = []
-    with closing(connect(DEFAULT_INDEX)) as db:
+    with closing(connect()) as db:
         replacements: dict[str, str] = {}
         for track in tracks:
             tid = track["track_id"]

@@ -28,6 +28,7 @@ from pathlib import Path
 from mutagen import File as MutagenFile
 
 from brain.library import DEFAULT_CRATE_CACHE
+from brain import library_index
 from brain.library_index import DEFAULT_INDEX, begin_scan, bootstrap_analysis, connect, export_records
 from brain.playlist import normalize
 
@@ -188,7 +189,7 @@ def scan(
 
 
 def incremental_scan(
-    roots: list[Path], *, index_path: Path = DEFAULT_INDEX,
+    roots: list[Path], *, index_path: Path | None = None,
     min_age_seconds: float = 300, workers: int = 8, progress_every: int = 100,
     allow_bulk_removal: bool = False,
     max_missing_fraction: float = DEFAULT_MAX_MISSING_FRACTION,
@@ -207,9 +208,13 @@ def incremental_scan(
         if not root.exists():
             raise FileNotFoundError(f"scan root does not exist: {root}")
 
+    # Freeze one database target for the complete run. A concurrent explicit
+    # collection switch may affect the next operation, never this scan.
+    target_index = library_index.current_index_path(index_path)
+
     # Mark the scan running BEFORE discovery: rglob over a big USB tree can
     # take a while by itself, and the GUI should show activity immediately.
-    db = connect(index_path)
+    db = connect(target_index)
     started_at = begin_scan(db, 0)
     try:
         paths_by_root: dict[str, Path] = {}
@@ -228,7 +233,7 @@ def incremental_scan(
         db.commit()
         print(f"    discovered {len(paths_by_root)} audio files under {len(normalized)} root(s)", flush=True)
         baseline_paths: set[str] = set()
-        if DEFAULT_CRATE_CACHE.exists():
+        if target_index == library_index.DEFAULT_INDEX and DEFAULT_CRATE_CACHE.exists():
             try:
                 baseline_paths = {
                     row["track_id"] for row in json.loads(DEFAULT_CRATE_CACHE.read_text())
@@ -372,7 +377,11 @@ def incremental_scan(
             for line in lines:
                 print(line, flush=True)
             print(f"    {warnings}", flush=True)
-        bootstrap_analysis(db)
+        # The compatibility crate was historically used only to bootstrap the
+        # legacy local index. Never import that process-global export into a
+        # per-volume collection database.
+        if target_index == library_index.DEFAULT_INDEX:
+            bootstrap_analysis(db)
         finished = time.time()
         db.execute(
             "UPDATE roots SET last_scan_at=? WHERE path IN (%s)" % ",".join("?" * len(normalized)),
@@ -407,7 +416,12 @@ def main() -> None:
         "roots", type=Path, nargs="+", help="directories to scan for audio files"
     )
     parser.add_argument("--out", type=Path, default=DEFAULT_CRATE_CACHE)
-    parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
+    parser.add_argument(
+        "--index",
+        type=Path,
+        default=None,
+        help="explicit SQLite path; omitted uses the active collection",
+    )
     parser.add_argument(
         "--catalog",
         action="store_true",

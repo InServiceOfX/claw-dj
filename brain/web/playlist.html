@@ -49,6 +49,17 @@
     .ingest { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px; margin-bottom:12px; border:1px solid var(--line); background:var(--panel); }
     .ingest h2 { margin-bottom:3px; }
     .ingest-detail { color:var(--muted); }
+    .collection-picker { padding:14px; margin-bottom:12px; border:1px solid var(--line); background:var(--panel); }
+    .collection-picker-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .collection-picker-row select { min-width:240px; }
+    .collection-new-form { display:flex; flex-direction:column; gap:12px; margin-top:10px; max-width:920px; }
+    .collection-field-row { display:flex; flex-direction:column; gap:6px; }
+    .collection-input-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .collection-input-row input { flex:1; min-width:220px; }
+    .collection-new-form textarea { min-height:90px; width:100%; border:1px solid var(--line); border-radius:4px; padding:7px 10px; font:inherit; resize:vertical; }
+    .collection-actions-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; }
+    .collection-scan-option { display:flex; align-items:center; gap:6px; color:var(--muted); }
+    .collection-scan-option input { min-height:16px; width:16px; }
     .brain { padding:14px; margin-bottom:12px; border:1px solid var(--line); background:var(--panel); }
     .brain h2 { margin-bottom:3px; }
     .brain-form { display:grid; grid-template-columns:minmax(220px,1fr) 220px 140px 70px auto; gap:8px; margin-top:10px; }
@@ -178,6 +189,10 @@
   </div>
   <main>
     <div class="page" id="page-curate">
+      <div id="collection-picker" class="collection-picker" aria-label="Music collection chooser">
+        <h2>Music collection</h2>
+        <div id="collection-picker-status" class="ingest-detail" aria-live="polite">Loading the last-used collection…</div>
+      </div>
       <div class="ingest">
         <div><h2>New music</h2><div class="ingest-detail" id="ingest-detail">Checking the library index…</div>
           <div class="banner" id="scan-warnings" style="margin-top:6px" hidden></div>
@@ -371,7 +386,12 @@
       const data = await api('/api/ingest');
       const roots = (data.roots || []).map(path => path.split('/').pop()).join(' + ');
       if (data.error) el('ingest-detail').textContent = `Scan failed: ${data.error}`;
-      else if (data.running) el('ingest-detail').textContent = `Scanning ${roots || 'configured folders'}… ${data.processed || 0}/${data.discovered || '?'} files`;
+      else if (data.running) {
+        const counts = `${data.processed || 0}/${data.discovered || '?'} files`;
+        el('ingest-detail').textContent = data.locked
+          ? `Scanning ${roots || 'configured folders'}… ${counts} (index busy — progress updates when free; watch the terminal for live lines)`
+          : `Scanning ${roots || 'configured folders'}… ${counts}`;
+      }
       else if (data.finished_at) el('ingest-detail').textContent = `${data.new_count} new · ${data.changed_count} changed · ${data.unchanged_count} unchanged · ${data.untagged_count} need tags`;
       else el('ingest-detail').textContent = roots ? `Ready to scan ${roots}` : 'No folders configured yet — add one below.';
       // A warning is not a failure: the scan finished but deliberately skipped

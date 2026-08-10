@@ -1,3 +1,4 @@
+import './collection_picker.js';
 import * as client from './plan_client.js';
 import {mountPlanPicker} from './plan_picker.js';
 import {createTransitionEditor} from './transition_editor.js';

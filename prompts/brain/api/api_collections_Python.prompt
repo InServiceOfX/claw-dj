@@ -1,0 +1,32 @@
+<pdd-reason>The Curate page and agent harness need one loopback API that lists, estimates, registers, activates and optionally starts a scan without duplicating collection lifecycle rules.</pdd-reason>
+<pdd-interface>
+{"type":"api","api":{"endpoints":[
+  {"method":"GET","path":"/api/collections","responseSchema":"{active_collection_id, collections:[{collection_id,display_name,mount_base,index_path,mounted,active}]}"},
+  {"method":"POST","path":"/api/collections","requestSchema":"{action:'estimate'|'register'|'activate', mount_base?, roots?, display_name?, collection_id?, scan?}","errors":["400 malformed action/path/roots","409 busy scan/enrichment/mix","404 unknown collection","503 unavailable volume"]}
+]}}
+</pdd-interface>
+<pdd-dependency>brain/collection_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/api_router_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement `brain/api/api_collections.py` as the collection surface for the local playlist editor.
+
+% Contract
+
+R1 (MUST): GET reports every known collection, current activation and current mounted/available state without creating or scanning anything.
+R2 (MUST): `estimate` counts candidate audio paths only and performs no tag reads or network/API calls.
+R3 (MUST): `register` calls the shared collection lifecycle, reloads active crate/app state, and starts an incremental scan only when `scan=true` was explicitly submitted after user confirmation.
+R4 (MUST): `activate` refuses while scan, enrichment, build or live playback is running, then activates and reloads app state atomically from the user's perspective.
+R5 (MUST NOT): Never accept a client-supplied SQLite path, collection_id for registration, Mixxx port, or arbitrary action.
+R6 (MUST NOT): Never merge, delete or mark tracks unavailable in the collection being left.
+R7 (MUST): Return actionable structured errors for unknown or unmounted collections.
+
+% Output
+
+- Primary output: `brain/api/api_collections.py`.
+- Minimal route registration and PlaylistApp callback adaptations are allowed.
+
+% Verification
+
+- Run real loopback GET/POST tests covering estimate/register/activate, busy rejection, restart default and isolation; then full unittest and py_compile.

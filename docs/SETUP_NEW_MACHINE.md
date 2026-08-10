@@ -46,6 +46,45 @@ has its own diverged edits. Imports are merges (fill-missing only), scans
 are incremental (unchanged files are skipped), and re-running any step is a
 no-op the second time.
 
+## Multiple independent volumes
+
+The older export/import procedure below remains supported. For a volume that
+should carry its own live claw-dj database, use the per-volume lifecycle
+instead. Both the CLI and the Curate page call the same code and produce the
+same marker, SQLite, configured roots, and machine-local active pointer.
+
+From the CLI, first create/register without scanning:
+
+```sh
+uv run python -m brain.collection new /path/to/mounted-volume \
+  --root /path/to/mounted-volume/Music \
+  --name "My music collection"
+```
+
+The command prints a path-only file-count/time estimate first. Add `--scan`
+only when you want to run the initial local metadata scan immediately. That
+scan reads embedded tags; it does **not** run lyrics, chroma, Mixxx analysis,
+playback, or any network/API enrichment.
+
+To inspect or switch later:
+
+```sh
+uv run python -m brain.collection list
+uv run python -m brain.collection status
+uv run python -m brain.collection use <collection-id>
+```
+
+In the browser, open `#curate`, use **Start new collection…**, supply the
+mounted folder and scan roots, and review the estimate. The browser asks for
+confirmation before creation/scan. Uncheck **Scan after creating** to register
+and activate without scanning. Existing **Add music folder** and **Check for
+new music** controls always apply to the active collection.
+
+The last explicitly used collection is restored silently on the next GUI or
+`start.sh` launch. If its volume is absent, claw-dj reports that condition and
+does not select another collection or create an empty database. Track IDs are
+still absolute paths, so the volume-label contract below remains unchanged.
+
 ## Prerequisites (one-time, before any of this)
 
 None of these come from `git clone`/`git pull` on claw-dj — they're

@@ -1,0 +1,34 @@
+<pdd-reason>Per-volume library databases need one machine-local source of truth for known collections and the last active choice; storing that pointer inside any collection database makes switching impossible when that volume is absent.</pdd-reason>
+<pdd-interface>
+{"type":"module","module":{"functions":[
+  {"name":"list_collections","signature":"list_collections(*, registry_path: Path = DEFAULT_REGISTRY) -> list[dict]"},
+  {"name":"active_collection","signature":"active_collection(*, registry_path: Path = DEFAULT_REGISTRY) -> dict | None"},
+  {"name":"active_index_path","signature":"active_index_path(*, registry_path: Path = DEFAULT_REGISTRY, fallback: Path) -> Path"},
+  {"name":"register","signature":"register(record: dict, *, activate: bool = True, registry_path: Path = DEFAULT_REGISTRY) -> dict"},
+  {"name":"activate","signature":"activate(collection_id: str, *, registry_path: Path = DEFAULT_REGISTRY) -> dict","errors":["KeyError unknown collection","CollectionUnavailable when mount or database is unavailable"]}
+]}}
+</pdd-interface>
+
+% Goal
+
+Implement `brain/collection_registry.py` as a pure-stdlib machine-local registry of known music collections and the last active collection.
+
+% Contract
+
+R1 (MUST): Persist collection_id, display_name, mount_base, data_dir, index_path, volume_label and last_used_at in a versioned JSON document under gitignored brain/data.
+R2 (MUST): Use atomic same-directory replacement and preserve every non-active collection record when registering or activating another.
+R3 (MUST): `active_index_path` returns the supplied legacy fallback when no registry exists, preserving existing installations without migration at startup.
+R4 (MUST): Activation validates that the registered mount and SQLite file are currently available before changing active_collection_id.
+R5 (MUST NOT): Startup must not prompt, scan volumes, create databases, or silently select a different collection when the last active collection is unavailable.
+R6 (MUST NOT): Never store the machine-local active pointer inside a removable collection database.
+R7 (MUST): Reject malformed registry data and duplicate collection identities with conflicting paths explicitly.
+
+% Output
+
+- Primary output: `brain/collection_registry.py`.
+- Python 3.13+, stdlib only.
+
+% Verification
+
+- Run focused registry and collection-switch tests, including atomic preservation, restart default, malformed registry and missing-volume behavior.
+- Run the full unittest suite and py_compile.

@@ -66,7 +66,7 @@ def track_rows(track_ids):
     found = {}
     try:
         marks = ",".join("?" for _ in track_ids)
-        with library_index.connect(library_index.DEFAULT_INDEX) as db:
+        with library_index.connect() as db:
             for row in db.execute(f"SELECT * FROM tracks WHERE track_id IN ({marks})", track_ids):
                 found[row["track_id"]] = dict(row)
     except Exception:
