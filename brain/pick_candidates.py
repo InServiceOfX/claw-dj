@@ -7,8 +7,10 @@ paths and cannot invent tracks — ids it returns that aren't in the view are
 dropped.
 
 Engines:
-  nemoclaw — hermes sandbox (NVIDIA Nemotron) via its OpenAI-compatible API.
-             Needs: `openshell forward start --background 8642 hermes`.
+  nemoclaw — NemoClaw sandbox (NVIDIA Nemotron) via its OpenAI-compatible API.
+             Needs Docker Desktop running, a live sandbox (default name on this
+             machine: `nemoclaw-hermes`, override with CLAWDJ_NEMOCLAW_SANDBOX),
+             and `openshell forward start --background 8642 <sandbox>`.
   h-agent  — H Company Agent Platform via hai_agents (planning-only task,
              no GUI). Needs holo/hai login credentials on this machine.
   generic  — any OpenAI-chat-compatible endpoint: xAI/Grok, a local
@@ -47,10 +49,80 @@ DEFAULT_VIEW = DATA_DIR / "new_music_agent.json"
 DEFAULT_ID_MAP = DATA_DIR / "new_music_ids.json"
 DEFAULT_OUT = DATA_DIR / "new_music_picks.json"
 NEMOCLAW_URL = "http://127.0.0.1:8642/v1/chat/completions"
+# Historical docs used sandbox name "hermes"; current NemoClaw registers
+# "nemoclaw-hermes". Prefer CLAWDJ_NEMOCLAW_SANDBOX, then discovery, then
+# these fallbacks in order.
+NEMOCLAW_SANDBOX_FALLBACKS = ("nemoclaw-hermes", "hermes")
 
 NEUTRAL_BRIEF = (
     "recognizable songs that would mix well into a hip-hop/R&B DJ showcase"
 )
+
+
+def _nemoclaw_sandbox_name() -> str:
+    """Resolve the NemoClaw sandbox that exposes the chat API on this machine."""
+    import os
+    import re
+
+    configured = (os.environ.get("CLAWDJ_NEMOCLAW_SANDBOX") or "").strip()
+    if configured:
+        return configured
+    try:
+        listed = subprocess.run(
+            ["nemoclaw", "list"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return NEMOCLAW_SANDBOX_FALLBACKS[0]
+    text = (listed.stdout or "") + "\n" + (listed.stderr or "")
+    # Prefer the default-marked sandbox, else any hermes-ish name.
+    default_match = re.search(r"^\s*(\S+)\s+\*", text, flags=re.MULTILINE)
+    if default_match:
+        return default_match.group(1)
+    for candidate in NEMOCLAW_SANDBOX_FALLBACKS:
+        if re.search(rf"^\s*{re.escape(candidate)}\b", text, flags=re.MULTILINE):
+            return candidate
+    names = re.findall(r"^\s{2,}([a-zA-Z0-9][\w.-]+)\b", text, flags=re.MULTILINE)
+    for name in names:
+        if "hermes" in name.lower():
+            return name
+    return NEMOCLAW_SANDBOX_FALLBACKS[0]
+
+
+def _nemoclaw_gateway_token(sandbox: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["nemoclaw", sandbox, "gateway-token", "--quiet"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            "nemoclaw CLI not found on PATH — install/configure NemoClaw, "
+            "or use engine h-agent / generic instead"
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(
+            f"nemoclaw {sandbox} gateway-token timed out — is Docker Desktop running?"
+        ) from error
+    token = (completed.stdout or "").strip()
+    if completed.returncode == 0 and token:
+        return token
+    detail = (completed.stderr or completed.stdout or "").strip() or f"exit {completed.returncode}"
+    raise RuntimeError(
+        f"nemoclaw gateway-token failed for sandbox {sandbox!r}.\n"
+        "NemoClaw needs: (1) Docker Desktop running, "
+        f"(2) sandbox up — try `nemoclaw {sandbox} start` or `nemoclaw status`, "
+        f"(3) API forward — `openshell forward start --background 8642 {sandbox}`.\n"
+        "Until then, switch the DJ brain engine to **h-agent** or **generic** "
+        "(CLAWDJ_LLM_* env vars).\n"
+        f"Detail: {detail}"
+    )
 
 
 def condensed_view(view: dict, per_artist: int = 12) -> str:
@@ -119,12 +191,8 @@ def parse_pick_ids(text: str, allowed: set[str]) -> list[str]:
 
 
 def ask_nemoclaw(prompt: str, *, timeout_s: float = 600.0) -> str:
-    token = subprocess.run(
-        ["nemoclaw", "hermes", "gateway-token", "--quiet"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    sandbox = _nemoclaw_sandbox_name()
+    token = _nemoclaw_gateway_token(sandbox)
     payload = json.dumps(
         {
             "model": "hermes-agent",
@@ -140,8 +208,16 @@ def ask_nemoclaw(prompt: str, *, timeout_s: float = 600.0) -> str:
             "Authorization": f"Bearer {token}",
         },
     )
-    with urllib.request.urlopen(request, timeout=timeout_s) as response:
-        body = json.loads(response.read())
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            body = json.loads(response.read())
+    except OSError as error:
+        raise RuntimeError(
+            f"NemoClaw chat API not reachable at {NEMOCLAW_URL} "
+            f"(sandbox {sandbox!r}). After Docker + sandbox are up, run: "
+            f"`openshell forward start --background 8642 {sandbox}`. "
+            f"Or use engine h-agent / generic. Underlying error: {error}"
+        ) from error
     return body["choices"][0]["message"]["content"]
 
 
