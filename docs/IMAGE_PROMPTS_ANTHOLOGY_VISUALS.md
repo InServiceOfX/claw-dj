@@ -771,7 +771,7 @@ These are **not** mix era cards. They are the fixed face of the project across:
 | Surface | URL / place |
 |---|---|
 | YouTube | https://www.youtube.com/@claw-dj |
-| TikTok | https://www.tiktok.com/@clawdj6 |
+| TikTok | https://www.tiktok.com/@claw__dj |
 | Links page (self-hosted) | `repos/links` example `examples/claw-dj/` → deploy as its own site |
 
 Generate once, reuse everywhere. Prefer **one master square avatar** and crop
@@ -974,7 +974,7 @@ photoreal, complex scene, multiple objects, fine line noise
 | Place | Current | Advice |
 |---|---|---|
 | YouTube | `@claw-dj` | Keep as **canonical** brand spelling. |
-| TikTok | `@clawdj6` | Fine if that handle was available; **display name** = **claw-dj**. |
+| TikTok | `@claw__dj` | Keep; **display name** = **claw-dj**. |
 | Links | handle `claw-dj` | Matches YouTube. |
 | Bio / About | — | Always write **claw-dj**, not “Claw DJ” inconsistently. |
 
@@ -1002,7 +1002,7 @@ Real decks and transitions; software and generative AI in the loop.
 
 Shorts: blends and moments. Full mixes on this channel.
 
-TikTok: @clawdj6
+TikTok: @claw__dj
 Links: [your links page URL]
 ```
 
@@ -1014,7 +1014,7 @@ code and generative AI helping build and run the mixes.
 
 Clips show the handoffs. YouTube holds the longer sets.
 
-TikTok: @clawdj6
+TikTok: @claw__dj
 Links: [your links page URL]
 ```
 
@@ -1038,8 +1038,8 @@ hip hop mix, R&B mix, DJ mix, transitions, boom bap, west coast, east coast, fun
 
 ### TikTok — what to edit
 
-1. **Name (display):** `claw-dj` (not only clawdj6)
-2. **Username:** keep `@clawdj6` unless a cleaner handle becomes available
+1. **Name (display):** `claw-dj` (not only the username)
+2. **Username:** keep `@claw__dj`
 3. **Photo:** same 10A avatar
 4. **Bio:** short TikTok line above
 5. **Website link:** links page (or YouTube if links not live yet)
@@ -1065,7 +1065,7 @@ above (hip-hop & R&B · open to more · code + AI).
 **Buttons shipping in the example:**
 
 1. YouTube — full mixes & Shorts → `https://www.youtube.com/@claw-dj` (highlight)
-2. TikTok — transition clips → `https://www.tiktok.com/@clawdj6` (highlight)
+2. TikTok — transition clips → `https://www.tiktok.com/@claw__dj` (highlight)
 3. GitHub — open project → `https://github.com/InServiceOfX/claw-dj`
 
 **Theme:** `dark-space` + `color_scheme: dark` (matches night studio brand).

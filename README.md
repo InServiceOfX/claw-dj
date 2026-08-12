@@ -10,6 +10,17 @@ the H Company computer-use agent (`brain/`) makes judgment calls and visibly
 drives Mixxx's GUI; a deterministic MIDI engine (`hands/`) executes anything
 beat-critical, because a screenshot-loop agent is too slow for that.
 
+## Watch and follow
+
+- [YouTube — @claw-dj](https://www.youtube.com/@claw-dj): full mixes,
+  transition-format experiments, and DJ showcases.
+- [TikTok — @claw__dj](https://www.tiktok.com/@claw__dj): short transition
+  excerpts, A/B comparisons, and project updates.
+
+The public videos show how the project sounds in practice; this repository
+documents and implements the DJ brain, transition planning, and deterministic
+Mixxx control behind them.
+
 - **Need a live two-track transition immediately?**
   [docs/MIX_TWO_TRACKS.md](docs/MIX_TWO_TRACKS.md) is the shortest attended
   runbook.
