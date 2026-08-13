@@ -55,7 +55,7 @@ Use 9:16 derivatives for Reels, Shorts, and X.
 4. When a clip crosses a track boundary, render before/after cards and hard-cut exactly at the musical transition.
 5. Encode H.264 High Profile, `yuv420p`, 30 fps, and stereo AAC at 48 kHz. A 0.15-second fade-in and 0.5-second fade-out prevent edge clicks.
 
-Use the checked-in renderer:
+Use the checked-in renderer for a single transition teaser:
 
 ```bash
 python3 agent/hermes-skill/scripts/render_transition_teaser.py \
@@ -70,6 +70,18 @@ python3 agent/hermes-skill/scripts/render_transition_teaser.py \
 ```
 
 The script uses Swift/AppKit for cards and FFmpeg for media. It verifies required codecs, dimensions, duration, full decode, scene timing, and audio levels before reporting success.
+
+16:9 YouTube masters and Noe-structured 9:16 A/B shorts from a full Mixxx
+WAV live beside that teaser as campaign recipes:
+
+```text
+agent/hermes-skill/scripts/full-mix/
+agent/hermes-skill/scripts/ab-shorts/
+```
+
+See `agent/hermes-skill/scripts/README.md` and `docs/marketing/README.md`.
+Keep rendered media out of Git. Homebrew ffmpeg often lacks `drawtext`; those
+recipes pre-render PNG overlays instead.
 
 ### Manual FFmpeg equivalent
 

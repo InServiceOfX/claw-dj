@@ -6,7 +6,15 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
-## Active cross-machine priorities (updated 2026-08-06)
+## Active cross-machine priorities (updated 2026-08-12)
+
+- [x] **Media scripts + Veltria read live in-repo (2026-08-12).** Campaign
+      renderers from `~/Music/Mixxx/Recordings/` are copied (scripts only)
+      under `agent/hermes-skill/scripts/{full-mix,ab-shorts}/`. Marketing
+      home is `docs/marketing/`. VeltriaAI DJClaw/DJ Treta notes are in
+      `docs/marketing/VELTRIA_DJCLAW.md`. Rendered WAV/MP4 stay out of Git.
+
+## Earlier priorities (updated 2026-08-06)
 
 - [x] **Per-volume music collections with live Curate switching (2026-08-06).**
       `brain/data/collections.json` is now the gitignored, atomic machine-local
