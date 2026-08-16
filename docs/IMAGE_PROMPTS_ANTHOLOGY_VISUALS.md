@@ -808,27 +808,48 @@ daytime beach vacation, sports jersey sponsor logos
 | Links page | ≥512×512, square, ideally &lt;150 KB | `public/avatar.jpg` |
 
 **Face/center rule:** put the subject in the **center 70%**. Platforms crop
-circles; corners die.
+circles; corners die. For Variant A the claw should fill most of that circle
+(about **70–85% of the square**) so it still reads at 32–48 px.
 
 #### Variant A — icon mascot (recommended default)
 
+**Subject lock:** one **cartoon lobster claw** (the pincer / chela only).
+Not a shrimp. Not a whole lobster. Not a panther. Not a vinyl deck.
+The claw *is* the mark.
+
 **CLIP-L:**
 ```
-retro anime, claw-dj brand avatar, circular-friendly centered composition, anthropomorphic sleek panther or claw emblem fused with vinyl record and DJ mixer, amber rim light, deep navy background, glossy black chrome, single strong icon, clean silhouette, profile picture
+retro anime, very cartoony, claw-dj brand avatar, square profile picture, circular crop safe, single giant lobster claw only, isolated chela pincer, two-finger crusher claw, no shrimp, no whole lobster, no animal body, no vinyl record, no turntable, thick outline cel shade, warm amber orange lobster, deep navy void background, centered, huge in frame, clean silhouette, high contrast icon
 ```
 
 **T5:**
 ```
-A square brand avatar for claw-dj, designed to read at tiny circular crop: centered retro-anime icon of a sleek dark panther or abstract claw mark integrated with a vinyl record and small DJ mixer faders, warm amber rim light against deep navy void, high contrast, glossy black and chrome accents, no tiny details at the edges. Looks like a premium music-channel mark — mythic West Coast / East Coast crate energy without copying a real label logo. Minimal, bold, immediately recognizable. Optional tiny subtle “claw” motif, not busy lettering. Center-weighted for TikTok and YouTube profile circles.
+A square brand avatar for claw-dj. The ONLY subject is one oversized cartoon lobster claw — the pincer / chela by itself. Retro-anime, very cartoony, thick ink outlines, simple cel-shaded volumes, readable as a logo.
+
+Composition: the claw fills most of the square (about 70–85% of the frame) and sits in the center so a circular TikTok/YouTube crop still shows the full pincer. Leave a little navy breathing room at the edges; do not let the claw touch the corners. Slightly open two-finger claw (movable dactyl + thick propodus) so the silhouette still reads as a claw when shrunk to a tiny profile icon. Three-quarter or side-on view, chunky and graphic, not a scientific illustration.
+
+Color: warm amber-orange lobster shell, glossy highlights, deep navy or near-black void background, optional faint amber rim light. No text.
+
+Do not include: shrimp, prawn, crawfish, langoustine, whole lobster body, tail, head, eyes, antennae, legs, a second claw, a person, a panther, a vinyl record, a turntable, a DJ mixer, decks, faders, or any extra mascot.
 ```
 
 **Negative (append):**
 ```
-full body crowded scene, tiny unreadable UI, multiple faces, photoreal celebrity,
-random brand logos, Instagram filter selfie, text-heavy poster
+shrimp, prawn, crawfish, crayfish, langoustine, whole lobster, lobster body,
+lobster tail, lobster head, antennae, eyes, legs, full crustacean, two claws,
+photoreal seafood, dinner plate, panther, cat, vinyl record, turntable, platter,
+tonearm, DJ mixer, faders, tiny unreadable UI, multiple objects, crowded scene,
+text, logo lettering, photoreal celebrity
 ```
 
-**Params:** guidance 3.5–4.0; retro-anime LoRA 0.7–0.9; steps 24–28.
+**Params:** guidance **3.8–4.2** (lock the single object); retro-anime LoRA
+**0.75–0.95** (push cartoon); steps 24–28.
+
+**Known failure modes (from earlier gens):** Flux invents a shrimp, a full
+lobster, or a turntable if you mention vinyl / mixer / panther *or* if you say
+only “claw” without “lobster claw, isolated pincer, no body.” Keep the lock
+tokens. If a batch still grows a body, add `isolated object, product icon, no
+torso` to CLIP-L and raise guidance toward 4.2.
 
 #### Variant B — stylized DJ portrait (if you want a “person”)
 
@@ -934,17 +955,18 @@ stock handshake business photo
 
 ### 10E. Optional favicon concept (if you draw vector later)
 
-Flux is weak at tiny favicons. Prefer hand-vector or simplify the **10A** mark
-to a **single claw + arc of vinyl** at 32×32. If you still want a Flux study:
+Flux is weak at tiny favicons. Prefer hand-vector or simplify the **10A**
+cartoon lobster claw to a **single chunky pincer silhouette** at 32×32. If you
+still want a Flux study:
 
 **CLIP-L:**
 ```
-minimal icon only, single claw mark over vinyl arc, black and amber, flat, centered, no detail, logo study
+minimal icon only, single cartoon lobster claw pincer, no body, no shrimp, amber on navy, flat, centered, huge shape, logo study
 ```
 
 **T5:**
 ```
-Extremely simple logo study: one abstract claw stroke intersecting a partial vinyl circle, amber on black, flat design, huge clear shape, no gradients required, no text.
+Extremely simple logo study: one cartoon lobster claw (pincer only, no body) as a huge clear silhouette, amber-orange on deep navy, flat design, no vinyl, no text, no extra objects.
 ```
 
 **Negative:**
