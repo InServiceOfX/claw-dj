@@ -813,38 +813,74 @@ circles; corners die. For Variant A the claw should fill most of that circle
 
 #### Variant A — icon mascot (recommended default)
 
-**Subject lock:** one **cartoon lobster claw** (the pincer / chela only).
-OpenClaw / claw-dj is a **crustacean** mark — lobster claw, never a panther
+**Subject lock:** one **disembodied cartoon pincer**. Not a lobster portrait.
+OpenClaw / claw-dj is a **crustacean** mark — lobster *claw*, never a panther
 or big-cat paw. Not a shrimp. Not a whole lobster. Not a vinyl deck.
 The claw *is* the mark. Do not fuse it with decks, mixer, or vinyl.
 
+Lead CLIP-L with **pincer / chela / crusher claw**, not the word “lobster.”
+“Lobster claw” still completes as a whole animal.
+
 **CLIP-L:**
 ```
-retro anime, very cartoony, claw-dj brand avatar, square profile picture, circular crop safe, single giant lobster claw only, isolated chela pincer, two-finger crusher claw, no shrimp, no whole lobster, no animal body, no vinyl record, no turntable, thick outline cel shade, warm amber orange lobster, deep navy void background, centered, huge in frame, clean silhouette, high contrast icon
+disembodied crusher pincer, isolated chela only, single two-finger claw icon, cropped at the wrist joint, no thorax no head no tail no legs, cute chibi cel anime sticker, thick even ink outline, flat 3-color, giant centered profile picture, circular crop safe, amber orange shell, deep navy void, claw-dj brand avatar, Maine lobster crusher-claw shape, no shrimp, no whole lobster, no turntable, no vinyl, floating logo object
 ```
 
 **T5:**
 ```
-A square brand avatar for claw-dj. The ONLY subject is one oversized cartoon lobster claw — the pincer / chela by itself. Retro-anime, very cartoony, thick ink outlines, simple cel-shaded volumes, readable as a logo.
+A square brand avatar for claw-dj. Draw ONE object only: a cute, simplified retro-anime sticker of a single lobster crusher pincer (the chela). This is a logo, not a wildlife portrait.
 
-Composition: the claw fills most of the square (about 70–85% of the frame) and sits in the center so a circular TikTok/YouTube crop still shows the full pincer. Leave a little navy breathing room at the edges; do not let the claw touch the corners. Slightly open two-finger claw (movable dactyl + thick propodus) so the silhouette still reads as a claw when shrunk to a tiny profile icon. Three-quarter or side-on view, chunky and graphic, not a scientific illustration.
+The pincer is disembodied. Crop it at the wrist / carpus. There is no arm leading off-frame to a body. There is no head, no eyes, no antennae, no mouthparts, no thorax, no abdomen, no tail fan, no walking legs, and no second claw. The frame cannot contain a whole lobster even if you zoom in.
 
-Color: warm amber-orange lobster shell, glossy highlights, deep navy or near-black void background, optional faint amber rim light. No text.
+Composition: the two-finger pincer (thick propodus + movable dactyl, slightly open so the silhouette reads at 32 px) fills 70–85% of the square and sits dead-center for a circular TikTok/YouTube crop. A little navy padding at the edges. Three-quarter view, chunky, toy-like.
 
-Do not include: shrimp, prawn, crawfish, langoustine, whole lobster body, tail, head, eyes, antennae, legs, a second claw, a person, a panther, a vinyl record, a turntable, a DJ mixer, decks, faders, or any extra mascot.
+Style: chibi / kawaii-adjacent cel animation, thick even outlines, flat amber-orange and cream highlights, 3–4 colors max. Cute and graphic. Not painterly, not a woodcut seafood poster, not wet photoreal shell, not a restaurant-menu lobster.
+
+Background: deep navy void only. No vinyl, no turntable, no mixer, no studio.
 ```
 
 **Negative (append):**
 ```
-shrimp, prawn, crawfish, crayfish, langoustine, whole lobster, lobster body,
-lobster tail, lobster head, antennae, eyes, legs, full crustacean, two claws,
-photoreal seafood, dinner plate, panther, cat, vinyl record, turntable, platter,
-tonearm, DJ mixer, faders, tiny unreadable UI, multiple objects, crowded scene,
-text, logo lettering, photoreal celebrity
+whole lobster, lobster portrait, lobster body, thorax, carapace, abdomen,
+tail fan, lobster head, stalk eyes, antennae, walking legs, two claws,
+pair of pincers, shrimp, prawn, crawfish, crayfish, langoustine,
+cooked seafood poster, restaurant menu, Warhol lobster print, oil painting,
+painterly shell texture, wet photoreal shell, scientific illustration,
+panther, cat, vinyl record, turntable, platter, tonearm, DJ mixer, faders,
+studio scene, multiple objects, text, logo lettering
 ```
 
-**Params:** guidance **3.8–4.2** (lock the single object); retro-anime LoRA
-**0.75–0.95** (push cartoon); steps 24–28.
+**Params:** guidance **4.0–4.5** (single-object lock); retro-anime LoRA
+**0.85–1.0** (force sticker/cel, kill the painterly lobster); steps 24–28.
+
+**Rescue if you already have a close-up pincer** (one frame from a later
+batch almost worked — claw-dominant, but an arm still entered from the
+side and the shell stayed too real): img2img that crop at denoise
+**0.35–0.5** with the CLIP-L/T5 above. Do not img2img the full-body
+or decks shots; they will keep the body.
+
+#### Variant A2 — cute chibi lobster (only if you want a face)
+
+Use this **instead of A**, not mixed into A. Whole animal is allowed here
+*only* as a super-simplified mascot.
+
+**CLIP-L:**
+```
+cute chibi lobster mascot, super deformed retro anime, tiny round body, oversized single crusher claw, big simple eyes, thick even outline, flat cel, kawaii sticker, square profile picture, centered, amber orange, deep navy void, claw-dj avatar, no photoreal, no seafood poster, no turntable
+```
+
+**T5:**
+```
+Square cute-chibi claw-dj avatar: a super-deformed retro-anime lobster mascot, not a real animal. Tiny rounded body, one oversized cartoon crusher claw held up like a wave, simple dot or oval eyes, almost no shell texture, thick even ink, flat cel colors. Centered in a navy void so a circular crop still shows the face and the big claw. Charming, toy-like, readable at 48 px. No photoreal shell, no cooked-lobster poster, no vinyl, no decks, no extra characters.
+```
+
+**Negative (append):**
+```
+photoreal lobster, seafood menu, wet shell, two equal claws, shrimp,
+turntable, vinyl, studio, horror, grotesque, tiny unreadable detail
+```
+
+**Params:** same as A; LoRA at the high end (**0.9–1.0**).
 
 **Known failure modes (from earlier gens):** The file originally said
 “panther or claw emblem.” That panther line is **wrong for this brand** —
@@ -859,6 +895,8 @@ said **fused with vinyl + DJ mixer** and **“or abstract lobster claw mark”
 | `sleek lobster claw or abstract lobster claw mark` | Soft “claw-ish” blobs, or a different crustacean |
 | `Optional tiny subtle “claw” motif` | Gave Flux permission to drop the claw |
 | `lobster claw` with no `isolated pincer, no body, no shrimp` | Whole lobster, or shrimp / crawfish |
+| `single giant lobster claw only` + “no whole lobster” (v2) | Still painted a **full lobster** (often on decks). “Lobster” won. |
+| any leftover vinyl / mixer / studio tokens | Lobster standing on turntables inside a gold ring |
 
 **Do not reuse** (the exact pair that made those gens):
 
@@ -870,8 +908,10 @@ retro anime, claw-dj brand avatar, circular-friendly centered composition, anthr
 A square brand avatar for claw-dj, designed to read at tiny circular crop: centered retro-anime icon of a sleek lobster claw or abstract lobster claw mark integrated with a vinyl record and small DJ mixer faders, warm amber rim light against deep navy void, high contrast, glossy black and chrome accents, no tiny details at the edges. Looks like a premium music-channel mark — mythic West Coast / East Coast crate energy without copying a real label logo. Minimal, bold, immediately recognizable. Optional tiny subtle “claw” motif, not busy lettering. Center-weighted for TikTok and YouTube profile circles.
 ```
 
-Keep the lock tokens. If a batch still grows a body, add `isolated object,
-product icon, no torso` to CLIP-L and raise guidance toward 4.2.
+If a batch still grows a body after Variant A v3, do **not** add more
+“no lobster” tokens — switch to **A2** (chibi face) or img2img the closest
+pincer crop. Extra “no whole lobster” in CLIP-L still injects the word
+lobster.
 
 #### Variant B — stylized DJ portrait (if you want a “person”)
 
@@ -891,8 +931,9 @@ celebrity lookalike, known musician face, selfie arm, cigarette close-up,
 extreme beauty filter plastic skin, group photo
 ```
 
-**Recommendation:** ship **Variant A** as the stable brand mark; keep B as an
-alternate if you want a more human channel face later.
+**Recommendation:** ship **Variant A** (disembodied pincer) as the stable
+brand mark. Use **A2** only if A keeps growing a body and you decide a cute
+chibi face is acceptable. Keep **B** as a later human-channel option.
 
 ---
 
@@ -907,43 +948,53 @@ YouTube banner upload target is large; design for **safe areas**.
 | Safe center | Keep logo + title idea in the **center ~1546×423** region (TV/desktop) |
 | Corners | Assume mobile crops left/right — no critical detail at far edges |
 
+**Brand lock:** the **disembodied cartoon pincer** from 10A is the hero, not
+a whole lobster and not a deck still-life. Decks may exist only as distant
+silhouettes in the outer thirds.
+
 **CLIP-L:**
 ```
-retro anime, YouTube channel banner wide, claw-dj, dual turntables Mixxx energy, vinyl crates skyline night, amber and navy cinematic grade, wide empty center for title safe zone, hip hop R&B DJ channel art
+wide YouTube channel banner, claw-dj, giant cute cel-anime crusher pincer icon left of center, disembodied chela only, no whole lobster, navy void, amber orange claw, soft distant deck silhouettes in outer thirds, empty calm center for title, hip hop R&B, retro anime
 ```
 
 **T5:**
 ```
-Wide cinematic channel banner for claw-dj: retro-anime night studio with two decks and a mixer in soft silhouette left and right, vinyl crates and a hazy city skyline suggestion in the outer thirds, deep navy and warm amber. The horizontal center stays relatively calm and open so a future wordmark “claw-dj” could sit there (generate without text first if lettering fails). Mood: DJ craft and crate energy — hip-hop and R&B first, open to more — elegant, not festival EDM chaos. Seamless wide composition, film grain, high quality.
+Wide cinematic channel banner for claw-dj. Hero: one oversized cute retro-anime lobster crusher pincer (disembodied chela, no body, no head) sitting just left of the horizontal center — the same mark as the profile avatar, large enough to read on TV. Deep navy field, amber-orange claw, thick cel outlines. Outer thirds may hold very soft, out-of-focus deck or crate silhouettes. The exact center stays calm and empty for a later “claw-dj” wordmark (generate without text first). No whole lobster, no lobster sitting on turntables, no seafood poster. Mood: DJ craft, hip-hop and R&B first, elegant, not festival EDM.
 ```
 
 **Negative (append):**
 ```
-vertical phone frame, square only, busy center clutter, laser rave rainbow,
+whole lobster, lobster on decks, seafood menu, shrimp, vertical phone frame,
+square only, busy center clutter, laser rave rainbow,
 huge unreadable wall of tracklists, watermark corner spam
 ```
 
-**Params:** guidance 3.2; LoRA 0.6–0.8 (don’t melt the wide scene).
+**Params:** guidance **3.6–4.0**; LoRA **0.75–0.9** (keep the pincer cartoony
+without melting the wide field).
 
 ---
 
 ### 10C. Links-page avatar
 
-Same file as **10A**. After picking a seed:
+**Default:** reuse the **10A Variant A** file. After picking a seed:
 
 1. Export square JPEG/PNG → `public/avatar.jpg` in the links project.
 2. Optional: slight dark vignette so it sits well on `dark-space` theme.
 
-No separate prompt required unless you want a **links-only** softer crop:
+Do **not** prompt “same as 10A” into Flux — it cannot follow that. If you
+need a links-only re-roll (softer, more UI-friendly), use this full pair:
 
-**CLIP-L (optional softer links crop):**
+**CLIP-L:**
 ```
-same as 10A variant A, slightly softer contrast, dark navy background matching dark-space theme, circular avatar friendly
+disembodied crusher pincer, isolated chela only, cropped at the wrist, cute chibi cel sticker, thick even outline, matte finish, low specular, giant centered circular avatar, amber orange, deep navy void matching dark-space theme, claw-dj, no whole lobster, no head, no vinyl, no turntable
 ```
 
-**T5:** Reuse 10A T5; add “matte finish, lower specular blowouts for web UI.”
+**T5:**
+```
+Square links-page avatar for claw-dj on a dark-space site. One cute cel-anime lobster crusher pincer, disembodied, cropped at the wrist, no body and no head. Matte shell, restrained highlights (no chrome blowouts), thick even outlines, navy void that matches a near-black web background. Centered for a circular CSS crop. Same mark as the TikTok/YouTube icon, just a touch softer for UI. No decks, no vinyl, no whole lobster, no text.
+```
 
-**Negative:** same as 10A.
+**Negative:** same as 10A Variant A.
 
 ---
 
@@ -957,43 +1008,50 @@ When someone pastes your links URL in Slack/X/iMessage.
 | Path | `public/og.png` |
 | Config | `social_meta.og_image` = full `https://…/og.png` |
 
+**Brand lock:** the share card must still read as **the claw**, even at Slack
+thumbnail size. Vinyl/decks are atmosphere only — never the subject, never
+under a whole lobster.
+
 **CLIP-L:**
 ```
-retro anime, open graph banner 1.91:1, claw-dj link in bio card, vinyl and decks, amber navy, elegant music brand, wide cinematic still, clean center
+wide open graph 1.91:1, claw-dj link in bio card, giant cute cel-anime crusher pincer on the left, disembodied chela, no whole lobster, amber orange, deep navy, empty calm center, faint distant crate mood in far right, elegant music brand, no text
 ```
 
 **T5:**
 ```
-A wide social preview image for the claw-dj links page: retro-anime night crate-digging energy, vinyl, soft deck silhouettes, amber rim light, deep navy paper-like negative space in the center for an optional later title. Feels like a premium music project link-in-bio, not a tech startup landing page. Cinematic, simple, high contrast, no tiny text.
+Wide social preview (about 1.91:1) for the claw-dj links page. Left third: one oversized cute retro-anime lobster crusher pincer — disembodied, no head, no body — the same sticker-like mark as the profile avatar. Center: deep navy paper-like negative space for an optional later title (generate without lettering). Far right: at most a faint out-of-focus crate or groove suggestion, not a readable turntable. Feels like a premium music project, not a tech landing page and not a seafood poster. High contrast, no tiny text, no whole lobster on decks.
 ```
 
 **Negative (append):**
 ```
-screenshot of a website, browser chrome, QR code spam, app store badges,
-stock handshake business photo
+whole lobster, lobster on turntables, seafood menu, shrimp, screenshot of a
+website, browser chrome, QR code spam, app store badges,
+stock handshake business photo, busy vinyl close-up as the hero
 ```
+
+**Params:** same as 10B (guidance 3.6–4.0; LoRA 0.75–0.9).
 
 ---
 
 ### 10E. Optional favicon concept (if you draw vector later)
 
-Flux is weak at tiny favicons. Prefer hand-vector or simplify the **10A**
-cartoon lobster claw to a **single chunky pincer silhouette** at 32×32. If you
-still want a Flux study:
+Flux is weak at tiny favicons. Prefer hand-vector: trace the **10A** pincer
+down to a **two-finger chela silhouette** at 32×32 (open slightly so it does
+not become a blob). If you still want a Flux study:
 
 **CLIP-L:**
 ```
-minimal icon only, single cartoon lobster claw pincer, no body, no shrimp, amber on navy, flat, centered, huge shape, logo study
+minimal favicon, two-finger crusher pincer silhouette only, cropped at wrist, no body no head no lobster animal, flat amber on navy, huge centered shape, 2 colors, logo study
 ```
 
 **T5:**
 ```
-Extremely simple logo study: one cartoon lobster claw (pincer only, no body) as a huge clear silhouette, amber-orange on deep navy, flat design, no vinyl, no text, no extra objects.
+Extremely simple favicon study: one two-finger lobster crusher pincer as a huge flat silhouette, cropped at the wrist, amber-orange on deep navy. No body, no head, no tail, no second claw, no vinyl, no text. Must still read as a claw at 16–32 px.
 ```
 
 **Negative:**
 ```
-photoreal, complex scene, multiple objects, fine line noise
+whole lobster, shrimp, photoreal, complex scene, multiple objects, fine line noise, vinyl
 ```
 
 ---
