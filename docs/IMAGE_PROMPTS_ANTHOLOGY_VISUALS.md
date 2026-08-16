@@ -814,8 +814,9 @@ circles; corners die. For Variant A the claw should fill most of that circle
 #### Variant A — icon mascot (recommended default)
 
 **Subject lock:** one **cartoon lobster claw** (the pincer / chela only).
-Not a shrimp. Not a whole lobster. Not a panther. Not a vinyl deck.
-The claw *is* the mark.
+OpenClaw / claw-dj is a **crustacean** mark — lobster claw, never a panther
+or big-cat paw. Not a shrimp. Not a whole lobster. Not a vinyl deck.
+The claw *is* the mark. Do not fuse it with decks, mixer, or vinyl.
 
 **CLIP-L:**
 ```
@@ -845,11 +846,32 @@ text, logo lettering, photoreal celebrity
 **Params:** guidance **3.8–4.2** (lock the single object); retro-anime LoRA
 **0.75–0.95** (push cartoon); steps 24–28.
 
-**Known failure modes (from earlier gens):** Flux invents a shrimp, a full
-lobster, or a turntable if you mention vinyl / mixer / panther *or* if you say
-only “claw” without “lobster claw, isolated pincer, no body.” Keep the lock
-tokens. If a batch still grows a body, add `isolated object, product icon, no
-torso` to CLIP-L and raise guidance toward 4.2.
+**Known failure modes (from earlier gens):** The file originally said
+“panther or claw emblem.” That panther line is **wrong for this brand** —
+swap it if you ever see it again. The batch that actually produced shrimp,
+whole lobsters, and turntables already said *lobster claw*, but it also
+said **fused with vinyl + DJ mixer** and **“or abstract lobster claw mark”
++ “optional tiny subtle claw motif.”** Those extras are what broke it:
+
+| Phrase that was used | What Flux did |
+|---|---|
+| `fused with vinyl record and DJ mixer` / `integrated with a vinyl record and small DJ mixer faders` | Whole turntable stills; claw vanished |
+| `sleek lobster claw or abstract lobster claw mark` | Soft “claw-ish” blobs, or a different crustacean |
+| `Optional tiny subtle “claw” motif` | Gave Flux permission to drop the claw |
+| `lobster claw` with no `isolated pincer, no body, no shrimp` | Whole lobster, or shrimp / crawfish |
+
+**Do not reuse** (the exact pair that made those gens):
+
+```
+retro anime, claw-dj brand avatar, circular-friendly centered composition, anthropomorphic sleek lobster claw emblem fused with vinyl record and DJ mixer, amber rim light, deep navy background, glossy black chrome, single strong icon, clean silhouette, profile picture
+```
+
+```
+A square brand avatar for claw-dj, designed to read at tiny circular crop: centered retro-anime icon of a sleek lobster claw or abstract lobster claw mark integrated with a vinyl record and small DJ mixer faders, warm amber rim light against deep navy void, high contrast, glossy black and chrome accents, no tiny details at the edges. Looks like a premium music-channel mark — mythic West Coast / East Coast crate energy without copying a real label logo. Minimal, bold, immediately recognizable. Optional tiny subtle “claw” motif, not busy lettering. Center-weighted for TikTok and YouTube profile circles.
+```
+
+Keep the lock tokens. If a batch still grows a body, add `isolated object,
+product icon, no torso` to CLIP-L and raise guidance toward 4.2.
 
 #### Variant B — stylized DJ portrait (if you want a “person”)
 
