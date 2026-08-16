@@ -813,11 +813,13 @@ circle — not a wide booth that gets chopped.
 
 #### Variant A — icon mascot (recommended default)
 
-**Subject lock (v4):** graphic **cartoon lobster** (the good navy/orange
-sticker look) **plus one** simplified DJ object. OpenClaw / claw-dj is a
-**crustacean** mark — lobster, never a panther. The lobster is the hero.
-The gear is a *symbol* (vinyl / Pioneer-style platter / compact mixer /
-controller), not a studio.
+**Subject lock (v5):** same as v4 — graphic **cartoon lobster** + **one**
+simplified DJ object — plus **anatomy:** exactly **one pair of claws**
+(two pincers: left and right). Not four. Not a raised pair *and* a
+deck pair. Thin walking legs are not claws.
+
+Do not change the cartoon/cel look or the simplified turntable from the
+v4 batch. Only the extra pair of pincers.
 
 Pick **one** gear token and keep it. Do not stack turntable + mixer +
 controller. Do not say “fused with.”
@@ -828,12 +830,14 @@ Mixer/controller as a small bar under the lobster is the backup.
 
 **CLIP-L:**
 ```
-retro anime, cute graphic lobster mascot, thick even ink outline, flat cel sticker, amber orange lobster, deep navy void, square profile picture, circular crop safe, centered, one simplified Pioneer-style DJ turntable platter behind the lobster as a circular vinyl halo, single piece of DJ gear only, claw-dj brand avatar, no photoreal, no seafood poster, no full DJ booth, no dual decks
+retro anime, cute graphic lobster mascot, thick even ink outline, flat cel sticker, amber orange lobster, deep navy void, square profile picture, circular crop safe, centered, exactly two claws only, one pair of pincers, left claw and right claw on the platter, no second pair, no four claws, no claws raised overhead, thin walking legs not pincers, one simplified Pioneer-style DJ turntable platter behind the lobster as a circular vinyl halo, single piece of DJ gear only, claw-dj brand avatar, no photoreal, no seafood poster, no full DJ booth, no dual decks
 ```
 
 **T5:**
 ```
-A square claw-dj brand avatar. Hero: a cute graphic retro-anime lobster mascot, front view, amber-orange, thick even outlines, flat cel / sticker shading, readable at 48 px. Deep navy void.
+A square claw-dj brand avatar. Hero: a cute graphic retro-anime lobster mascot, front view, amber-orange, thick even outlines, flat cel / sticker shading, readable at 48 px. Deep navy void. Keep this same cartoon/sticker look.
+
+Anatomy (do not break this): a real lobster has ONE pair of claws — two pincers total, one left and one right. Those two claws rest on the single turntable. There is no second pair raised in a V above the head. There are not four claws. Walking legs are thin and simple; they are not extra pincers.
 
 DJ signal: exactly ONE simplified piece of gear, also cartoon, not a product photo. Preferred: a single vinyl record or Pioneer-style turntable platter sitting behind the lobster as a circular halo (the platter echoes the TikTok/YouTube circle crop). Backup: a short compact mixer or controller bar under the lobster, big simple knobs, no readable logos.
 
@@ -842,19 +846,21 @@ The lobster stays largest (about 70% of the subject). Gear is supporting, still 
 
 **Negative (append):**
 ```
-shrimp, prawn, crawfish, panther, seafood menu, Warhol lobster print,
-photoreal wet shell, oil painting, dual turntables, full DJ booth,
-club interior, laser rave, product-shot Pioneer logo, readable brand
-logos, tiny unreadable faders, busy studio, text, lettering
+four claws, two pairs of claws, extra pincers, second pair of chelae,
+claws raised overhead plus claws on the deck, shrimp, prawn, crawfish,
+panther, seafood menu, Warhol lobster print, photoreal wet shell,
+oil painting, dual turntables, full DJ booth, club interior, laser rave,
+product-shot Pioneer logo, readable brand logos, tiny unreadable faders,
+busy studio, text, lettering
 ```
 
 **Params:** guidance **3.6–4.0** (two objects; 4.5 fights the gear);
 retro-anime LoRA **0.8–0.95** (keep this batch’s sticker look); steps 24–28.
 
-**Rescue from the good lobster batch:** take a navy/orange sticker lobster
-you already like and img2img at denoise **0.30–0.45** with the CLIP-L/T5
-above so a vinyl halo or compact mixer appears *behind/under* it. Do not
-img2img the old grimy “lobster on two decks” frames.
+**Rescue from the v4 lobster+deck batch:** keep those frames — cartoon
+and gear are right. Img2img at denoise **0.25–0.40** with the anatomy
+tokens above to delete the extra pair of pincers. Do not raise LoRA or
+rewrite the gear.
 
 #### Variant A2 — cute chibi lobster + tiny gear
 
@@ -862,16 +868,17 @@ Same lock as A, super-deformed. Use if you want the kawaii face.
 
 **CLIP-L:**
 ```
-cute chibi lobster mascot, super deformed retro anime, tiny round body, oversized claws, simple face, thick even outline, flat cel, kawaii sticker, one small vinyl or headphones as DJ symbol, square profile picture, centered, amber orange, deep navy void, claw-dj avatar, no photoreal, no seafood poster, no full DJ booth
+cute chibi lobster mascot, super deformed retro anime, tiny round body, exactly two claws, one pair of pincers only, simple face, thick even outline, flat cel, kawaii sticker, one small vinyl or headphones as DJ symbol, square profile picture, centered, amber orange, deep navy void, claw-dj avatar, no four claws, no photoreal, no seafood poster, no full DJ booth
 ```
 
 **T5:**
 ```
-Square cute-chibi claw-dj avatar: super-deformed retro-anime lobster, simple face, oversized claws, flat cel, navy void. Add exactly one tiny DJ symbol inside the circle — a small vinyl behind the body, or headphones, or a toy mixer under the feet. Lobster stays the hero. No photoreal shell, no dual-deck booth, no text.
+Square cute-chibi claw-dj avatar: super-deformed retro-anime lobster, simple face, exactly one pair of claws (two pincers, left and right — not four), flat cel, navy void. Add exactly one tiny DJ symbol inside the circle — a small vinyl behind the body, or headphones, or a toy mixer under the feet. Those same two claws can rest on the gear; do not grow a second pair overhead. Lobster stays the hero. No photoreal shell, no dual-deck booth, no text.
 ```
 
 **Negative (append):**
 ```
+four claws, two pairs of pincers, claws raised and on the deck,
 photoreal lobster, seafood menu, shrimp, dual turntables, full booth,
 horror, grotesque, tiny unreadable detail, brand logos
 ```
@@ -895,6 +902,7 @@ said **fused with vinyl + DJ mixer** and **“or abstract lobster claw mark”
 | any leftover vinyl / mixer / studio tokens | Lobster standing on turntables inside a gold ring |
 | v3 isolated pincer / “no turntable, no vinyl” | Clean cartoon lobster, **zero DJ signal** |
 | “fused with” decks + mixer | Gear ate the mark, or a full booth |
+| v4 lobster + platter, no anatomy lock | Correct cartoon + deck, but **four claws** (V-pair + deck pair) |
 
 **Do not reuse** (the exact pair that made those gens):
 
@@ -906,10 +914,9 @@ retro anime, claw-dj brand avatar, circular-friendly centered composition, anthr
 A square brand avatar for claw-dj, designed to read at tiny circular crop: centered retro-anime icon of a sleek lobster claw or abstract lobster claw mark integrated with a vinyl record and small DJ mixer faders, warm amber rim light against deep navy void, high contrast, glossy black and chrome accents, no tiny details at the edges. Looks like a premium music-channel mark — mythic West Coast / East Coast crate energy without copying a real label logo. Minimal, bold, immediately recognizable. Optional tiny subtle “claw” motif, not busy lettering. Center-weighted for TikTok and YouTube profile circles.
 ```
 
-v4 accepts the whole cartoon lobster (that’s the mark now). If gear
-vanishes, img2img a good lobster at low denoise rather than stacking
-more deck tokens. If gear takes over, you said “fused with” again —
-use “one platter halo behind,” not “fused.”
+v4 accepted the whole cartoon lobster (that’s still the mark). v5 only
+fixes the **four-claw** bug. If a v5 roll loses the cartoon or the deck,
+throw it out and img2img a v4 frame with the anatomy tokens instead.
 
 #### Variant B — stylized DJ portrait (if you want a “person”)
 
@@ -950,7 +957,7 @@ simplified DJ object. Empty center for the title. Not a full booth.
 
 **CLIP-L:**
 ```
-wide YouTube channel banner, claw-dj, cute graphic lobster mascot left of center, one Pioneer-style platter or vinyl halo, amber orange, deep navy, empty calm center for title, hip hop R&B, retro anime cel sticker, no full DJ booth, no dual-deck clutter
+wide YouTube channel banner, claw-dj, cute graphic lobster mascot left of center, exactly two claws one pair only, one Pioneer-style platter or vinyl halo, amber orange, deep navy, empty calm center for title, hip hop R&B, retro anime cel sticker, no four claws, no full DJ booth, no dual-deck clutter
 ```
 
 **T5:**
@@ -981,7 +988,7 @@ need a links-only re-roll (softer, more UI-friendly), use this full pair:
 
 **CLIP-L:**
 ```
-cute graphic lobster mascot, thick even outline, matte cel sticker, amber orange, deep navy void matching dark-space theme, circular avatar, one simplified vinyl or Pioneer-style platter halo behind the lobster, claw-dj, no photoreal, no full DJ booth, no text
+cute graphic lobster mascot, exactly two claws one pair only, thick even outline, matte cel sticker, amber orange, deep navy void matching dark-space theme, circular avatar, one simplified vinyl or Pioneer-style platter halo behind the lobster, claw-dj, no four claws, no photoreal, no full DJ booth, no text
 ```
 
 **T5:**
@@ -1008,7 +1015,7 @@ gear symbol**. Not a deck close-up. Not a seafood poster.
 
 **CLIP-L:**
 ```
-wide open graph 1.91:1, claw-dj link in bio card, cute graphic lobster on the left, one vinyl or Pioneer-style platter halo, amber orange, deep navy, empty calm center, elegant music brand, no text, no full DJ booth
+wide open graph 1.91:1, claw-dj link in bio card, cute graphic lobster on the left, exactly two claws one pair only, one vinyl or Pioneer-style platter halo, amber orange, deep navy, empty calm center, elegant music brand, no text, no four claws, no full DJ booth
 ```
 
 **T5:**
