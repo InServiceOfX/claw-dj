@@ -57,15 +57,21 @@ taxonomy.
 5. **Tests that touch planning and Mixxx control**, not only LLM string
    match.
 
-## What to copy (ideas, not code)
+## Direction lock (Ernest, 2026-08-12)
 
-- A `clawdj doctor` that checks Mixxx, control port, library root, ffmpeg.
-- Optional public *listen-along* later — after the mixes are the reason
-  to stay, not instead of them.
-- MCP verbs for deck status / load / transition if Claude Code becomes a
-  first-class operator.
-- Finish *our* transition evals at audio/phrase level. Do not import
-  their “name the technique” suite.
+Do **not** start MCP or a Mixxx HTTP fork because Treta has them.
+
+- **MCP** is a wall socket. Useful if a *second* harness (Claude Code with
+  no repo checkout) must drive decks. Grok/Claude already sit on the
+  mix-plan CLI and the browser Arrange tab. Shipping MCP now is fashion,
+  not craft.
+- **HTTP Mixxx** is how *their* live “talk to the DJ” demo works. Ours is
+  planned sets + deterministic hands. We already have a control-api port.
+  Fork Mixxx only if that port is the actual bottleneck.
+- **Do** finish claw-dj transition evals at phrase / position / audio.
+  Do **not** import their string-match suite.
+- Optional, later, cheap: `clawdj doctor` (Mixxx up? port? library?
+  ffmpeg?). That is onboarding, not a new religion.
 
 ## What not to copy
 
@@ -77,6 +83,6 @@ taxonomy.
 
 ## Bottom line
 
-Watch the GitHub org. Borrow onboarding and HTTP-agent ergonomics.
+Watch the GitHub org. Do not build their socket layer this month.
 Keep the thesis: **claw-dj is a DJ that happens to be software, not a
 chatbot that happens to own two faders.**
