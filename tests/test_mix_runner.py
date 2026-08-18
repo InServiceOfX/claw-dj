@@ -7,10 +7,12 @@ from hands.run_mix_plan import (
     _safe_body_beats,
     default_plan_path,
     load_deck,
+    load_executable_plan,
     perform_juggle_brake_intro,
     perform_juggle_intro,
     perform_transition,
     ramp_bpm_target,
+    resolve_plan_argument,
     run_plan,
     set_bpm_target,
 )
@@ -136,6 +138,40 @@ class MixRunnerTests(TestCase):
     def test_default_plan_path_refuses_to_guess_when_no_plan_is_active(self, _resolve) -> None:
         with self.assertRaisesRegex(SystemExit, "no active named mix plan"):
             default_plan_path()
+
+    def test_resolve_plan_argument_accepts_directory_and_mix_plan_file(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mix = root / "mix_plan.json"
+            mix.write_text('{"events": []}\n')
+            self.assertEqual(resolve_plan_argument(root), mix.resolve())
+            self.assertEqual(resolve_plan_argument(mix), mix.resolve())
+            with self.assertRaisesRegex(SystemExit, "missing built mix plan"):
+                resolve_plan_argument(root / "missing-plan-dir")
+
+    def test_load_executable_plan_rejects_metadata_and_playlist(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_meta = root / "plan.json"
+            plan_meta.write_text('{"slug": "demo"}\n')
+            with self.assertRaisesRegex(SystemExit, "plan metadata"):
+                load_executable_plan(plan_meta)
+
+            playlist = root / "playlist.json"
+            playlist.write_text("[]\n")
+            with self.assertRaisesRegex(SystemExit, "playlist.json"):
+                load_executable_plan(playlist)
+
+            good = root / "mix_plan.json"
+            good.write_text('{"events": [{"op": "start"}]}\n')
+            payload = load_executable_plan(good)
+            self.assertEqual(payload["events"][0]["op"], "start")
 
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")

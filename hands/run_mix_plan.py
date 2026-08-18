@@ -11,7 +11,9 @@ Requires Mixxx launched with the patched control API:
 Usage:
     uv run python -m hands.run_mix_plan --dry-run
     uv run python -m hands.run_mix_plan
-    uv run python -m hands.run_mix_plan --plan brain/data/plans/<slug>/mix_plan.json --port 9995
+    uv run python -m hands.run_mix_plan --plan nastribute
+    uv run python -m hands.run_mix_plan --plan brain/data/plans/nastribute
+    uv run python -m hands.run_mix_plan --plan brain/data/plans/nastribute/mix_plan.json --port 9995
 """
 from __future__ import annotations
 
@@ -47,8 +49,110 @@ def default_plan_path() -> Path:
     except plan_paths.PlanNotFound as error:
         raise SystemExit(
             "no active named mix plan — select one in the GUI, build it, or pass "
-            "--plan /path/to/mix_plan.json"
+            "--plan <slug-or-mix_plan.json>"
         ) from error
+
+
+def resolve_plan_argument(value: str | Path | None) -> Path:
+    """Resolve ``--plan`` from slug, plan directory, or mix_plan.json path.
+
+    Named plans are directories under ``brain/data/plans/<slug>/``. The runner
+    needs the built executable artifact ``mix_plan.json`` inside that folder —
+    not ``plan.json`` (metadata) or ``playlist.json`` (track list).
+    """
+    if value is None:
+        return default_plan_path()
+
+    raw = Path(value).expanduser()
+    candidates: list[Path] = []
+
+    # Bare slug: nastribute
+    if len(raw.parts) == 1 and not raw.suffix:
+        try:
+            candidates.append(plan_paths.resolve(raw.name).mix_plan)
+        except (plan_paths.PlanNotFound, ValueError):
+            pass
+
+    if raw.exists() and raw.is_dir():
+        candidates.append(raw / "mix_plan.json")
+    else:
+        candidates.append(raw)
+        # Directory path that does not exist yet still implies mix_plan.json.
+        if raw.suffix != ".json":
+            candidates.append(raw / "mix_plan.json")
+
+    # Absolute/relative path into plans/<slug>/...
+    if raw.name in {"plan.json", "playlist.json", "selection.json", "notes.json", "transitions.json", "bunches.json"}:
+        candidates.insert(0, raw.parent / "mix_plan.json")
+
+    seen: set[Path] = set()
+    tried: list[Path] = []
+    for candidate in candidates:
+        resolved = candidate.expanduser()
+        try:
+            resolved = resolved.resolve()
+        except OSError:
+            pass
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        tried.append(resolved)
+        if resolved.exists() and resolved.is_file():
+            return resolved
+
+    # Prefer the most helpful missing-path message.
+    preferred = tried[0] if tried else raw
+    slug_hint = raw.name if len(Path(value).parts) == 1 else preferred.parent.name
+    if preferred.name == "mix_plan.json" or preferred.suffix != ".json":
+        raise SystemExit(
+            f"missing built mix plan at {preferred}\n"
+            f"  The GUI playlist for '{slug_hint}' can exist without an executable mix.\n"
+            f"  Build it first, then run:\n"
+            f"    uv run python -m brain.plan_cli build --plan {slug_hint}\n"
+            f"    uv run python ./hands/run_mix_plan.py --plan {slug_hint}\n"
+            f"  Or open the plan in the GUI and click Build mix plan.\n"
+            f"  --plan accepts: slug | plan-directory | path/to/mix_plan.json"
+        )
+    raise SystemExit(
+        f"missing {preferred} — pass a built mix_plan.json, a plan directory, or a plan slug"
+    )
+
+
+def load_executable_plan(plan_path: Path) -> dict:
+    """Load and validate a built mix_plan.json artifact."""
+    try:
+        payload = json.loads(plan_path.read_text())
+    except IsADirectoryError as error:
+        raise SystemExit(
+            f"{plan_path} is a directory. Pass the plan slug, the plan directory, "
+            "or .../mix_plan.json — not a folder via a path that failed resolution."
+        ) from error
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"{plan_path} is not valid JSON: {error}") from error
+
+    if isinstance(payload, list):
+        raise SystemExit(
+            f"{plan_path} looks like playlist.json (a JSON list), not a built mix plan.\n"
+            "Use mix_plan.json after Build, e.g.:\n"
+            "  uv run python ./hands/run_mix_plan.py --plan <slug>"
+        )
+    if not isinstance(payload, dict):
+        raise SystemExit(f"{plan_path} must be a JSON object with an 'events' list")
+    if "events" not in payload:
+        name = plan_path.name
+        if name == "plan.json":
+            raise SystemExit(
+                f"{plan_path} is plan metadata, not the executable mix.\n"
+                "Build the plan, then run mix_plan.json:\n"
+                f"  uv run python -m brain.plan_cli build --plan {plan_path.parent.name}\n"
+                f"  uv run python ./hands/run_mix_plan.py --plan {plan_path.parent.name}"
+            )
+        raise SystemExit(
+            f"{plan_path} has no 'events' key — that file is not a built mix_plan.json artifact"
+        )
+    if not isinstance(payload.get("events"), list):
+        raise SystemExit(f"{plan_path}: 'events' must be a list")
+    return payload
 
 
 def clawdj_binary() -> Path | None:
@@ -1356,9 +1460,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--plan",
-        type=Path,
         default=None,
-        help="mix-plan JSON path; defaults to the active named plan selected in the GUI",
+        help=(
+            "built mix plan: slug (nastribute), plan directory "
+            "(brain/data/plans/nastribute), or mix_plan.json path. "
+            "Defaults to the active named plan selected in the GUI"
+        ),
     )
     parser.add_argument(
         "--port", type=int, default=None,
@@ -1374,13 +1481,8 @@ def main() -> None:
              "that was already running.",
     )
     args = parser.parse_args()
-    plan_path = args.plan or default_plan_path()
-    if not plan_path.exists():
-        raise SystemExit(
-            f"missing {plan_path} — build the active plan in the GUI or run: "
-            "uv run python -m brain.plan_cli build"
-        )
-    plan = json.loads(plan_path.read_text())
+    plan_path = resolve_plan_argument(args.plan)
+    plan = load_executable_plan(plan_path)
     if args.dry_run:
         port = args.port or DEFAULT_PORT
     else:
@@ -1391,6 +1493,7 @@ def main() -> None:
             preferred=preserved or DEFAULT_PORT,
             explicit=args.port,
         )
+    print(f"using plan artifact: {plan_path}")
     run_plan(plan, port=port, dry_run=args.dry_run, max_events=args.max_events, record=args.record)
 
 

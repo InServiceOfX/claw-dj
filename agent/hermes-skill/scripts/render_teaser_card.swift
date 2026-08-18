@@ -78,9 +78,10 @@ NSColor(calibratedWhite: 0.0, alpha: 0.52).setFill()
 NSBezierPath(rect: NSRect(x: 0, y: 1605, width: canvas.width, height: 260)).fill()
 NSBezierPath(rect: NSRect(x: 0, y: 210, width: canvas.width, height: 300)).fill()
 
-func drawCentered(_ text: String, y: CGFloat, height: CGFloat, size: CGFloat) {
+func drawCentered(_ text: String, y: CGFloat, height: CGFloat, size: CGFloat, kern: CGFloat = 1.2) {
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = .center
+    paragraph.lineBreakMode = .byWordWrapping
     let shadow = NSShadow()
     shadow.shadowColor = NSColor(calibratedWhite: 0.0, alpha: 0.9)
     shadow.shadowBlurRadius = 6
@@ -90,18 +91,59 @@ func drawCentered(_ text: String, y: CGFloat, height: CGFloat, size: CGFloat) {
         .foregroundColor: NSColor.white,
         .paragraphStyle: paragraph,
         .shadow: shadow,
-        .kern: 1.2
+        .kern: kern
     ]
     NSAttributedString(string: text, attributes: attributes).draw(
         in: NSRect(x: 40, y: y, width: canvas.width - 80, height: height)
     )
 }
 
+/// Long "A → B" labels must fit fully (e.g. BIG DADDY KANE). Prefer an
+/// explicit two-line split on the arrow; otherwise shrink until the box fits.
+func drawTransitionLabel(_ text: String, y: CGFloat, height: CGFloat) {
+    let maxWidth = canvas.width - 80
+    let display: String
+    if let arrow = text.range(of: " → ") {
+        let left = String(text[..<arrow.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let right = String(text[arrow.upperBound...]).trimmingCharacters(in: .whitespaces)
+        display = "\(left)\n→  \(right)"
+    } else if let arrow = text.range(of: "->") {
+        let left = String(text[..<arrow.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let right = String(text[arrow.upperBound...]).trimmingCharacters(in: .whitespaces)
+        display = "\(left)\n→  \(right)"
+    } else {
+        display = text
+    }
+
+    var size: CGFloat = 52
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = .center
+    paragraph.lineBreakMode = .byWordWrapping
+    while size >= 34 {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.boldSystemFont(ofSize: size),
+            .paragraphStyle: paragraph,
+            .kern: 0.8
+        ]
+        let bounds = (display as NSString).boundingRect(
+            with: NSSize(width: maxWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes
+        )
+        if bounds.height <= height - 4 {
+            break
+        }
+        size -= 2
+    }
+    drawCentered(display, y: y, height: height, size: size, kern: 0.8)
+}
+
 drawCentered("CLAW-DJ", y: 1740, height: 105, size: 86)
 drawCentered("THROWBACK R&B + HIP-HOP", y: 1640, height: 70, size: 46)
-drawCentered(transitionLabel, y: 385, height: 82, size: 56)
-drawCentered(seriesLabel, y: 305, height: 62, size: 43)
-drawCentered("FULL MIX ON YOUTUBE  •  @claw-dj", y: 240, height: 55, size: 34)
+// Taller box so "BIG DADDY KANE" is never clipped to "BIG"
+drawTransitionLabel(transitionLabel, y: 330, height: 150)
+drawCentered(seriesLabel, y: 250, height: 62, size: 40)
+drawCentered("FULL MIX ON YOUTUBE  •  @claw-dj", y: 195, height: 50, size: 32)
 
 context.flushGraphics()
 NSGraphicsContext.restoreGraphicsState()
