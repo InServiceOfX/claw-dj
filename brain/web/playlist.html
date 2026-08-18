@@ -34,7 +34,12 @@
     h2 { margin:0; font-size:15px; letter-spacing:0; }
     .count,.meta { color:var(--muted); font-variant-numeric:tabular-nums; }
     .rows { height:600px; overflow:auto; }
-    .track { min-height:58px; display:grid; grid-template-columns:30px minmax(0,1fr) 64px 46px; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid #ecece8; }
+    .track { min-height:58px; display:grid; grid-template-columns:28px 30px minmax(0,1fr) 64px 46px; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid #ecece8; }
+    .preview-btn { min-height:28px; width:28px; padding:0; font-size:12px; line-height:1; }
+    .preview-btn.is-current { background:#176b4d; border-color:#176b4d; color:white; }
+    .preview-dock { position:sticky; bottom:0; z-index:5; display:grid; grid-template-columns:auto minmax(0,1fr) minmax(220px,420px); align-items:center; gap:12px; margin-top:14px; padding:10px 12px; border:1px solid var(--line); background:var(--panel); }
+    .preview-dock audio { width:100%; height:32px; }
+    .preview-label { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--muted); }
     .track:hover { background:#f4f6f2; }
     .track input { width:17px; min-height:17px; accent-color:var(--green); }
     .title,.artist { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
@@ -100,7 +105,7 @@
     .finalized-box { margin-top:12px; border:1px solid var(--line); background:#fafaf7; }
     .finalized-head { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; border-bottom:1px solid var(--line); align-items:center; }
     .finalized-rows { max-height:280px; overflow:auto; }
-    .finalized-row { display:grid; grid-template-columns:minmax(0,1fr) 64px 46px; gap:8px; padding:6px 12px; border-bottom:1px solid #ecece8; font-size:13px; }
+    .finalized-row { display:grid; grid-template-columns:28px minmax(0,1fr) 64px 46px; gap:8px; padding:6px 12px; border-bottom:1px solid #ecece8; font-size:13px; }
     .warn { color:var(--red); }
     .banner { margin-top:10px; padding:10px 12px; border:1px solid #e0c36a; background:#fff8e1; color:#5c4a12; border-radius:4px; }
     .banner[hidden] { display:none; }
@@ -125,7 +130,7 @@
     .is-bunch .unit-head { background:#f3ead2; color:#654d16; }
     .unit-actions { display:flex; flex-wrap:wrap; gap:5px; }
     .unit-actions button { min-height:30px; padding:4px 7px; }
-    .arrange-track { display:grid; grid-template-columns:90px 38px minmax(180px,1.5fr) minmax(150px,.7fr) minmax(210px,1fr) auto; align-items:center; gap:10px; min-height:72px; padding:8px 10px; border-top:1px solid #ecece8; }
+    .arrange-track { display:grid; grid-template-columns:90px 38px minmax(180px,1.5fr) 28px minmax(150px,.7fr) minmax(210px,1fr) auto; align-items:center; gap:10px; min-height:72px; padding:8px 10px; border-top:1px solid #ecece8; }
     .arrange-track.is-unavailable { opacity:.6; background:#eee; }
     .arrange-select { color:var(--muted); font-size:12px; }
     .arrange-select input { min-height:16px; width:16px; vertical-align:middle; }
@@ -344,6 +349,11 @@
       <aside id="transition-editor" class="transition-editor" aria-label="Transition editor" hidden></aside>
       <div id="arrange-live" class="notice" aria-live="polite"></div>
     </div>
+    <div class="preview-dock" id="preview-dock">
+      <button type="button" id="preview-stop" hidden>Stop</button>
+      <span class="preview-label" id="preview-label">Preview a track — does not use Mixxx</span>
+      <audio id="preview-audio" controls preload="none"></audio>
+    </div>
   </main>
   <script>
     const state = { analysis:'all', meta:null, page:'curate' };
@@ -367,13 +377,35 @@
       if (location.hash !== '#' + state.page) location.hash = state.page;
       if (state.page === 'mix') pollMix();
     }
+    function previewButton(trackId, label) {
+      return `<button type="button" class="preview-btn" data-preview-id="${esc(trackId)}" data-preview-label="${esc(label)}" title="Preview in this tab (not Mixxx)" aria-label="Preview ${esc(label)}">▶</button>`;
+    }
     function row(track) {
       const bpm = track.bpm ? Number(track.bpm).toFixed(1) : '—';
       const kind = inferredTrackType(track);
       const badge = kind ? `<span class="track-type ${kind.css}">${esc(kind.label)}</span>` : '';
       const album = track.album ? ` · ${esc(track.album)}` : '';
-      return `<label class="track" title="${esc(track.track_id)}"><input type="checkbox" data-id="${esc(track.track_id)}" ${track.enabled?'checked':''}><span><div class="title">${esc(track.title)}${badge}</div><div class="artist">${esc(track.artist)}${album}</div></span><span class="bpm ${track.bpm?'':'missing'}">${bpm}</span><span class="key ${track.key?'':'missing'}">${esc(track.key || '—')}</span></label>`;
+      const label = `${track.artist || ''} — ${track.title || ''}`.trim();
+      return `<div class="track" title="${esc(track.track_id)}">${previewButton(track.track_id, label)}<label><input type="checkbox" data-id="${esc(track.track_id)}" ${track.enabled?'checked':''}></label><span><div class="title">${esc(track.title)}${badge}</div><div class="artist">${esc(track.artist)}${album}</div></span><span class="bpm ${track.bpm?'':'missing'}">${bpm}</span><span class="key ${track.key?'':'missing'}">${esc(track.key || '—')}</span></div>`;
     }
+    function playPreview(trackId, label) {
+      const audio = el('preview-audio');
+      const next = '/api/preview?track_id=' + encodeURIComponent(trackId);
+      el('preview-label').textContent = label || trackId;
+      el('preview-stop').hidden = false;
+      if (audio.dataset.trackId === trackId && !audio.paused) {
+        audio.pause();
+        return;
+      }
+      audio.dataset.trackId = trackId;
+      audio.src = next;
+      audio.play().catch(error => {
+        el('preview-label').textContent = `Could not preview: ${error.message}`;
+      });
+      document.querySelectorAll('.preview-btn.is-current').forEach(btn => btn.classList.remove('is-current'));
+      document.querySelectorAll(`.preview-btn[data-preview-id="${CSS.escape(trackId)}"]`).forEach(btn => btn.classList.add('is-current'));
+    }
+    window.clawdjPlayPreview = playPreview;
     async function loadMeta() {
       const currentArtist = el('artist').value;
       state.meta = await api('/api/meta');
@@ -423,6 +455,22 @@
     el('artist').addEventListener('change',loadLibrary);
     document.querySelector('.modes').addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;document.querySelectorAll('.modes button').forEach(b=>b.classList.toggle('active',b===button));state.analysis=button.dataset.analysis;loadLibrary()});
     el('library').addEventListener('change',toggle); el('selected').addEventListener('change',toggle);
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-preview-id]');
+      if (!button) return;
+      event.preventDefault();
+      playPreview(button.dataset.previewId, button.dataset.previewLabel);
+    });
+    el('preview-stop').addEventListener('click', () => {
+      const audio = el('preview-audio');
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      delete audio.dataset.trackId;
+      el('preview-label').textContent = 'Preview a track — does not use Mixxx';
+      el('preview-stop').hidden = true;
+      document.querySelectorAll('.preview-btn.is-current').forEach(btn => btn.classList.remove('is-current'));
+    });
     el('seed').addEventListener('click',async()=>{const result=await api('/api/seed',{method:'POST'});el('notice').textContent=`Matched ${result.matched} researched tracks. ${result.unmatched.length} still missing from the scanned crate.`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('mixorder').addEventListener('click',async()=>{const result=await api('/api/mix-order',{method:'POST'});el('notice').textContent=result.message || `Reordered ${result.count} tracks (mean mix score ${result.mean_score}).`;await Promise.all([loadMeta(),loadLibrary(),loadSelected()])});
     el('clear-set').addEventListener('click', async () => {
@@ -635,7 +683,8 @@
         const kind = inferredTrackType(t);
         const badge = kind ? ` <span class="track-type ${kind.css}">${esc(kind.label)}</span>` : '';
         const album = t.album ? ` <span class="artist">· ${esc(t.album)}</span>` : '';
-        return `<div class="finalized-row"><span><strong>${String(i+1).padStart(2,'0')}.</strong> ${esc(t.artist)} — ${esc(t.title)}${badge}${album}</span>` +
+        const label = `${t.artist || ''} — ${t.title || ''}`.trim();
+        return `<div class="finalized-row">${previewButton(t.track_id, label)}<span><strong>${String(i+1).padStart(2,'0')}.</strong> ${esc(t.artist)} — ${esc(t.title)}${badge}${album}</span>` +
           `<span class="bpm ${t.bpm?'':'missing'}">${bpm}</span>` +
           `<span class="key ${t.key?'':'missing'}">${esc(t.key || '—')}</span></div>`;
       }).join('');

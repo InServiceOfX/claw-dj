@@ -3,6 +3,16 @@
 This current product-intent record is maintained by `pdd intent apply`.
 Each accepted change links to an immutable intent event.
 
+<!-- pdd-intent-entry:through-the-browser-gui-http-127-0-0-1-8787-cura-88023c99:start -->
+## Preview a track quickly from the browser GUI
+
+- Intent event: [`docs/intents/intent__preview-a-track-quickly-from-the-browser-gui-88023c99.md`](intents/intent__preview-a-track-quickly-from-the-browser-gui-88023c99.md)
+- Change kind: `add`
+- Scope: playlist GUI (not Mixxx hands)
+
+> From `#curate` and `#mix`, preview a library track in the same browser tab with the native HTML5 audio element. Do not use Mixxx for this listen, do not require a browser plugin, and do not stream files that are not already in the loaded library index.
+<!-- pdd-intent-entry:through-the-browser-gui-http-127-0-0-1-8787-cura-88023c99:end -->
+
 <!-- pdd-intent-entry:portable-music-collection-no-hardcoded-volume-la-288cef1d:start -->
 ## Portable music collection: no hardcoded volume label, safe availability, deferred relative identity
 

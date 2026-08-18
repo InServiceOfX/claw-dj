@@ -452,6 +452,7 @@ function renderTrack(track, index, note, bunch) {
     <label class="arrange-select"><input type="checkbox" data-select-track="${escapeHtml(track.track_id)}"> Select track ${index + 1}</label>
     <div class="arrange-position">${index + 1}</div>
     <div><div class="title">${escapeHtml(track.title || track.track_id)}</div><div class="artist">${escapeHtml(track.artist || '')}</div></div>
+    <button type="button" class="preview-btn" data-preview-id="${escapeHtml(track.track_id)}" data-preview-label="${escapeHtml(`${track.artist || ''} — ${track.title || track.track_id}`)}" title="Preview in this tab (not Mixxx)">▶</button>
     <div class="track-facts"><span>${track.bpm ? `${Number(track.bpm).toFixed(1)} BPM` : 'BPM —'}</span><span>${escapeHtml(track.key || 'Key —')}</span><span>${available ? 'Available' : 'Unavailable'}</span></div>
     <div class="effective-note"><strong>${escapeHtml(note?.layer || 'global')} note${note?.diverged ? ' · diverged' : ''}</strong><span>${escapeHtml(note?.note || 'No DJ note')}</span></div>
     <button type="button" data-remove-track="${escapeHtml(track.track_id)}" aria-label="Remove ${escapeHtml(track.title || track.track_id)} from plan">Remove</button>

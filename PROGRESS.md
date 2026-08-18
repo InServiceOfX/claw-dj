@@ -6,7 +6,14 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
-## Active cross-machine priorities (updated 2026-08-12)
+## Active cross-machine priorities (updated 2026-08-18)
+
+- [x] **In-browser track preview on Curate / Mix / Arrange (2026-08-18).**
+      Native HTML5 `<audio>` + `GET /api/preview?track_id=` streams only
+      indexed library files (Range-aware). Mixxx is not used for audition.
+      Story: `user_stories/story__when_i_curate_or_build_a_mix_i_can_preview_a_track_in_the_browser.md`.
+
+## Earlier priorities (updated 2026-08-12)
 
 - [x] **Media scripts + Veltria read live in-repo (2026-08-12).** Campaign
       renderers from `~/Music/Mixxx/Recordings/` are copied (scripts only)

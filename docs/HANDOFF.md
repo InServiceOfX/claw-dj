@@ -524,7 +524,7 @@ uv run python -m brain.build_demo_subset   # edit the artist/filter criteria
 | `brain/build_demo_subset.py` | Picks a curated subset from the crate, writes `.m3u` for one-shot Mixxx import |
 | `brain/build_lineage_set.py` | Builds the sample-lineage playlist from canonical hip-hop/RnB tracks in the crate |
 | `brain/analyze_bpm.py` / `brain/analyze_via_mixxx.py` | Provisional librosa BPM analysis and deterministic Mixxx analysis for the lineage set |
-| `brain/playlist_editor.py` | Local browser UI for searching the crate, enabling/disabling tracks, applying the researched R&B/West Coast hit seed, exporting a Mixxx playlist without dropping BPM/key metadata, "Ask the DJ brain", and post-finalize **Create the mix** (profile + brief → plan → confirmed live start) |
+| `brain/playlist_editor.py` | Local browser UI for searching the crate, enabling/disabling tracks, applying the researched R&B/West Coast hit seed, exporting a Mixxx playlist without dropping BPM/key metadata, "Ask the DJ brain", post-finalize **Create the mix** (profile + brief → plan → confirmed live start), and **in-tab preview** via native `<audio>` + `GET /api/preview` (not Mixxx) |
 | `brain/mix_profiles.py` | Named mix-feel presets + free-text brief → profile overrides |
 | `brain/dj_formats.py` | Versioned expert transition grammars, strict phrase requirements, and format provenance |
 | `brain/mix_order_brief.py` | Free-text order intent → agent constraints → greedy + forced adjacency/regions |

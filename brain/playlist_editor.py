@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from brain import collection_registry, library_index
 from brain.library import DEFAULT_CRATE_CACHE, Energy, Track, load_crate
+from brain.track_preview import PreviewError, content_type, parse_byte_range, resolve_preview_path
 from brain.library_index import configured_roots, export_records, scan_status
 from brain.playlist import (
     DATA_DIR,
@@ -1532,6 +1533,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
     legacy_methods = {
         "/api/meta": ("GET",), "/api/tracks": ("GET",), "/api/ingest": ("GET",),
         "/api/brain": ("GET",), "/api/directives": ("GET",), "/api/mix": ("GET",),
+        "/api/preview": ("GET", "HEAD"),
         "/api/selection": ("POST",), "/api/selection/clear": ("POST",),
         "/api/seed": ("POST",), "/api/mix-order": ("POST",), "/api/export": ("POST",),
         "/api/ingest/scan": ("POST",), "/api/ingest/add-root": ("POST",),
@@ -1603,9 +1605,58 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                 self._json({"error": "bad_request", "message": str(error)}, HTTPStatus.BAD_REQUEST)
             return True
 
+        def _send_preview(self, parsed) -> None:
+            params = parse_qs(parsed.query)
+            track_id = (params.get("track_id") or [""])[0]
+            try:
+                path = resolve_preview_path(app.by_id, track_id)
+                size = path.stat().st_size
+                start, end, partial = parse_byte_range(self.headers.get("Range"), size)
+            except PreviewError as error:
+                status = HTTPStatus(error.status)
+                if error.status == 416:
+                    self.send_response(status)
+                    self.send_header("Content-Range", "bytes */0")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self._json({"error": error.code, "message": error.message}, status)
+                return
+            length = end - start + 1
+            status = HTTPStatus.PARTIAL_CONTENT if partial else HTTPStatus.OK
+            self.send_response(status)
+            self.send_header("Content-Type", content_type(path))
+            self.send_header("Content-Length", str(length))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "private, max-age=0")
+            if partial:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            if self.command == "HEAD":
+                return
+            with path.open("rb") as handle:
+                handle.seek(start)
+                remaining = length
+                while remaining:
+                    chunk = handle.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+
+        def do_HEAD(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/preview":
+                self._send_preview(parsed)
+                return
+            self.send_error(HTTPStatus.NOT_FOUND)
+
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if self._dispatch_plan_route("GET", parsed):
+                return
+            if parsed.path == "/api/preview":
+                self._send_preview(parsed)
                 return
             if parsed.path == "/api/meta":
                 self._json(app.metadata())
