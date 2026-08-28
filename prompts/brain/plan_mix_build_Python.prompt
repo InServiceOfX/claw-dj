@@ -71,6 +71,7 @@ Because `build(slug, *, profile=None, dj_format=None, seconds_per_track=None, **
 16. Keep legacy singleton constants as explicit fallback only for legacy/non-plan callers so existing patch-the-constant tests remain valid.
 17. The implementation MUST be deterministic for identical tracks, analysis, constraints, and options. Resolve equal-score ties stably by track identity.
 18. Add unittest coverage for: no-LLM reordering; empty-brief reordering; exact-once preservation; deterministic tie behavior; LLM failure fallback; invalid LLM output fallback; H planning without desktop initialization; explicit constraints; plan-scoped paths; preview payload; legacy fallback; explicit control-port override precedence; and discovered/reused validated localhost control-port propagation without fallback to `9995`.
+19. Enforce vocals-only stem safety on the emitted events. A track whose title explicitly identifies it as Acapella, Acappella, A Cappella, Vocal Only, or Vocals Only MUST NOT have a solo `play_body` longer than the 64-beat short-break ceiling. Longer use must be paired with a compatible instrumental via `entry_style=vocal_over_bed`, unless its effective note explicitly marks a deliberate `showcase_acapella` exception. A violation MUST fail the build with an actionable error naming the track and both legal remedies; documentation alone is insufficient.
 
 % User story acceptance
 
@@ -92,3 +93,4 @@ As a DJ, when I finalize a playlist I am declaring which songs are available, no
 - Verify an explicit Mixxx control API port override wins over any discovered or default value in the built artifact metadata.
 - Verify that when a validated non-default localhost control port is already known, the built artifact preserves and propagates that port rather than falling back to `9995`.
 - Verify GUI and CLI build paths produce equivalent port-related metadata for the same inputs.
+- Verify a tagged acapella with a solo `play_body` fails the build, while a `vocal_over_bed` layer or explicit `showcase_acapella` exception passes.

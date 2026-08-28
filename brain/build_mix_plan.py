@@ -22,6 +22,7 @@ from contextlib import closing
 from pathlib import Path
 
 from brain.mix_graph import bpm_compatibility, key_compatibility, parse_key
+from brain.phrase_analysis import seekable_cue_seconds, usable_first_beat_seconds
 
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_PLAYLIST = DATA_DIR / "playlist.json"
@@ -225,6 +226,21 @@ def track_directives(track: dict) -> dict:
         "opener_style": word("opener_style"),
         "format_recipe": word("format_recipe"),
         "juggle_chops": int(value) if (value := number("juggle_chops")) is not None else None,
+        "juggle_hold_beats": (
+            float(value) if (value := number("juggle_hold_beats")) is not None else None
+        ),
+        # Remix Report ep.12: bars of brake/vocal *before* the real downbeat.
+        # Start those early so beat N is on 1 — never treat the pickup as beat 1.
+        "pickup_beats": (
+            int(value) if (value := number("pickup_beats")) is not None else None
+        ),
+        # Remix Report 088–099: chorus length in bars (4 beats each). An
+        # 8-bar DJ intro against a 10-bar chorus waits 2 bars; against a
+        # 6-bar chorus skips 2 bars of the intro. Long (16+) choruses mix
+        # out at 8 — do not put 24 here.
+        "chorus_bars": (
+            int(value) if (value := number("chorus_bars")) is not None else None
+        ),
         "landing_seconds": number("landing_seconds"),
         "landing_beats": int(value) if (value := number("landing_beats")) is not None else None,
         "intro_seconds": number("intro_seconds"),
@@ -386,7 +402,7 @@ def beat_index_for_seconds(
             "an analyzed beatgrid (run Analyze & enrich missing)"
         )
     bpm = float(grid["bpm"])
-    first = float(grid["first_beat_seconds"])
+    first = usable_first_beat_seconds(grid["first_beat_seconds"])
     raw_index = (float(seconds) - first) / (60.0 / bpm)
     beat_index = round(raw_index)
     # Timestamps from synced lyrics are approximate, so allow one fifth of a
@@ -415,7 +431,7 @@ def seconds_for_beat(
             "an analyzed beatgrid"
         )
     return round(
-        float(grid["first_beat_seconds"])
+        usable_first_beat_seconds(grid["first_beat_seconds"])
         + beat_index * 60.0 / float(grid["bpm"]),
         3,
     )
@@ -487,16 +503,19 @@ def build_plan(
             }
         cue_seconds = result.get("cue_seconds")
         phase = beat_phase_lookup.get(track_id) or phrase_lookup.get(track_id)
+        first_beat = (
+            usable_first_beat_seconds(phase.get("first_beat_seconds"))
+            if phase and phase.get("first_beat_seconds") is not None
+            else None
+        )
         if (
             cue_seconds is not None
             and phase
             and phase.get("bpm")
-            and phase.get("first_beat_seconds") is not None
+            and first_beat is not None
         ):
             period = 60.0 / float(phase["bpm"])
-            raw_index = (
-                float(cue_seconds) - float(phase["first_beat_seconds"])
-            ) / period
+            raw_index = (float(cue_seconds) - first_beat) / period
             # The analyzed grid's public beat indices start at zero.  A cue
             # near the file head can round to a hypothetical negative beat;
             # clamping only its seconds would make the stored index disagree
@@ -514,10 +533,14 @@ def build_plan(
                 # must leave it alone.
                 result.pop("cue_beat_index", None)
                 result["cue_grid_offset_beats"] = round(grid_offset_beats, 3)
+                # File-head openers (What Up Gangsta at 0.00s with
+                # trust_cue_seconds) sit a few tens of ms before Mixxx's
+                # first_beat. Playback stays at 0; planning still uses
+                # beat 0 so guided format does not abort the whole set.
+                if beat_index == 0:
+                    cue_beat_index_cache[track_id] = 0
                 return result
-            snapped_seconds = (
-                float(phase["first_beat_seconds"]) + beat_index * period
-            )
+            snapped_seconds = first_beat + beat_index * period
             if abs(grid_offset_beats) > 0.01:
                 result["cue_seconds_requested"] = round(float(cue_seconds), 4)
                 result["cue_seconds"] = round(max(0.0, snapped_seconds), 4)
@@ -612,6 +635,54 @@ def build_plan(
             # Human verification is sufficient for the guided format too,
             # but it remains subject to beatgrid/downbeat validation.
             return strict_intro_cue(track)
+        if (
+            directive["landing_seconds"] is not None
+            and directive["landing_beats"] is not None
+            and track.get("bpm")
+        ):
+            # verse_landing pre-roll: start early so the lyric hits when the
+            # fader completes. Guided still requires bar 1, so snap back to
+            # the previous downbeat rather than starting mid-bar / mid-word.
+            raw_cue = max(
+                0.0,
+                directive["landing_seconds"]
+                - directive["landing_beats"] * 60.0 / float(track["bpm"]),
+            )
+            grid = phrase_lookup.get(track["track_id"]) or beat_phase_lookup.get(
+                track["track_id"]
+            )
+            if not grid or not grid.get("bpm") or grid.get("first_beat_seconds") is None:
+                raise ValueError(
+                    f"{track['artist']} — {track['title']}: guided verse "
+                    "landing needs an analyzed beatgrid"
+                )
+            first = usable_first_beat_seconds(grid["first_beat_seconds"])
+            raw_index = (raw_cue - first) / (60.0 / float(grid["bpm"]))
+            beat_index = max(0, int(raw_index))
+            beat_index -= beat_index % dj_format.beats_per_bar
+            cue_seconds = seconds_for_beat(
+                track,
+                beat_index,
+                phrase_lookup=phrase_lookup,
+                beat_phase_lookup=beat_phase_lookup,
+            )
+            return _remember_cue_beat_index(
+                track["track_id"],
+                {
+                    "cue_seconds": round(float(cue_seconds), 3),
+                    "cue_beat_index": beat_index,
+                    "landing_seconds": directive["landing_seconds"],
+                    "landing_beats": directive["landing_beats"],
+                    "cue_confidence": 1.0,
+                    "cue_source": "guided_human_landing_downbeat",
+                    "format_intro_verified": False,
+                    "format_intro_reason": (
+                        "verse landing snapped back to beat 1 of the bar; "
+                        "not a verified 8-bar intro"
+                    ),
+                    "dj_notes": track.get("dj_notes") or "",
+                },
+            )
         if directive["cue_seconds"] is not None:
             cue_seconds = directive["cue_seconds"]
             beat_index = beat_index_for_seconds(
@@ -687,6 +758,13 @@ def build_plan(
             source = "guided_first_beat"
             reason = "first analyzed beat; no verified 8-bar intro"
 
+        duration = track.get("duration_seconds") or phrase.get("duration")
+        raw_cue = float(cue_seconds)
+        cue_seconds = seekable_cue_seconds(raw_cue, duration)
+        if cue_seconds == 0.0 and abs(raw_cue) > 1e-6:
+            beat_index = 0
+            source = f"{source}+sanitized"
+
         if beat_index % dj_format.beats_per_bar:
             # Move forward to the next bar downbeat rather than accepting an
             # arbitrary beat. The beatgrid remains the authority.
@@ -721,6 +799,22 @@ def build_plan(
         if dj_format.planner == "hiphop_rnb_guided" and slot > 0:
             return guided_intro_cue(track)
         directive = track_directives(track)
+        if (
+            directive["pickup_beats"]
+            and track.get("bpm")
+        ):
+            pickup = max(1, int(directive["pickup_beats"]))
+            period = 60.0 / float(track["bpm"])
+            landing = pickup * period
+            return _remember_cue_beat_index(track["track_id"], {
+                "cue_seconds": 0.0,
+                "landing_seconds": round(landing, 3),
+                "landing_beats": pickup,
+                "pickup_beats": pickup,
+                "cue_confidence": 1.0,
+                "cue_source": "dj_notes_pickup",
+                "dj_notes": track.get("dj_notes") or "",
+            })
         if directive["cue_seconds"] is not None:
             return _remember_cue_beat_index(track["track_id"], {
                 "cue_seconds": directive["cue_seconds"],
@@ -788,15 +882,21 @@ def build_plan(
         # word: snap forward to the nearest actual lyric-line start when
         # synced lyrics are available (Ernest, 2026-07-16, caught on Cassie
         # — Me&U landing on "...wanna see if it's true").
+        duration = track.get("duration_seconds") or phrase.get("duration")
+        raw_cue = float(pick["cue_seconds"])
+        cue_seconds = seekable_cue_seconds(raw_cue, duration)
+        sanitized = cue_seconds == 0.0 and abs(raw_cue) > 1e-6
+        if sanitized:
+            source = f"{source}+sanitized"
         cue_seconds, did_snap = snap_to_lyric_line(
-            pick["cue_seconds"], track["track_id"], lyric_line_lookup
+            cue_seconds, track["track_id"], lyric_line_lookup
         )
         if did_snap:
             source = f"{source}+lyric_snap"
         return _remember_cue_beat_index(track["track_id"], {
             "cue_seconds": cue_seconds,
-            "cue_beat_index": pick.get("beat_index"),
-            "cue_confidence": pick.get("confidence"),
+            "cue_beat_index": 0 if sanitized else pick.get("beat_index"),
+            "cue_confidence": 0.0 if sanitized else pick.get("confidence"),
             "cue_source": source,
         })
 
@@ -1064,6 +1164,11 @@ def build_plan(
                     if opener_directive["juggle_chops"] is not None
                     else {}
                 ),
+                **(
+                    {"juggle_hold_beats": opener_directive["juggle_hold_beats"]}
+                    if opener_directive["juggle_hold_beats"] is not None
+                    else {}
+                ),
                 "detail": (
                     "Beat-juggle repeated cue drops between two copies, then land clean."
                     if opener_directive["opener_style"] == "juggle_intro"
@@ -1108,12 +1213,80 @@ def build_plan(
     # Hard-cut budget for the whole mix; see the enforcement block below.
     hard_cuts_used = 0
     previous_was_hard_cut = False
+    skip_outgoing_body = False
+    bed_live_label = None
+    bed_live_track = None
 
     for index in range(len(selected) - 1):
         outgoing = selected[index]
         incoming = selected[index + 1]
         out_deck = live_deck
         in_deck = 2 if live_deck == 1 else 1
+        if skip_outgoing_body:
+            # Previous incoming was a vocals-only layer. The instrumental bed
+            # is still the live deck; this outgoing acapella must not play dry.
+            skip_outgoing_body = False
+            bed = bed_live_track or outgoing
+            aff = affinity_lookup.get(tuple(sorted((bed["track_id"], incoming["track_id"]))))
+            tech = pick_technique(bed, incoming, aff, avoid_silence=profile.avoid_silence)
+            tech.setdefault("showcase_move", "bass_swap")
+            incoming_directive = track_directives(incoming)
+            if incoming_directive["play_bpm"] is not None:
+                tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
+            # Vocal deck is free after the layer. Load the next full song
+            # there before handing off from the still-playing bed.
+            events.append(
+                {
+                    "op": "load",
+                    "deck": in_deck,
+                    "track_id": incoming["track_id"],
+                    "artist": incoming["artist"],
+                    "title": incoming["title"],
+                    **cue_fields(incoming, 0.12, index + 1),
+                }
+            )
+            if index + 2 < len(selected):
+                nxt = selected[index + 2]
+                events.append(
+                    {
+                        "op": "preload_after_transition",
+                        "deck": out_deck,
+                        "track_id": nxt["track_id"],
+                        "artist": nxt["artist"],
+                        "title": nxt["title"],
+                        **cue_fields(nxt, 0.1, index + 2),
+                    }
+                )
+            events.append(
+                {
+                    "op": "transition",
+                    "from_deck": out_deck,
+                    "to_deck": in_deck,
+                    "from_track": bed_live_label or f"{bed['artist']} — {bed['title']}",
+                    "to_track": f"{incoming['artist']} — {incoming['title']}",
+                    **tech,
+                    "notes": (
+                        (tech.get("notes") or "")
+                        + " Bed stays live after the vocal layer; this handoff leaves the acapella."
+                    ).strip(),
+                }
+            )
+            segments.append(
+                {
+                    "index": index,
+                    "from": bed_live_label or f"{bed['artist']} — {bed['title']}",
+                    "to": f"{incoming['artist']} — {incoming['title']}",
+                    "technique": tech["technique"],
+                    "beats": tech["transition_beats"],
+                    "score": tech["score"],
+                    "showcase_move": tech["showcase_move"],
+                }
+            )
+            bed_live_label = None
+            bed_live_track = None
+            live_deck = in_deck
+            previous_fade_beats = tech["transition_beats"]
+            continue
         aff = affinity_lookup.get(tuple(sorted((outgoing["track_id"], incoming["track_id"]))))
         tech = pick_technique(outgoing, incoming, aff, avoid_silence=profile.avoid_silence)
         incoming_directive = track_directives(incoming)
@@ -1244,6 +1417,23 @@ def build_plan(
                     "Mixxx phase-syncs the otherwise near-identical tempos."
                 ),
             )
+        elif incoming_directive["entry_style"] == "vocal_over_bed":
+            layer_beats = incoming_directive["ride_beats"] or incoming_directive["landing_beats"] or 96
+            tech.update(
+                technique="vocal_over_bed",
+                transition_beats=max(16, int(layer_beats)),
+                moves=["sync", "vocal_over_bed"],
+                showcase_move="vocal_over_bed",
+                keep_outgoing_live=True,
+                bed_track_id=outgoing["track_id"],
+                vocal_track_id=incoming["track_id"],
+                notes=(
+                    "Human DJ note: keep the outgoing instrumental bed playing. "
+                    "Start the vocals-only track on the other deck, beat-matched, "
+                    "crossfader center. Do not ride the acapella dry. After the "
+                    "layer, fade the vocal out and keep the bed."
+                ),
+            )
         elif incoming_directive["entry_style"] == "verse_landing":
             landing_beats = incoming_directive["landing_beats"] or 24
             tech.update(
@@ -1260,6 +1450,24 @@ def build_plan(
                     "Human DJ note: pre-roll the incoming track during a "
                     f"{landing_beats}-beat overlap so the crossfader lands "
                     f"on its requested verse at {incoming_directive['landing_seconds']:.3f}s."
+                ),
+            )
+        elif incoming_directive["pickup_beats"] and incoming.get("bpm"):
+            pickup = max(1, int(incoming_directive["pickup_beats"]))
+            landing = pickup * 60.0 / float(incoming["bpm"])
+            tech.update(
+                technique="pickup_on_one_blend",
+                transition_beats=max(int(tech["transition_beats"]), pickup),
+                landing_seconds=round(landing, 3),
+                landing_tolerance_seconds=1.0,
+                moves=[
+                    "sync", "eq_dip_out_mid", "crossfade", "eq_restore",
+                ],
+                showcase_move="pickup_on_one",
+                notes=(
+                    "Remix Report: start the incoming pickup early so the "
+                    f"real downbeat (beat {pickup}) lands on 1. Wrong: treat "
+                    "the brake/vocal pickup as beat 1."
                 ),
             )
         if incoming_directive["play_bpm"] is not None:
@@ -1345,7 +1553,47 @@ def build_plan(
         next_boundary += (ride_phrases - 1) * phrase_beats
         ride_beats = max(0, next_boundary - elapsed_in_phrase - 1)
         if directive["ride_beats"] is not None:
-            ride_beats = max(0, min(512, directive["ride_beats"]))
+            # 1024: a 168 BPM double-time grid (Wanna Get To Know) needs ~640
+            # beats to cover 4 minutes. 512 cut 50's verse off.
+            ride_beats = max(0, min(1024, directive["ride_beats"]))
+
+        # Remix Report: start an 8-bar intro on the downbeat of an 8-bar
+        # chorus. 10-bar: wait 2 bars, then intro. 6-bar: skip 2 bars of
+        # the incoming intro. Only the 4–12 bar "tricky" range; 24/40-bar
+        # hits mix out at 8 (ep.096).
+        chorus_bars = directive.get("chorus_bars")
+        if chorus_bars and 4 <= int(chorus_bars) <= 12:
+            wait_bars = max(0, int(chorus_bars) - 8)
+            skip_intro_bars = max(0, 8 - int(chorus_bars))
+            if wait_bars:
+                ride_beats += wait_bars * 4
+                tech["outgoing_chorus_bars"] = int(chorus_bars)
+                extra = (
+                    f" Remix Report: {chorus_bars}-bar chorus — wait "
+                    f"{wait_bars} bars, then start the 8-bar intro."
+                )
+                tech["notes"] = (tech.get("notes") or "") + extra
+            if skip_intro_bars and incoming.get("bpm"):
+                extra_s = skip_intro_bars * 4 * 60.0 / float(incoming["bpm"])
+                for ev in reversed(events):
+                    if (
+                        ev.get("op") in {"load", "preload_after_transition"}
+                        and ev.get("track_id") == incoming["track_id"]
+                    ):
+                        ev["cue_seconds"] = round(
+                            float(ev.get("cue_seconds") or 0.0) + extra_s, 4
+                        )
+                        ev["chorus_intro_skip_bars"] = skip_intro_bars
+                        src = str(ev.get("cue_source") or "analyzed")
+                        if not src.endswith("+chorus_intro_skip"):
+                            ev["cue_source"] = f"{src}+chorus_intro_skip"
+                        break
+                tech["outgoing_chorus_bars"] = int(chorus_bars)
+                extra = (
+                    f" Remix Report: {chorus_bars}-bar chorus — skip "
+                    f"{skip_intro_bars} bars of the incoming 8-bar intro."
+                )
+                tech["notes"] = (tech.get("notes") or "") + extra
 
         if dj_format.planner == "hiphop_rnb_8bar":
             recipe = (
@@ -1442,16 +1690,25 @@ def build_plan(
                 )
             outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
             incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
+            grid_fallback_reason = None
             if outgoing_entry_beat is None or incoming_entry_beat is None:
-                raise ValueError(
+                # Guided, not strict: one off-grid opener (trust_cue_seconds
+                # at file head) must not fail a 148-track mix. Label fallback.
+                grid_fallback_reason = (
                     f"{outgoing['artist']} — {outgoing['title']} → "
-                    f"{incoming['artist']} — {incoming['title']}: guided "
-                    "format could not resolve both cues onto beatgrids"
+                    f"{incoming['artist']} — {incoming['title']}: "
+                    "cues not both on analyzed beatgrids; "
+                    "phrase-aligned fallback"
+                )
+                outgoing_entry_beat = (
+                    0 if outgoing_entry_beat is None else outgoing_entry_beat
+                )
+                incoming_entry_beat = (
+                    0 if incoming_entry_beat is None else incoming_entry_beat
                 )
             if incoming_entry_beat % dj_format.beats_per_bar:
-                raise ValueError(
-                    f"{incoming['artist']} — {incoming['title']}: guided "
-                    f"entry beat {incoming_entry_beat} is not beat 1"
+                incoming_entry_beat += dj_format.beats_per_bar - (
+                    incoming_entry_beat % dj_format.beats_per_bar
                 )
             current_beat = outgoing_entry_beat + elapsed_in_phrase
             # See the strict path above: search for the exit only after the
@@ -1474,7 +1731,9 @@ def build_plan(
                 incoming["track_id"]
             ) or {}
             intro_verified = bool(entry_evidence.get("verified"))
-            expert_recipe = strict_exit and intro_verified
+            expert_recipe = (
+                strict_exit and intro_verified and not grid_fallback_reason
+            )
             loop_fields: dict = {}
             if expert_recipe and recipe == "intro_loop_under_entry":
                 try:
@@ -1519,6 +1778,7 @@ def build_plan(
                 reasons = [
                     part
                     for part in (
+                        grid_fallback_reason,
                         fallback_reason,
                         (
                             entry_evidence.get("reason")
@@ -1549,6 +1809,12 @@ def build_plan(
                 format_entry_source=entry_evidence.get("source"),
                 format_phrase_bars=dj_format.phrase_bars,
             )
+
+        # Format chooses WHERE a transition may land (bar 1). trust_ride_beats
+        # is the human how-long lock and outranks the format's next-chorus
+        # exit arithmetic. Same contract as format_min_ride_beats / DJ_STYLE_GUIDE.
+        if directive["trust_ride_beats"] and directive["ride_beats"] is not None:
+            ride_beats = max(0, min(1024, int(directive["ride_beats"])))
 
         # Human pair beat overrides must win before phase/anchor math and before
         # previous_fade_beats is advanced. Post-build patching of transition
@@ -1658,7 +1924,9 @@ def build_plan(
             )
             body_event["phase_anchor"] = {
                 "grid_bpm": float(outgoing_grid["bpm"]),
-                "first_beat_seconds": float(outgoing_grid["first_beat_seconds"]),
+                "first_beat_seconds": usable_first_beat_seconds(
+                    outgoing_grid["first_beat_seconds"]
+                ),
                 "planned_anchor_beat_index": planned_anchor_beat,
                 "target_beat_mod4": planned_anchor_beat % 4,
                 "target_beat_parity": planned_anchor_beat % 2,
@@ -1672,13 +1940,18 @@ def build_plan(
             body_event["native_bpm"] = outgoing.get("bpm")
         events.append(body_event)
 
-        # Prefetch next-next track onto free deck after transition starts planning
-        if index + 2 < len(selected):
+        # Prefetch next-next track onto the deck this transition will free.
+        # vocal_over_bed keeps the bed live and still needs the vocal on the
+        # incoming deck, so do not preload over it — the skip path loads the
+        # following song after the layer.
+        if index + 2 < len(selected) and not (
+            tech.get("keep_outgoing_live") or tech.get("technique") == "vocal_over_bed"
+        ):
             nxt = selected[index + 2]
             events.append(
                 {
                     "op": "preload_after_transition",
-                    "deck": out_deck,  # the deck that will free after fade
+                    "deck": out_deck,
                     "track_id": nxt["track_id"],
                     "artist": nxt["artist"],
                     "title": nxt["title"],
@@ -1726,8 +1999,14 @@ def build_plan(
                 ),
             }
         )
-        live_deck = in_deck
-        previous_fade_beats = tech["transition_beats"]
+        if tech.get("keep_outgoing_live") or tech.get("technique") == "vocal_over_bed":
+            skip_outgoing_body = True
+            previous_fade_beats = 0
+            bed_live_label = f"{outgoing['artist']} — {outgoing['title']}"
+            bed_live_track = outgoing
+        else:
+            live_deck = in_deck
+            previous_fade_beats = tech["transition_beats"]
 
     final_track = selected[-1]
     final_directive = track_directives(final_track)

@@ -3,12 +3,46 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 
 from brain import order_constraints, plan_journal, plan_notes, plan_paths, transition_overrides
 from brain.build_mix_plan import compose_mix_plan
 from brain.plan_mix_envelope import decorate
 from brain.plan_revision import StalePlanError, file_rev, plan_rev, write_checked
+
+
+_VOCALS_ONLY = re.compile(
+    r"(?:\bacap+ell+a?\b|\ba\s+cappella\b|\bvocals?[- ]only\b)",
+    re.IGNORECASE,
+)
+_MAX_SOLO_VOCAL_BEATS = 64
+
+
+def _validate_vocals_only_playback(plan: dict, notes: dict[str, str]) -> None:
+    """Refuse a built plan that would ride a vocals-only stem by itself."""
+    body_beats = {
+        str(event.get("track", "")): int(event.get("beats") or 0)
+        for event in plan.get("events", [])
+        if event.get("op") == "play_body"
+    }
+    for track in plan.get("tracks", []):
+        title = str(track.get("title", ""))
+        if not _VOCALS_ONLY.search(title):
+            continue
+        display = f"{track.get('artist', '')} — {title}"
+        if body_beats.get(display, 0) <= _MAX_SOLO_VOCAL_BEATS:
+            continue
+        note = notes.get(str(track.get("track_id", "")), "")
+        if "showcase_acapella" in note.casefold():
+            continue
+        raise ValueError(
+            f"vocals-only track {display} has a long solo play_body event "
+            f"({body_beats[display]} beats; maximum short break is "
+            f"{_MAX_SOLO_VOCAL_BEATS}); pair it "
+            "with a compatible instrumental and use entry_style=vocal_over_bed, "
+            "or explicitly mark a short showcase_acapella exception"
+        )
 
 
 def playlist_path(slug: str):
@@ -55,6 +89,7 @@ def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **
             transition_beats_by_pair=beats_by_pair,
             **opts,
         )
+        _validate_vocals_only_playback(plan, notes)
         built_ids = [track["track_id"] for track in plan.get("tracks", [])]
         expected = track_ids
         if opts.get("tracks") is None:

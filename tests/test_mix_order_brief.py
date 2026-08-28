@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from brain.mix_order_brief import (
     apply_constraints,
+    core_title,
     force_adjacent,
+    mashup_payoff_pairs,
     order_from_brief,
     parse_constraints,
     place_block_in_region,
@@ -154,6 +156,103 @@ class MixOrderBriefTest(TestCase):
         titles = [row["title"] for row in ordered]
         self.assertEqual(abs(titles.index("Title1") - titles.index("Title4")), 1)
         self.assertTrue(any("adjacent" in n for n in notes))
+
+    def test_mashup_payoff_pairs_tease_not_same_song_version(self) -> None:
+        rows = [
+            {
+                "track_id": "/music/break.mp3",
+                "artist": "Holla Boyz",
+                "title": "Show Me Love In Da Club (Hollaboyz Remix)",
+                "bpm": 92.0,
+                "key": "C#m",
+            },
+            {
+                "track_id": "/music/club.mp3",
+                "artist": "50 Cent",
+                "title": "In Da Club",
+                "bpm": 90.0,
+                "key": "C#m",
+            },
+            {
+                "track_id": "/music/pimp.mp3",
+                "artist": "50 Cent",
+                "title": "P.I.M.P.",
+                "bpm": 85.0,
+                "key": "Ebm",
+            },
+            {
+                "track_id": "/music/pimp-remix.mp3",
+                "artist": "50 Cent",
+                "title": "P.I.M.P. Remix (Explicit)",
+                "bpm": 85.0,
+                "key": "Ebm",
+            },
+            {
+                "track_id": "/music/club-inst.mp3",
+                "artist": "50 Cent",
+                "title": "In Da Club (Instrumental)",
+                "bpm": 90.0,
+                "key": "C#m",
+            },
+        ]
+        self.assertEqual(core_title("P.I.M.P. Remix (Explicit)"), core_title("P.I.M.P."))
+        self.assertEqual(
+            mashup_payoff_pairs(rows),
+            [("/music/break.mp3", "/music/club.mp3")],
+        )
+
+    def test_apply_constraints_puts_original_after_party_break(self) -> None:
+        rows = [
+            {
+                "track_id": "/music/a.mp3",
+                "artist": "A",
+                "title": "Filler One",
+                "bpm": 90.0,
+                "key": "Am",
+            },
+            {
+                "track_id": "/music/club.mp3",
+                "artist": "50 Cent",
+                "title": "In Da Club",
+                "bpm": 90.0,
+                "key": "C#m",
+            },
+            {
+                "track_id": "/music/break.mp3",
+                "artist": "Holla Boyz",
+                "title": "Show Me Love In Da Club (Hollaboyz Remix)",
+                "bpm": 92.0,
+                "key": "C#m",
+            },
+            {
+                "track_id": "/music/z.mp3",
+                "artist": "Z",
+                "title": "Filler Two",
+                "bpm": 91.0,
+                "key": "Am",
+            },
+        ]
+        ids = short_ids(rows)
+        remix_sid = next(
+            sid for sid, row in ids.items() if "Hollaboyz" in row["title"]
+        )
+        ordered, notes = apply_constraints(
+            rows,
+            {
+                "use_only": None,
+                "opener_id": remix_sid,
+                "adjacent": [],
+                "adjacent_ordered": False,
+                "regions": [],
+                "notes": [],
+            },
+        )
+        titles = [row["title"] for row in ordered]
+        self.assertEqual(
+            titles.index("Show Me Love In Da Club (Hollaboyz Remix)") + 1,
+            titles.index("In Da Club"),
+        )
+        self.assertTrue(any("mashup payoff" in note for note in notes))
 
     def test_order_from_brief_with_injected_ask(self) -> None:
         rows = _rows(6)

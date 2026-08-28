@@ -47,6 +47,81 @@ grammars with hard, machine-enforced rules live separately under
   `track_id` against `playlist.json` before writing dj_notes — the crate
   has duplicate copies of the same song across different album/compilation
   folders, and writing to the wrong copy is a silent no-op.
+- **Remix Report is a crate of mix-in/out recipes, not just ep.12.**
+  Channel archive (335 videos, descriptions, irregular chorus counts):
+  `Data/Public/youtube-transcripts/remixreport/INDEX.md`. Highest-value
+  next lessons: choruses that are not 8 bars. Whisper of eps 088/093/096/099
+  is now in `Data/Public/Videos/Youtube/parsed-{CtA3yOULp7k,MXz0B05_z0o,aaRsbpfAan8,H9TB81qM34s}/`.
+  Rule: an 8-bar intro on an 8-bar chorus is the “perfect mix.” A 10-bar
+  chorus waits 2 bars then intros (`chorus_bars=10`). A 6-bar chorus skips
+  2 bars of the incoming intro (`chorus_bars=6` — *Magic Stick*). *Get Low*
+  is 12 the whole way; mix from the start of that chorus, not the 3-6-9
+  middle. *Over* is 9.5 — treat as 10; verse often leaks a half-bar early,
+  so fade the outgoing before bar 10 ends. 24/40-bar pop choruses mix out
+  *early*, they do not earn a longer ride. Remixes have different counts
+  than the radio version. Jay-Z *PSA* also does not start on 1; opening
+  sets are BPM-banded. Do not assume `phrase_beats=32` is the song.
+- **The pickup is not beat 1.** Remix Report ep.12 (Holla Boyz *Show Me
+  Love In Da Club*, https://youtu.be/hu_Y3dt2JWU): a vinyl-brake / “put
+  your damn hands up” bar *before* the In Da Club beat is one full bar of
+  anticipation. **Wrong:** start as if that brake is on 1. **Right:**
+  start the brake early so the real beat arrives on 1. In dj_notes that is
+  `pickup_beats=4` (or however many pickup beats the record actually has).
+  Do not “fix” this by moving `cue_seconds` to the downbeat — that *is*
+  the wrong way. Cue stays at 0; the downbeat is the landing.
+- **If you tease a hit, play the hit.** A party break / mashup that sits
+  on another song in the same set (Show Me Love In Da Club → In Da Club)
+  is followed by that original, unless the original already played. The
+  planner does this automatically (`mashup_payoff_pairs`). Same-song
+  versions (instrumental, explicit remix of the same title) are not
+  teases. Drop the original on its iconic first line when you have a
+  verified lyric timestamp (`entry_style=verse_landing`; for In Da Club
+  that line is “Go shorty”) — do not invent the second from memory.
+- **Interpolation lineage plays the original first, then the tribute, on
+  the matching lyric — not the whole album cut.** G-Unit *Straight Outta
+  Southside* interpolates Ice Cube’s *Straight Outta Compton* couplet
+  (“Straight outta …, crazy motherfucker named …”). Cue Compton on the
+  bar-1 before Cube’s first word (synced LRC 12.52s, grid beat 20 at
+  12.24s); ride his verse only; land Southside on Banks’s matching line
+  (11.36s). Tempo gap here is ~10.6 BPM / 11.5% — pin the incoming
+  `play_bpm` to native so Mixxx does not stretch the tribute onto 102.
+  `no_flourish` on the handoff. An ordered bunch locks original → tribute
+  so greedy rebuilds cannot reverse the torch-pass.
+- **Same for Case → 50 Touch Me.** *Touch Me, Tease Me* (1996, Case / Foxy
+  / Mary J.) is the original; Forever King *Touch Me* (2009) is 50’s
+  abbreviated remake of that hook (Wikipedia; Genius sample credit). Play
+  Case first. Local Case file is a Lord Finesse mix excerpt (~87s), not
+  the 4:31 album cut — ride through the first “Touch me, tease me”
+  (synced LRC 0:54) and blend; do not plan a 3-minute Case body. Crate
+  LRCLIB for 50 *Touch Me* is *Just a Touch* — do not invent 50
+  `landing_seconds` from it. Cue 50 from the 1 and pin native (~87.6)
+  against Case (~88.4).
+- **Vocals-only and instrumental-only are stems to layer, not songs to
+  sequence.** Identify them from version tags (`Acapella` / `A Cappella` /
+  `Instrumental`), not from “Vocal Remix” or a folder named Instrumentals.
+  Default: beat-match the dry vocal **over** an interesting instrumental
+  bed or a short break in another full song — not necessarily the matching
+  instrumental (that stack *is* the original record). Do **not** ride an
+  acapella end-to-end as its own slot unless a human note showcases a
+  slice. Put the bed immediately before the vocal and mark the vocal
+  `entry_style=vocal_over_bed` so Mixxx keeps the bed playing (two decks;
+  no extra Rust gesture). A sung hook (Akon on *Still Will*) needs a
+  key-safe bed — relative major/minor of the same song is legal when a
+  more interesting bed would clash. Prefer **Dirty / Album / explicit**
+  vocal stems in a hip-hop set. A radio retitle plus a CDS acapella that
+  sits next to `(Clean)` is the clean vocal — *Still Will* is *I'll Still
+  Kill* with the title and the curses taken off. Do not layer that. Use
+  the Promo VLS / Album acappella, or just play the Dirty mix. Lloyd
+  Banks dry vocals holding attention (*On Fire* / *Warrior* in
+  50centgunitera) is an ear-certified exception, not the rule.
+  Story: `user_stories/story__when_i_add_vocals_only_and_instrumental_only_tracks_i_layer_them_i_do_not_play_the_acapella_in_full.md`
+- **Same-beat remixes play the original first.** G-Unit *Soldier* (No Mercy,
+  No Fear) is Eminem’s *Soldier* instrumental with G-Unit verses over the
+  “I’m a soldier” chorus — same BPM/key, not a different song from
+  *G-Unit Soldiers*. Cue Em from the 1 of the opening hook; ride his first
+  verse into the chorus; blend the remix in on that shared hook. Do not
+  invent G-Unit landing timestamps (the crate’s LRCLIB match is the wrong
+  Young Buck cut).
 - **Openers need special handling.** Even a lyric-clean cue sounds abrupt
   as the very first thing anyone hears — there's no context to arrive
   into. Either start from the true beginning (`cue_seconds=0`), or use a

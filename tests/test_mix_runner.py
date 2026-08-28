@@ -5,6 +5,7 @@ from brain.plan_paths import PlanNotFound
 from hands.run_mix_plan import (
     _run_events,
     _safe_body_beats,
+    cue_deck,
     default_plan_path,
     load_deck,
     load_executable_plan,
@@ -70,6 +71,23 @@ class MixRunnerTests(TestCase):
         self.assertIn(("[Channel2]", "play", 1), mixxx.writes)
         self.assertIn(("[Master]", "crossfader", 1.0), mixxx.writes)
         self.assertIn(("[Channel1]", "play", 0), mixxx.writes)
+
+    def test_wrapped_beatgrid_cue_seeks_to_start_not_end_of_track(self) -> None:
+        # Live 50centgunitera: unsigned first-beat / 44100 became a
+        # 418-trillion-second cue; min(0.95, cue/duration) parked the deck
+        # at 198s of a 209s file and the next 32-beat blend ran off the end.
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "duration")] = 209.13
+        mixxx.values[("[Channel1]", "playposition")] = 0.0
+        position, _label = cue_deck(
+            mixxx,
+            1,
+            cue_seconds=418293516410647.44,
+            duration=209.13,
+            settle_s=0.0,
+        )
+        self.assertAlmostEqual(position, 0.0)
+        self.assertAlmostEqual(mixxx.get("[Channel1]", "playposition"), 0.0)
 
     def test_safe_body_beats_reserves_anchor_and_next_transition(self) -> None:
         mixxx = FakeMixxx()
@@ -528,6 +546,35 @@ class JuggleIntroTests(TestCase):
         self.assertEqual(mixxx.get("[Channel1]", "play"), 1)
         self.assertEqual(mixxx.get("[Channel2]", "play"), 0)
         self.assertEqual(mixxx.get("[Master]", "crossfader"), -1.0)
+        self.assertIn(("[Channel1]", "quantize", 0), mixxx.writes)
+        self.assertEqual(mixxx.get("[Channel1]", "quantize"), 1)
+
+    @patch("hands.run_mix_plan.load_deck")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_odd_chop_count_continues_without_rewinding_the_opener(self, _sleep, load) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "playposition")] = 0.0
+        perform_juggle_intro(
+            mixxx,
+            {
+                "deck": 1,
+                "track": "50 Cent — What Up Gangsta",
+                "track_id": "/music/gangsta.mp3",
+                "cue_seconds": 0.0,
+                "juggle_chops": 3,
+                "juggle_hold_beats": 4,
+            },
+        )
+        last_play = max(
+            i for i, (group, key, value) in enumerate(mixxx.writes)
+            if (group, key, value) == ("[Channel1]", "play", 1)
+        )
+        rewind_after_last_play = [
+            i for i, (group, key, value) in enumerate(mixxx.writes)
+            if i > last_play and group == "[Channel1]" and key == "playposition"
+        ]
+        self.assertEqual(rewind_after_last_play, [])
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 1)
 
 
 class VerseLandingMissTests(TestCase):
@@ -635,6 +682,32 @@ class EchoOutExitTests(TestCase):
         )
         self.assertLess(stop_index, unroute_index)
         _sleep.assert_any_call(2.0)  # four beats at FakeMixxx's 120 BPM
+
+
+class VocalOverBedTests(TestCase):
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 0.1, 8.0])
+    def test_vocal_over_bed_keeps_instrumental_playing(self, _monotonic, _sleep, _wait) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 16,
+                "technique": "vocal_over_bed",
+                "moves": ["sync", "vocal_over_bed"],
+                "keep_outgoing_live": True,
+            },
+            port=9995,
+        )
+        self.assertEqual(mixxx.get("[Channel2]", "play"), 0)
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 1)
+        self.assertNotIn(("[Channel1]", "play", 0), mixxx.writes)
+        self.assertIn(("[Channel2]", "play", 1), mixxx.writes)
+        self.assertIn(("[Channel2]", "beatsync", 1), mixxx.writes)
 
 
 class FilterDropExitTests(TestCase):

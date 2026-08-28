@@ -78,5 +78,53 @@
     "sample_title": "Kiss",
     "element": "cover/sample of Prince's Kiss",
     "source": "https://en.wikipedia.org/wiki/Kiss_(Prince_song)"
+  },
+  {
+    "artist": "Holla Boyz",
+    "title": "Show Me Love In Da Club",
+    "sample_artist": "50 Cent",
+    "sample_title": "In Da Club",
+    "element": "party break / mashup of the In Da Club beat under Show Me Love; play the original after",
+    "source": "https://youtu.be/hu_Y3dt2JWU"
+  },
+  {
+    "artist": "Holla Boyz",
+    "title": "Show Me Love In Da Club",
+    "sample_artist": "Robin S",
+    "sample_title": "Show Me Love",
+    "element": "party break vocal/hook over In Da Club",
+    "source": "https://youtu.be/hu_Y3dt2JWU"
+  },
+  {
+    "artist": "G-Unit",
+    "title": "Straight Outta Southside",
+    "sample_artist": "N.W.A",
+    "sample_title": "Straight Outta Compton",
+    "element": "interpolated Ice Cube opening couplet (Straight outta … crazy motherfucker named …); G-Unit carrying the N.W.A. torch. Album cut is Ron Browz, not the N.W.A. drums — mix the lyric lineage, do not full-sync the 10%+ tempo gap",
+    "source": "https://genius.com/G-unit-straight-outta-southside-lyrics"
+  },
+  {
+    "artist": "G-Unit",
+    "title": "Soldier",
+    "sample_artist": "Eminem",
+    "sample_title": "Soldier",
+    "element": "No Mercy, No Fear remix of The Eminem Show Soldier — same beat and I'm a soldier chorus, G-Unit verses. Play Eminem first. Not the different song G-Unit Soldiers",
+    "source": "https://genius.com/G-unit-soldier-lyrics"
+  },
+  {
+    "artist": "Lloyd Banks",
+    "title": "Banks Victory",
+    "sample_artist": "Puff Daddy",
+    "sample_title": "Victory",
+    "element": "G-Unit freestyle on the Victory beat — 50 flips Puffy's shine-together into die-together, then Banks. Play the Puff/Biggie original first, skip Puffy's opening verse",
+    "source": "https://genius.com/50-cent-and-lloyd-banks-banks-victory-lyrics"
+  },
+  {
+    "artist": "50 Cent",
+    "title": "Touch Me",
+    "sample_artist": "Case",
+    "sample_title": "Touch Me Tease Me",
+    "element": "Forever King abbreviated remake of Case 1996 Touch Me, Tease Me (Foxy Brown / Mary J. Blige hook). Play Case first; crate LRC for 50 Touch Me is the WRONG song (Just a Touch)",
+    "source": "https://en.wikipedia.org/wiki/Touch_Me,_Tease_Me"
   }
 ]

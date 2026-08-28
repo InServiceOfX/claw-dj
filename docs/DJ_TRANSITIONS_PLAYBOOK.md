@@ -107,6 +107,24 @@ live. High energy, creative, and — again explicitly — **use sparingly**.
   `no_flourish` directive). The video confirms the sparingly rule we
   already enforce via `flourish_every` rotation.
 
+## 6. Pickup-on-1 and mashup payoff — Remix Report ep.12
+
+Source: DJ JD & DJ Jay Spring, *Remix Report* Episode 0012 (2010-02-08),
+https://youtu.be/hu_Y3dt2JWU. Full parse:
+`Data/Public/Videos/Youtube/parsed-hu_Y3dt2JWU/ANALYSIS.md`.
+
+A party break can open with FX that is **not** beat 1. Mix so the body
+downbeat is on 1. Then, if that break is a tease of a record you also
+have, play that record next (their example: In Da Club, landing on
+“Go shorty”).
+
+- claw-dj: `pickup_beats=N` → cue 0, landing at beat N,
+  technique `pickup_on_one_blend`.
+- claw-dj: `mashup_payoff_pairs` in `mix_order_brief` forces
+  remix → original unless the original already played.
+- Lineage seed: Holla Boyz *Show Me Love In Da Club* → 50 Cent *In Da
+  Club* / Robin S *Show Me Love*.
+
 ## Scorecard: what claw-dj has vs. what to build
 
 | Video technique   | claw-dj today                          | Gap / action |

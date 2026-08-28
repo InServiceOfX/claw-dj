@@ -468,6 +468,152 @@ class MixPlanTest(TestCase):
         self.assertAlmostEqual(load_event["cue_seconds"], 49.00)
         self.assertEqual(load_event["cue_source"], "phrase_body+lyric_snap")
 
+    def test_pickup_beats_starts_early_so_the_downbeat_is_on_one(self) -> None:
+        # Remix Report ep.12: brake + Jay-Z sample is one bar before the
+        # In Da Club beat. Cue 0, land on beat 4.
+        tracks = [
+            {
+                "track_id": "/music/out.mp3",
+                "artist": "Out",
+                "title": "Outgoing",
+                "bpm": 92.0,
+                "key": "C#m",
+                "dj_notes": "cue_seconds=0",
+            },
+            {
+                "track_id": "/music/break.mp3",
+                "artist": "Holla Boyz",
+                "title": "Show Me Love In Da Club",
+                "bpm": 92.0,
+                "key": "C#m",
+                "dj_notes": "pickup_beats=4",
+            },
+        ]
+        plan = build_plan(
+            tracks, count=2, seconds_per_track=20.0, affinity_lookup={}
+        )
+        incoming = next(
+            event
+            for event in plan["events"]
+            if event.get("track_id") == "/music/break.mp3"
+            and event["op"] in {"load", "preload_after_transition"}
+        )
+        self.assertEqual(incoming["cue_seconds"], 0.0)
+        self.assertEqual(incoming["cue_source"], "dj_notes_pickup")
+        self.assertEqual(incoming["pickup_beats"], 4)
+        self.assertAlmostEqual(incoming["landing_seconds"], 4 * 60.0 / 92.0, places=3)
+        transition = next(
+            event for event in plan["events"] if event["op"] == "transition"
+        )
+        self.assertEqual(transition["technique"], "pickup_on_one_blend")
+        self.assertGreaterEqual(transition["transition_beats"], 4)
+
+    def test_ten_bar_chorus_waits_two_bars_before_eight_bar_intro(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/over.mp3",
+                "artist": "Drake",
+                "title": "Over",
+                "bpm": 76.0,
+                "key": "Am",
+                "dj_notes": "cue_seconds=0; ride_beats=32; chorus_bars=10",
+            },
+            {
+                "track_id": "/music/next.mp3",
+                "artist": "Jay-Z",
+                "title": "You Don't Know",
+                "bpm": 87.0,
+                "key": "Am",
+                "dj_notes": "cue_seconds=0",
+            },
+        ]
+        plan = build_plan(
+            tracks, count=2, seconds_per_track=20.0, affinity_lookup={}
+        )
+        body = next(e for e in plan["events"] if e["op"] == "play_body")
+        self.assertEqual(body["beats"], 40)
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        self.assertEqual(transition["outgoing_chorus_bars"], 10)
+        self.assertIn("wait 2 bars", transition["notes"])
+
+    def test_six_bar_chorus_skips_two_bars_of_incoming_intro(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/stick.mp3",
+                "artist": "50 Cent",
+                "title": "Magic Stick",
+                "bpm": 93.0,
+                "key": "Am",
+                "dj_notes": "cue_seconds=0; ride_beats=32; chorus_bars=6",
+            },
+            {
+                "track_id": "/music/next.mp3",
+                "artist": "Next",
+                "title": "Eight Bar Intro",
+                "bpm": 93.0,
+                "key": "Am",
+                "dj_notes": "cue_seconds=0",
+            },
+        ]
+        plan = build_plan(
+            tracks, count=2, seconds_per_track=20.0, affinity_lookup={}
+        )
+        incoming = next(
+            e
+            for e in plan["events"]
+            if e.get("track_id") == "/music/next.mp3"
+            and e["op"] in {"load", "preload_after_transition"}
+        )
+        self.assertEqual(incoming["chorus_intro_skip_bars"], 2)
+        self.assertAlmostEqual(incoming["cue_seconds"], 2 * 4 * 60.0 / 93.0, places=3)
+
+    def test_wrapped_beatgrid_cue_is_not_copied_into_the_plan(self) -> None:
+        # 2**64-77 frames / 44100 Hz — Candy Shop's unsigned Mixxx first beat.
+        wrapped = 418293516410647.44
+        tracks = [
+            {
+                "track_id": "/music/candy.mp3",
+                "artist": "50 Cent",
+                "title": "Candy Shop",
+                "bpm": 98.0,
+                "key": "Bm",
+                "duration_seconds": 209.13,
+            },
+            {
+                "track_id": "/music/next.mp3",
+                "artist": "Someone",
+                "title": "Else",
+                "bpm": 98.0,
+                "key": "Bm",
+                "duration_seconds": 200.0,
+            },
+        ]
+        phrase_lookup = {
+            "/music/candy.mp3": {
+                "bpm": 98.0,
+                "first_beat_seconds": wrapped,
+                "cue_seconds": wrapped,
+                "beat_index": 0,
+                "confidence": 0.0,
+                "duration": 209.13,
+            }
+        }
+        plan = build_plan(
+            tracks, count=2, seconds_per_track=20.0, affinity_lookup={},
+            phrase_lookup=phrase_lookup,
+        )
+        load_event = next(
+            e for e in plan["events"]
+            if e["op"] == "load" and e["track_id"] == "/music/candy.mp3"
+        )
+        self.assertEqual(load_event["cue_seconds"], 0.0)
+        self.assertIn("sanitized", load_event["cue_source"])
+        body = next(
+            e for e in plan["events"]
+            if e.get("track") == "50 Cent — Candy Shop" and e["op"] == "play_body"
+        )
+        self.assertEqual(body["phase_anchor"]["first_beat_seconds"], 0.0)
+
     def test_title_search_variants_fix_many_man(self) -> None:
         variants = title_search_variants("Many Man (Wish Death)")
         self.assertTrue(any("Many Men" in v for v in variants))
@@ -572,6 +718,118 @@ class MixPlanTest(TestCase):
         self.assertNotIn("cue_beat_index", opener)
         self.assertAlmostEqual(opener["cue_grid_offset_beats"], -0.5)
 
+    def test_guided_format_does_not_fail_trusted_file_head_opener(self) -> None:
+        # Live 50centgunitera GUI: What Up Gangsta cue_seconds=0 +
+        # trust_cue_seconds, Mixxx first_beat ~45ms later. Guided format
+        # used to abort the whole 148-track build.
+        tracks = [
+            {
+                "track_id": "/music/gangsta.mp3",
+                "artist": "50 Cent",
+                "title": "What Up Gangsta",
+                "bpm": 82.5,
+                "key": "C#m",
+                "dj_notes": (
+                    "cue_seconds=0; trust_cue_seconds; "
+                    "opener_style=juggle_intro; ride_beats=200; trust_ride_beats"
+                ),
+            },
+            {
+                "track_id": "/music/needem.mp3",
+                "artist": "50 Cent",
+                "title": "I Don't Need 'Em",
+                "bpm": 83.0,
+                "key": "G#m",
+                "dj_notes": "cue_seconds=0",
+            },
+        ]
+        phrases = {
+            "/music/gangsta.mp3": {
+                "bpm": 82.51467955526623,
+                "first_beat_seconds": 0.044853,
+            },
+            "/music/needem.mp3": {
+                "bpm": 83.0,
+                "first_beat_seconds": 0.0,
+            },
+        }
+        plan = build_plan(
+            tracks,
+            count=2,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+            phrase_lookup=phrases,
+            dj_format=get_format("hiphop-rnb-guided"),
+        )
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        self.assertEqual(plan["tracks"][0]["cue_seconds"], 0.0)
+        self.assertNotIn("cue_beat_index", plan["tracks"][0])
+        self.assertIn(transition["format_compliance"], {"guided_fallback", "expert_recipe"})
+
+    def test_guided_format_honors_trust_ride_beats_and_verse_landing(self) -> None:
+        # Guided exit-anchor math used to overwrite ride_beats even when the
+        # DJ note locked the length (Compton → Southside interpolation).
+        tracks = [
+            {
+                "track_id": "/music/compton.mp3",
+                "artist": "N.W.A",
+                "title": "Straight Outta Compton",
+                "bpm": 102.83333333333333,
+                "key": "Ab",
+                "duration_seconds": 258.4,
+                "dj_notes": (
+                    "cue_seconds=12.24; trust_cue_seconds; "
+                    "ride_beats=92; trust_ride_beats; play_bpm=102.83; no_flourish"
+                ),
+            },
+            {
+                "track_id": "/music/southside.mp3",
+                "artist": "G-Unit",
+                "title": "Straight Outta Southside",
+                "bpm": 92.21986528181748,
+                "key": "Em",
+                "duration_seconds": 156.1,
+                "dj_notes": (
+                    "entry_style=verse_landing; landing_seconds=11.36; "
+                    "landing_beats=16; play_bpm=92.22; ride_beats=192; "
+                    "trust_ride_beats; no_flourish"
+                ),
+            },
+        ]
+        phrases = {
+            "/music/compton.mp3": {
+                "bpm": 102.83333333333333,
+                "first_beat_seconds": 0.56873,
+                "intro": {"beat_index": 32, "cue_seconds": 19.24},
+            },
+            "/music/southside.mp3": {
+                "bpm": 92.21986528181748,
+                "first_beat_seconds": 0.079909,
+                "intro": {"beat_index": 16, "cue_seconds": 10.49},
+            },
+        }
+        plan = build_plan(
+            tracks,
+            count=2,
+            seconds_per_track=40.0,
+            affinity_lookup={},
+            phrase_lookup=phrases,
+            dj_format=get_format("hiphop-rnb-guided"),
+        )
+        incoming = plan["tracks"][1]
+        self.assertEqual(incoming["cue_source"], "guided_human_landing_downbeat")
+        self.assertEqual(incoming["cue_beat_index"], 0)
+        self.assertAlmostEqual(incoming["cue_seconds"], 0.08, places=2)
+        self.assertAlmostEqual(incoming["landing_seconds"], 11.36, places=2)
+        body = next(e for e in plan["events"] if e["op"] == "play_body")
+        self.assertEqual(body["beats"], 92)
+        self.assertTrue(body.get("trust_ride_beats"))
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        self.assertEqual(transition["technique"], "verse_landing_blend")
+        self.assertEqual(transition["transition_beats"], 16)
+        self.assertAlmostEqual(transition["landing_seconds"], 11.36, places=2)
+        self.assertAlmostEqual(transition["incoming_bpm_target"], 92.22, places=2)
+
     def test_file_head_cue_never_gets_a_hypothetical_negative_beat(self) -> None:
         tracks = [
             {
@@ -647,6 +905,68 @@ class MixPlanTest(TestCase):
         self.assertEqual(directives["ride_beats"], 96)
         self.assertEqual(directives["cue_seconds"], 61.97)
 
+    def test_vocal_over_bed_keeps_instrumental_live(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/bed.mp3",
+                "artist": "50 Cent",
+                "title": "I'll Still Kill (Instrumental)",
+                "bpm": 88.0,
+                "key": "Dm",
+                "duration_seconds": 218.0,
+                "dj_notes": "cue_seconds=0.3; ride_beats=16; trust_ride_beats",
+            },
+            {
+                "track_id": "/music/vocal.mp3",
+                "artist": "50 Cent",
+                "title": "Still Will (Acapella)",
+                "bpm": 88.7,
+                "key": "F",
+                "duration_seconds": 220.0,
+                "dj_notes": (
+                    "entry_style=vocal_over_bed; ride_beats=96; "
+                    "trust_ride_beats; no_flourish"
+                ),
+            },
+            {
+                "track_id": "/music/next.mp3",
+                "artist": "Lloyd Banks",
+                "title": "Ain't No Click",
+                "bpm": 93.0,
+                "key": "Dm",
+                "duration_seconds": 200.0,
+            },
+        ]
+        plan = build_plan(tracks, count=3, seconds_per_track=20.0, affinity_lookup={})
+        transitions = [e for e in plan["events"] if e["op"] == "transition"]
+        self.assertEqual(transitions[0]["technique"], "vocal_over_bed")
+        self.assertEqual(transitions[0]["transition_beats"], 96)
+        self.assertTrue(transitions[0].get("keep_outgoing_live"))
+        self.assertEqual(transitions[0]["bed_track_id"], "/music/bed.mp3")
+        self.assertEqual(transitions[0]["vocal_track_id"], "/music/vocal.mp3")
+        bodies = [e for e in plan["events"] if e["op"] == "play_body"]
+        self.assertEqual(len(bodies), 1)
+        self.assertIn("I'll Still Kill (Instrumental)", bodies[0]["track"])
+        self.assertEqual(transitions[1]["from_deck"], transitions[0]["from_deck"])
+        self.assertIn("I'll Still Kill (Instrumental)", transitions[1]["from_track"])
+        self.assertIn("Ain't No Click", transitions[1]["to_track"])
+        vocal_over_idx = next(
+            i for i, event in enumerate(plan["events"]) if event.get("technique") == "vocal_over_bed"
+        )
+        preloads_before = [
+            event
+            for event in plan["events"][:vocal_over_idx]
+            if event.get("op") == "preload_after_transition"
+        ]
+        self.assertEqual(preloads_before, [])
+        loads_after = [
+            event
+            for event in plan["events"][vocal_over_idx + 1 :]
+            if event.get("op") == "load" and event.get("track_id") == "/music/next.mp3"
+        ]
+        self.assertEqual(len(loads_after), 1)
+        self.assertEqual(loads_after[0]["deck"], transitions[0]["to_deck"])
+
     def test_no_flourish_directive_suppresses_showcase_moves(self) -> None:
         directives = track_directives({"dj_notes": "no_flourish"})
         self.assertTrue(directives["no_flourish"])
@@ -720,7 +1040,10 @@ class MixPlanTest(TestCase):
                 "title": "Iconic Intro",
                 "bpm": 93.4,
                 "key": "Bbm",
-                "dj_notes": "cue_seconds=0; opener_style=juggle_intro; juggle_chops=3",
+                "dj_notes": (
+                    "cue_seconds=0; opener_style=juggle_intro; "
+                    "juggle_chops=4; juggle_hold_beats=4"
+                ),
             },
             {
                 "track_id": "/music/verse.mp3",
@@ -743,7 +1066,8 @@ class MixPlanTest(TestCase):
         ops = [event["op"] for event in plan["events"]]
         self.assertIn("opener_effect", ops)
         opener = next(event for event in plan["events"] if event["op"] == "opener_effect")
-        self.assertEqual(opener["juggle_chops"], 3)
+        self.assertEqual(opener["juggle_chops"], 4)
+        self.assertEqual(opener["juggle_hold_beats"], 4)
         # juggle_intro-style openers reuse deck 2 to juggle a second copy of
         # the opener track and leave it loaded there — a bare recue can only
         # re-seek whatever's currently loaded, not reload it, so this must be
@@ -875,6 +1199,37 @@ class MixPlanTest(TestCase):
         # entry 0 + prev_fade 0 + body 10 + 1 = 11
         self.assertEqual(body["phase_anchor"]["planned_anchor_beat_index"], 11)
         self.assertEqual(body["phase_anchor"]["target_beat_mod4"], 11 % 4)
+
+    def test_double_time_grid_allows_long_trusted_ride(self) -> None:
+        # Wanna Get To Know is tagged 168 (double-time of ~84). All three
+        # verses plus Joe's last chorus need ~640 grid beats; the old 512
+        # cap cut 50's verse off.
+        tracks = [
+            {
+                "track_id": "/m/wanna.mp3",
+                "artist": "G-Unit",
+                "title": "Wanna Get To Know You",
+                "bpm": 168.0,
+                "key": "Cm",
+                "duration_seconds": 265.0,
+                "dj_notes": (
+                    "cue_seconds=0.3; trust_cue_seconds; ride_beats=640; "
+                    "trust_ride_beats; play_bpm=168.0; no_flourish"
+                ),
+            },
+            {
+                "track_id": "/m/next.mp3",
+                "artist": "G-Unit",
+                "title": "G-Unit Soldiers",
+                "bpm": 90.0,
+                "key": "Fm",
+                "duration_seconds": 189.0,
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        body = next(event for event in plan["events"] if event["op"] == "play_body")
+        self.assertEqual(body["beats"], 640)
+        self.assertTrue(body.get("trust_ride_beats"))
 
     def test_transition_beat_overrides_feed_next_phase_anchor(self) -> None:
         # Post-build patching used to set transition_beats=64 while the next

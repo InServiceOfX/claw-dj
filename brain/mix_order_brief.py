@@ -25,6 +25,44 @@ from typing import Callable
 from brain.library import Energy, Track
 from brain.playlist import normalize
 
+# Remix Report ep.12 (hu_Y3dt2JWU): a party-break/mashup that teases another
+# song in the same set must be followed by that original, unless the
+# original already played.
+_MASHUP_HINT = re.compile(
+    r"\b(remix|bootleg|mashup|blend|rework|flip|break)\b", re.I
+)
+_VERSION_STOP = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "feat",
+    "ft",
+    "featuring",
+    "with",
+    "remix",
+    "mix",
+    "bootleg",
+    "mashup",
+    "blend",
+    "rework",
+    "flip",
+    "break",
+    "radio",
+    "edit",
+    "version",
+    "album",
+    "single",
+    "instrumental",
+    "acapella",
+    "acappella",
+    "dirty",
+    "clean",
+    "explicit",
+    "bonus",
+    "track",
+}
+
 REGION_SLICES = {
     "early": (0.0, 0.33),
     "first_half": (0.0, 0.5),
@@ -261,6 +299,61 @@ def place_block_in_region(order: list[str], block_ids: list[str], where: str) ->
     return rest[:insert_at] + block + rest[insert_at:]
 
 
+def core_title(title: str) -> str:
+    """Title minus parentheticals and version/remix words."""
+    stripped = re.sub(r"\([^)]*\)", " ", title or "")
+    stripped = re.sub(r"\[[^\]]*\]", " ", stripped)
+    words = [
+        token
+        for token in normalize(stripped).split()
+        if token and token not in _VERSION_STOP
+    ]
+    return " ".join(words)
+
+
+def mashup_payoff_pairs(rows: list[dict]) -> list[tuple[str, str]]:
+    """(remix_track_id, original_track_id) when a remix teases another song.
+
+    Same-song versions (P.I.M.P. Remix vs P.I.M.P., In Da Club Instrumental
+    vs In Da Club) are not payoffs. A title like "Show Me Love In Da Club
+    (Hollaboyz Remix)" vs "In Da Club" is.
+    """
+    pairs: list[tuple[str, str]] = []
+    for remix in rows:
+        title = remix.get("title") or ""
+        if not _MASHUP_HINT.search(title):
+            continue
+        remix_core = core_title(title)
+        remix_artist_tokens = set(normalize(remix.get("artist") or "").split())
+        best_id = None
+        best_len = 0
+        for original in rows:
+            if original.get("track_id") == remix.get("track_id"):
+                continue
+            original_core = core_title(original.get("title") or "")
+            if len(original_core) < 6:
+                continue
+            if original_core == remix_core:
+                continue
+            haystack = f"{remix_core} {normalize(title)}"
+            if original_core not in haystack:
+                continue
+            leftover = set(remix_core.split()) - set(original_core.split())
+            original_artist_tokens = set(
+                normalize(original.get("artist") or "").split()
+            )
+            if leftover and leftover <= (_VERSION_STOP | remix_artist_tokens | original_artist_tokens):
+                continue
+            if leftover <= _VERSION_STOP:
+                continue
+            if len(original_core) > best_len:
+                best_id = original["track_id"]
+                best_len = len(original_core)
+        if best_id:
+            pairs.append((remix["track_id"], best_id))
+    return pairs
+
+
 def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], list[str]]:
     """Deterministic reorder: greedy tour, then force adjacency + region windows."""
     from brain.mix_graph import greedy_mix_order, lineage_pairs, load_chroma_pairs, load_lineage
@@ -323,6 +416,25 @@ def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], 
         applied_groups.append(block)
         labels = [f"{id_map[item].get('artist')} — {id_map[item].get('title')}" for item in block]
         notes.append(f"adjacent group: {' ↔ '.join(labels)}")
+    claimed = {item for group in applied_groups for item in group}
+    for remix_path, original_path in mashup_payoff_pairs(pool_rows):
+        remix_s = short_for_path.get(remix_path)
+        original_s = short_for_path.get(original_path)
+        if remix_s not in order or original_s not in order:
+            continue
+        if remix_s in claimed or original_s in claimed:
+            continue
+        remix_title = id_map[remix_s].get("title")
+        original_title = id_map[original_s].get("title")
+        if order.index(original_s) < order.index(remix_s):
+            notes.append(
+                f"payoff already before: {original_title} before {remix_title}"
+            )
+            continue
+        order = force_adjacent(order, remix_s, original_s, ordered=True)
+        notes.append(
+            f"mashup payoff: {remix_title} → {original_title}"
+        )
     assert_intact(order, applied_groups)
 
     result = [id_map[i] for i in order]

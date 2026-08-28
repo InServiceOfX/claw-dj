@@ -6,6 +6,29 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
+## Active cross-machine priorities (updated 2026-08-19)
+
+- [x] **`vocal_over_bed` keeps the instrumental playing (2026-08-19).**
+      Mixxx already has two decks — no extra Rust. Incoming
+      `entry_style=vocal_over_bed` starts the vocal on the other deck,
+      xfader center, then fades the vocal out and **does not stop the bed**.
+      50centgunitera: radio *Still Will (Acapella)* is the clean CDS stem
+      and is excluded. Promo VLS *I'll Still Kill (Acappella)* layers
+      over the instrumental (192 beats). Gatman cues 0.117 and rides 280
+      through the last chorus. On Fire/Warrior acapellas remain the Banks
+      exception. Story:
+      `user_stories/story__when_i_add_vocals_only_and_instrumental_only_tracks_i_layer_them_i_do_not_play_the_acapella_in_full.md`.
+
+## Earlier 2026-08-19
+
+- [x] **Guided format honors `trust_ride_beats` + verse landing on bar 1 (2026-08-19).**
+      `hiphop-rnb-guided` was overwriting a locked `ride_beats` with next-chorus
+      exit arithmetic (Compton rode 219 instead of 92). Format still chooses
+      *where* a transition may land; `trust_ride_beats` is the how-long lock.
+      Incoming `landing_seconds` now snaps back to the previous bar-1 for guided
+      cues (`guided_human_landing_downbeat`). 50centgunitera: N.W.A. *Straight
+      Outta Compton* immediately before G-Unit *Straight Outta Southside*.
+
 ## Active cross-machine priorities (updated 2026-08-18)
 
 - [x] **In-browser track preview on Curate / Mix / Arrange (2026-08-18).**

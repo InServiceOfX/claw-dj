@@ -223,6 +223,48 @@ class PlanFoundationTest(TestCase):
         order_constraints.assert_intact(order, [["d", "b", "c"]])
         self.assertTrue(result["bunches"][0]["honored"])
 
+    def test_13c_plan_build_rejects_a_solo_acapella_body(self):
+        meta = self._plan("Stem Safety")
+        paths = plan_paths.resolve(meta.slug)
+        vocal_id = "/music/get-up-acapella.mp3"
+        bed_id = "/music/compatible-instrumental.mp3"
+        rows = [
+            {"track_id": bed_id, "artist": "Artist", "title": "Compatible (Instrumental)", "bpm": 92, "key": "F#m"},
+            {"track_id": vocal_id, "artist": "Artist", "title": "Get Up (Acapella)", "bpm": 184, "key": "F#m"},
+        ]
+        for row in rows:
+            self._track(row["track_id"], note="")
+        paths.playlist.write_text(json.dumps(rows))
+
+        def fake_compose(**kwargs):
+            return {
+                "version": 2,
+                "track_count": 2,
+                "tracks": rows,
+                "segments": [{"technique": "smooth_blend", "beats": 32}],
+                "events": [
+                    {"op": "transition", "from_track": "Artist — Compatible (Instrumental)", "to_track": "Artist — Get Up (Acapella)"},
+                    {"op": "play_body", "track": "Artist — Get Up (Acapella)", "beats": 129},
+                ],
+                "runtime": {"mixxx_control_port": kwargs.get("control_port", 9995)},
+            }
+
+        with patch.object(plan_mix_build, "compose_mix_plan", fake_compose):
+            with self.assertRaisesRegex(ValueError, "vocals-only.*Get Up.*vocal_over_bed"):
+                plan_mix_build.build(meta.slug)
+
+    def test_13d_vocals_only_validator_allows_short_break_and_explicit_showcase(self):
+        track_id = "/music/get-up-acapella.mp3"
+        plan = {
+            "tracks": [{"track_id": track_id, "artist": "Artist", "title": "Get Up (Acapella)"}],
+            "events": [{"op": "play_body", "track": "Artist — Get Up (Acapella)", "beats": 64}],
+        }
+        plan_mix_build._validate_vocals_only_playback(plan, {})
+        plan["events"][0]["beats"] = 129
+        plan_mix_build._validate_vocals_only_playback(
+            plan, {track_id: "showcase_acapella; ride_beats=129; trust_ride_beats"}
+        )
+
     def test_14_staleness_detects_note_transition_and_pure_order_changes(self):
         meta = self._plan()
         paths = plan_paths.resolve(meta.slug)

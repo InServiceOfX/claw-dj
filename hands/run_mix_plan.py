@@ -420,7 +420,16 @@ def cue_deck(
     duration = duration or _wait_for(
         mixxx, group, "duration", lambda value: value > 0, LOAD_TIMEOUT_S
     )
-    position = cue_seconds / duration if cue_seconds is not None else cue_fraction
+    from brain.phrase_analysis import seekable_cue_seconds
+
+    if cue_seconds is not None:
+        # A wrapped Mixxx first-beat (2**64-77 frames / 44100) is far past
+        # duration. The old min(0.95, cue/duration) seeked to the last 5%
+        # of the file, then the next 32-beat transition ran off the end.
+        safe_cue = seekable_cue_seconds(cue_seconds, duration)
+        position = safe_cue / duration
+    else:
+        position = cue_fraction
     position = min(0.95, max(0.0, position))
     tolerance = max(0.002, 1.0 / duration)
 
@@ -757,12 +766,15 @@ _echo_missing_noted = False
 def perform_juggle_intro(mixxx: MixxxControl, event: dict) -> None:
     """Beat-juggle the opener cue between two copies of the same track.
 
-    Each chop is a fresh cue drop, rather than two copies running freely at
-    different positions. After the repeated fragment, rewind deck 1 once
-    more and let the opener continue cleanly from that cue.
+    Each chop is a fresh cue drop. The idle copy is recued *while* the
+    live copy plays, then started before the live copy is stopped, so
+    there is no hole between repeats. Quantize is off for the juggle:
+    Mixxx would otherwise hold play=1 until the next beat, which is the
+    audible lag between cue hits.
 
-    The other deck is borrowed temporarily; the plan's following `load`
-    event reloads the real second track onto it afterward.
+    If the last chop is already on the opener deck, it continues into the
+    song — no extra stop/rewind. The other deck is borrowed; the plan's
+    following `load` reloads the real second track onto it.
     """
     deck = int(event["deck"])
     other = 2 if deck == 1 else 1
@@ -789,30 +801,42 @@ def perform_juggle_intro(mixxx: MixxxControl, event: dict) -> None:
     mixxx.set(group, "volume", 1.0)
     mixxx.set(other_group, "volume", 1.0)
     for candidate in (group, other_group):
+        mixxx.set(candidate, "quantize", 0)
         mixxx.set(candidate, "play", 0)
         mixxx.set(candidate, "playposition", cue_position)
 
     chops = max(2, int(event.get("juggle_chops", 6)))
     hold_beats = float(event.get("juggle_hold_beats", 1.0))
+    hold_s = hold_beats * period
     print(f"  juggle_intro: {chops} repeated cue drops between deck {deck} and deck {other} "
           f"on {event.get('track')}")
-    for i in range(chops):
-        active = deck if i % 2 == 0 else other
-        inactive = other if active == deck else deck
-        active_group = deck_group(active)
-        mixxx.set(deck_group(inactive), "play", 0)
-        mixxx.set(active_group, "play", 0)
-        mixxx.set(active_group, "playposition", cue_position)
-        mixxx.set("[Master]", "crossfader", crossfader_target(active))
-        mixxx.set(active_group, "play", 1)
-        time.sleep(hold_beats * period)
 
-    mixxx.set(other_group, "play", 0)
-    mixxx.set(group, "play", 0)
-    mixxx.set(group, "playposition", cue_position)
     mixxx.set("[Master]", "crossfader", crossfader_target(deck))
     mixxx.set(group, "play", 1)
-    print(f"  juggle landed on deck {deck}; cue replayed cleanly")
+    for i in range(chops):
+        active = deck if i % 2 == 0 else other
+        nxt = other if active == deck else deck
+        if i < chops - 1:
+            idle = deck_group(nxt)
+            mixxx.set(idle, "play", 0)
+            mixxx.set(idle, "playposition", cue_position)
+            time.sleep(hold_s)
+            mixxx.set(idle, "play", 1)
+            mixxx.set("[Master]", "crossfader", crossfader_target(nxt))
+            mixxx.set(deck_group(active), "play", 0)
+        else:
+            time.sleep(hold_s)
+            if active != deck:
+                mixxx.set(group, "playposition", cue_position)
+                mixxx.set(group, "play", 1)
+                mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+                mixxx.set(other_group, "play", 0)
+
+    mixxx.set(other_group, "play", 0)
+    mixxx.set("[Master]", "crossfader", crossfader_target(deck))
+    for candidate in (group, other_group):
+        mixxx.set(candidate, "quantize", 1)
+    print(f"  juggle landed on deck {deck}; last cue drop continues into the song")
 
 
 def perform_juggle_brake_intro(mixxx: MixxxControl, event: dict, *, port: int) -> None:
@@ -1078,6 +1102,42 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             print(f"  {gesture[0]} exit -> deck {to_deck}")
             return
         # No binary: fall through to the anchored hard cut below.
+
+    if technique == "vocal_over_bed" or "vocal_over_bed" in moves:
+        # Keep the outgoing instrumental bed. Bring the vocals-only deck in
+        # at center xfader, hold the layer, then fade the vocal out. Mixxx
+        # already has two decks — no extra Rust gesture required.
+        if not _wait_for_anchor_or_continue(
+            mixxx, port=port, out_group=out_g, in_group=in_g, to_deck=to_deck
+        ):
+            return
+        mixxx.set(in_g, "volume", 1.0)
+        mixxx.set(in_g, "play", 1)
+        if sync:
+            mixxx.set(in_g, "beatsync", 1)
+        elif phase_only_sync:
+            mixxx.set(in_g, "beatsync_phase", 1)
+        start_cf = mixxx.get("[Master]", "crossfader")
+        fade_s = max(0.5, beats * 60.0 / bpm)
+        open_s = min(4.0, fade_s * 0.15)
+        t0 = time.monotonic()
+        while True:
+            elapsed = time.monotonic() - t0
+            if elapsed >= fade_s:
+                break
+            if elapsed <= open_s:
+                progress = elapsed / open_s
+                mixxx.set("[Master]", "crossfader", start_cf + (0.0 - start_cf) * smoothstep(progress))
+            elif elapsed >= fade_s - open_s:
+                progress = (elapsed - (fade_s - open_s)) / open_s
+                mixxx.set(in_g, "volume", 1.0 - smoothstep(progress))
+            time.sleep(0.02)
+        mixxx.set(in_g, "volume", 0.0)
+        mixxx.set("[Master]", "crossfader", crossfader_target(from_deck))
+        mixxx.set(in_g, "play", 0)
+        mixxx.set(in_g, "volume", 1.0)
+        print(f"  vocal-over-bed {beats} beats; bed deck {from_deck} still live")
+        return
 
     print(f"  anchoring on {out_g} beat ({bpm:.2f} BPM)")
     looped_intro = "outgoing_intro_loop_8_bars" in moves
@@ -1401,7 +1461,15 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
             perform_transition(mixxx, event, port=port)
             # restore EQ/filter after land
             apply_moves(mixxx, from_deck, to_deck, ["eq_restore", "filter_reset"])
-            if event.get("incoming_bpm_target") is not None:
+            bed_still_live = bool(
+                event.get("keep_outgoing_live")
+                or event.get("technique") == "vocal_over_bed"
+            )
+            if bed_still_live:
+                # Vocal deck is done. Tempo settle belongs on the bed, which
+                # never left play and is already at its ride rate.
+                pass
+            elif event.get("incoming_bpm_target") is not None:
                 print(
                     f"  holding deck {to_deck} at bridge tempo "
                     f"{float(event['incoming_bpm_target']):.2f} BPM"
@@ -1413,11 +1481,12 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                     settle_bpm=event.get("incoming_settle_bpm"),
                     native_bpm=event.get("incoming_native_bpm"),
                 )
-            if pending_preload and pending_preload.get("deck") == from_deck:
-                print(f"  preload next into freed deck {from_deck}")
+            freed_deck = to_deck if bed_still_live else from_deck
+            if pending_preload and pending_preload.get("deck") == freed_deck:
+                print(f"  preload next into freed deck {freed_deck}")
                 load_deck(
                     mixxx,
-                    from_deck,
+                    freed_deck,
                     pending_preload["track_id"],
                     pending_preload.get("cue_fraction", 0.1),
                     pending_preload.get("cue_seconds"),

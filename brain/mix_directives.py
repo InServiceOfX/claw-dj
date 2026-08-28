@@ -54,12 +54,15 @@ keys must match exactly):
                              without holding the full blend tempo. Ignored if play_bpm is also set.
   exit_bpm=<number>          gradually bring this track to a target BPM before its exit
   tempo_ramp_beats=<int>     number of final ride beats used for the exit_bpm glide
-  entry_style=beat_drop | gentle_blend | halftime_blend | verse_landing
+  entry_style=beat_drop | gentle_blend | halftime_blend | verse_landing | vocal_over_bed
   exit_style=echo_out | filter_drop | tempo_ramp_blend
   landing_seconds=<number>   (with entry_style=verse_landing) exact second the vocal/verse lands
   landing_beats=<int>        (with entry_style=verse_landing) beat count to land on
   opener_style=echo_tease_drop | juggle_intro | juggle_brake_intro   (only meaningful on the first track)
   juggle_chops=<int>          number of alternating cue drops for a juggle opener
+  juggle_hold_beats=<number>  beats to hold each juggle chop (4 = one bar)
+  pickup_beats=<int>          bars of brake/vocal *before* the real downbeat; start them early so beat N is on 1
+  chorus_bars=<int>           outgoing chorus length in bars (4–12). 10 = wait 2 bars before an 8-bar intro; 6 = skip 2 bars of that intro
   format_recipe=chorus_to_intro | acapella_hook_swap | intro_loop_under_entry
   intro_seconds=<number>      human-verified beat 1 of an 8-bar incoming intro
   chorus_seconds=<number>     human-verified beat 1 of the outgoing exit chorus
@@ -85,6 +88,9 @@ the middle of it; ride through the verse, which runs to the chorus at \
 ride_beats=78"
   "Higher-tempo song -- fine to run it slightly faster than its native \
 tempo to sit better against faster neighbors. play_bpm=98.5"
+  "Keep the instrumental bed playing. Layer the acapella on the other \
+deck, beat-matched, crossfader center; do not ride the vocal dry. \
+entry_style=vocal_over_bed; ride_beats=192; trust_ride_beats; no_flourish"
 """
 
 
