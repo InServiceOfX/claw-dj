@@ -142,7 +142,7 @@ def verse_starts(segments: list[dict]) -> list[dict]:
 
 
 def _beatgrid_for(track_id: str) -> tuple[float, float] | None:
-    from brain.phrase_analysis import decode_beat_grid
+    from brain.phrase_analysis import decode_beat_grid, usable_first_beat_seconds
     from shared.mixxx_db import connect_readonly
 
     conn = connect_readonly()
@@ -161,7 +161,7 @@ def _beatgrid_for(track_id: str) -> tuple[float, float] | None:
     if row is None:
         return None
     bpm, first_frame = decode_beat_grid(bytes(row[1]))
-    return bpm, first_frame / float(row[0])
+    return bpm, usable_first_beat_seconds(first_frame / float(row[0]))
 
 
 def build_for_tracks(db, tracks: list[dict], *, force: bool = False) -> dict:

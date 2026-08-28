@@ -66,8 +66,70 @@ def _fields(data: bytes):
         yield number, wire, value
 
 
+def signed_protobuf_int64(value: int) -> int:
+    """Interpret a protobuf int32/int64 varint as signed two's complement.
+
+    Mixxx stores BeatGrid-2.0 ``first_beat.frame_position`` as protobuf
+    ``int64`` (or sign-extended ``int32``). Negative first beats are normal:
+    the analyzer often places beat 0 a few frames *before* sample 0.
+
+    The sign bit *is* set. A signed int64 load of those bits is ``-77``.
+    Protobuf ``int64`` is not zigzag, though: the wire type is a varint of
+    the two's-complement bit pattern, and a varint decodes as unsigned.
+    Python ``int`` has no sign bit, so the same bits become
+    ``2**64 - 77`` (18446744073709551539) until we subtract ``2**64``.
+    Dividing the unsigned reading by 44100 produced the
+    418-trillion-second cues that crashed the 50centgunitera live set.
+    """
+    value = int(value)
+    if value >= 1 << 63:
+        return value - (1 << 64)
+    return value
+
+
+def seekable_cue_seconds(
+    seconds: float,
+    duration_seconds: float | None = None,
+) -> float:
+    """Clamp a cue to a time that can actually be sought on the file.
+
+    Wrapped unsigned beatgrid frames become multi-million-year offsets.
+    Those must never become Mixxx ``playposition`` targets.
+    """
+    try:
+        cue = float(seconds)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(cue) or cue < 0.0:
+        return 0.0
+    if duration_seconds is not None and duration_seconds > 0 and cue >= duration_seconds:
+        return 0.0
+    # No commercial track is a day long. Catches leftover unsigned-int64 /
+    # samplerate values when duration is unknown.
+    if cue > 24 * 3600:
+        return 0.0
+    return cue
+
+
+def usable_first_beat_seconds(seconds: float) -> float:
+    """Keep Mixxx's slightly-negative first beat; drop wraparound garbage."""
+    try:
+        first = float(seconds)
+    except (TypeError, ValueError):
+        return 0.0
+    # One second before sample 0 is already an extreme analyzer offset.
+    if not math.isfinite(first) or first < -1.0 or first > 24 * 3600:
+        return 0.0
+    return first
+
+
 def decode_beat_grid(blob: bytes) -> tuple[float, int]:
-    """Decode Mixxx BeatGrid-2.0 as (bpm, first_beat_frame)."""
+    """Decode Mixxx BeatGrid-2.0 as (bpm, first_beat_frame).
+
+    ``first_beat_frame`` is a signed sample offset and may be slightly
+    negative. Callers that need a seek time should run it through
+    ``seekable_cue_seconds``.
+    """
     bpm = None
     first_frame = None
     for number, wire, value in _fields(blob):
@@ -78,7 +140,7 @@ def decode_beat_grid(blob: bytes) -> tuple[float, int]:
         elif number == 2 and wire == 2:
             for inner_number, inner_wire, inner_value in _fields(value):
                 if inner_number == 1 and inner_wire == 0:
-                    first_frame = int(inner_value)
+                    first_frame = signed_protobuf_int64(inner_value)
     if not bpm or bpm <= 0 or first_frame is None:
         raise ValueError("BeatGrid-2.0 is missing bpm or first beat")
     return bpm, first_frame
@@ -94,8 +156,9 @@ def choose_phrase(
     duration_seconds: float | None = None,
 ) -> dict:
     """Choose an energetic phrase start, preferring a clear rise and earlier cue."""
+    fallback = seekable_cue_seconds(first_beat_seconds, duration_seconds)
     if not beat_energy:
-        return {"beat_index": 0, "cue_seconds": max(0.0, first_beat_seconds), "confidence": 0.0}
+        return {"beat_index": 0, "cue_seconds": fallback, "confidence": 0.0}
     peak = max(beat_energy) or 1.0
     candidates = []
     for index in range(0, max(1, len(beat_energy) - phrase_beats), phrase_beats):
@@ -113,7 +176,7 @@ def choose_phrase(
         score = level + 0.65 * rise - 0.0015 * cue
         candidates.append((score, index, cue, level, rise))
     if not candidates:
-        return {"beat_index": 0, "cue_seconds": max(0.0, first_beat_seconds), "confidence": 0.0}
+        return {"beat_index": 0, "cue_seconds": fallback, "confidence": 0.0}
 
     def as_dict(candidate: tuple) -> dict:
         score, index, cue, level, rise = candidate
@@ -192,7 +255,7 @@ def beat_rms(
 def analyze_track(row, *, max_seconds: float = 120.0, analysis_rate: int = 11025) -> dict:
     bpm, first_frame = decode_beat_grid(bytes(row[4]))
     source_rate = float(row[3])
-    first_beat_seconds = first_frame / source_rate
+    first_beat_seconds = usable_first_beat_seconds(first_frame / source_rate)
     samples = decode_pcm(row[0], sample_rate=analysis_rate, seconds=max_seconds)
     energies = beat_rms(
         samples,
