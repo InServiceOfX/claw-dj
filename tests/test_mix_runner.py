@@ -72,6 +72,54 @@ class MixRunnerTests(TestCase):
         self.assertIn(("[Master]", "crossfader", 1.0), mixxx.writes)
         self.assertIn(("[Channel1]", "play", 0), mixxx.writes)
 
+    def test_cue_deck_retries_when_the_first_seek_is_ignored(self) -> None:
+        # Live: Back Down rode to end-of-track, then loading Magic Stick
+        # onto that deck timed out on the first 3s playposition wait.
+        class SlowSeekMixxx(FakeMixxx):
+            def __init__(self) -> None:
+                super().__init__()
+                self._ignores = 3
+
+            def set(self, group: str, key: str, value: float) -> None:
+                if key == "playposition" and self._ignores > 0:
+                    self._ignores -= 1
+                    self.writes.append((group, key, value))
+                    return
+                super().set(group, key, value)
+
+        mixxx = SlowSeekMixxx()
+        mixxx.values[("[Channel2]", "duration")] = 243.0
+        mixxx.values[("[Channel2]", "playposition")] = 0.99
+        position, _label = cue_deck(
+            mixxx,
+            2,
+            cue_seconds=0.14,
+            duration=200.0,
+            settle_s=0.0,
+            timeout_s=1.0,
+        )
+        self.assertAlmostEqual(position, 0.14 / 200.0, places=4)
+
+    def test_cue_deck_does_not_kill_the_mix_when_seek_never_holds(self) -> None:
+        class StuckMixxx(FakeMixxx):
+            def set(self, group: str, key: str, value: float) -> None:
+                self.writes.append((group, key, value))
+                if key != "playposition":
+                    self.values[(group, key)] = value
+
+        mixxx = StuckMixxx()
+        mixxx.values[("[Channel2]", "duration")] = 243.0
+        mixxx.values[("[Channel2]", "playposition")] = 0.99
+        position, _label = cue_deck(
+            mixxx,
+            2,
+            cue_seconds=0.14,
+            duration=200.0,
+            settle_s=0.0,
+            timeout_s=0.2,
+        )
+        self.assertAlmostEqual(position, 0.99)
+
     def test_wrapped_beatgrid_cue_seeks_to_start_not_end_of_track(self) -> None:
         # Live 50centgunitera: unsigned first-beat / 44100 became a
         # 418-trillion-second cue; min(0.95, cue/duration) parked the deck
@@ -139,6 +187,7 @@ class MixRunnerTests(TestCase):
             8,
             timeout_s=90.0,
             phase_anchor=anchor,
+            trust_ride_beats=False,
         )
 
     @patch("hands.run_mix_plan.plan_paths.resolve")
@@ -684,6 +733,63 @@ class EchoOutExitTests(TestCase):
         _sleep.assert_any_call(2.0)  # four beats at FakeMixxx's 120 BPM
 
 
+class SkipVerseTests(TestCase):
+    @patch("hands.run_mix_plan.wait_for_beats")
+    def test_play_body_beatjumps_over_a_skipped_verse(self, wait) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel2]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "bpm")] = 92.3
+        _run_events(
+            mixxx,
+            [
+                {
+                    "op": "play_body",
+                    "deck": 2,
+                    "beats": 268,
+                    "track": "50 Cent — I Get Money (1, 2, 3 Remix) (Album)",
+                    "skip_after_beats": 140,
+                    "skip_beats": 64,
+                    "skip_from_seconds": 91.34,
+                    "skip_to_seconds": 132.93,
+                    "trust_ride_beats": True,
+                }
+            ],
+            {},
+            port=9995,
+        )
+        self.assertIn(("[Channel2]", "beatjump_size", 64.0), mixxx.writes)
+        self.assertIn(("[Channel2]", "beatjump_forward", 1), mixxx.writes)
+        waited = [call.args[2] for call in wait.call_args_list]
+        self.assertEqual(waited, [140, 128])
+
+    @patch("hands.run_mix_plan.wait_for_beats")
+    def test_play_body_jumps_immediately_when_skip_after_is_zero(self, wait) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel2]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "bpm")] = 92.3
+        _run_events(
+            mixxx,
+            [
+                {
+                    "op": "play_body",
+                    "deck": 2,
+                    "beats": 200,
+                    "track": "50 Cent — I Get Money (1, 2, 3 Remix) (Album)",
+                    "skip_after_beats": 0,
+                    "skip_beats": 80,
+                    "skip_from_seconds": 21.0,
+                    "skip_to_seconds": 73.0,
+                    "trust_ride_beats": True,
+                }
+            ],
+            {},
+            port=9995,
+        )
+        self.assertIn(("[Channel2]", "beatjump_size", 80.0), mixxx.writes)
+        waited = [call.args[2] for call in wait.call_args_list]
+        self.assertEqual(waited, [200])
+
+
 class VocalOverBedTests(TestCase):
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")
@@ -708,6 +814,29 @@ class VocalOverBedTests(TestCase):
         self.assertNotIn(("[Channel1]", "play", 0), mixxx.writes)
         self.assertIn(("[Channel2]", "play", 1), mixxx.writes)
         self.assertIn(("[Channel2]", "beatsync", 1), mixxx.writes)
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 0.1, 8.0])
+    def test_vocal_over_bed_loops_full_mix_instrumental_section(self, _monotonic, _sleep, _wait) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 16,
+                "technique": "vocal_over_bed",
+                "moves": ["sync", "vocal_over_bed", "bed_loop"],
+                "keep_outgoing_live": True,
+                "bed_loop_beats": 32,
+            },
+            port=9995,
+        )
+        self.assertIn(("[Channel1]", "beatloop_32_activate", 1), mixxx.writes)
+        self.assertIn(("[Channel1]", "loop_enabled", 0), mixxx.writes)
+        self.assertEqual(mixxx.get("[Channel1]", "play"), 1)
 
 
 class FilterDropExitTests(TestCase):

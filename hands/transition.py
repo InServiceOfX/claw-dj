@@ -127,6 +127,7 @@ def wait_for_beats(
     timeout_s: float = 90.0,
     *,
     phase_anchor: dict | None = None,
+    trust_ride_beats: bool = False,
 ) -> None:
     """Count beat_active rising edges on a dedicated event connection.
 
@@ -155,7 +156,7 @@ def wait_for_beats(
     count = 0
     gaps = 0
     max_gaps = 8
-    phase_resolved = phase_anchor is None
+    phase_resolved = phase_anchor is None or trust_ride_beats
 
     while count < beats and time.monotonic() <= deadline:
         previous = 0.0

@@ -1,5 +1,5 @@
-<!-- pdd-story-status: drafted-2026-08-19; vocal_over_bed planner+runner 2026-08-19 -->
-<!-- pdd-story-areas: catalog, mix_order_brief, build_mix_plan, plan_mix_build, mix_directives -->
+<!-- pdd-story-status: enforced-2026-08-28; Get Up over Outta Control Instrumental is the canonical keep-bed layer -->
+<!-- pdd-story-areas: catalog, mix_order_brief, build_mix_plan, plan_mix_build, mix_directives, stems -->
 <!-- pdd-story-prompts: order_constraints_Python.prompt, plan_mix_build_Python.prompt -->
 <!-- pdd-story-dev-units: order_constraints_Python.prompt, plan_mix_build_Python.prompt -->
 
@@ -23,16 +23,28 @@ The instrumental does **not** have to be the one that came with that vocal.
 Pairing an acapella with its own instrumental is just the original record;
 we already have that.
 
-A vocals-only track is **not** placed in full as its own sequential slot
-(empty bed, then the next title). The only exception is a **deliberate
-showcase** of a slice as an acapella break.
+A vocals-only track is **not** placed as its own sequential slot
+(empty bed, then the next title) — **including a 32-beat "short break."**
+32 live beats of dry vocal is still the vocal alone. This is **not** a DJ
+blend or mix transition: two decks play **at the same time**, because
+otherwise all you hear are vocals.
 
-**Lloyd Banks exception (not the rule):** I heard *On Fire* / *Warrior*
-acapellas ride more than a stab and it still worked, because Banks is a
-strong enough rapper that the dry vocal holds attention. That is an
-ear-certified exception for a specific MC/performance, recorded in
-dj_notes. It does **not** license every acapella in the crate to play as a
-full song.
+The only exception is a **deliberate showcase** of a slice as an acapella
+break (`showcase_acapella`). That is **very rare**. Dry acapella as its
+own song is not a default, not a short-break fallback, and not something
+the planner may invent. If you can hear only vocals, the mix is wrong.
+
+The agent **chooses an initial pair** from any vocals-only / acapella and
+any instrumental-only (or a cued, looped instrumental section of a full
+song) already in the set. Later we may swap either stem to improve the
+mash. `clawdj stems pair` (Rust) and `brain.stems.pair_vocals` (planner)
+are that choice.
+
+**No Banks exception.** I heard *On Fire (Acapella)*, *Warrior (Acapella)*,
+and *Baby By Me (Acapella)* play on their own and they sounded bad. Dry
+acapella is **very rare** — not a default for a strong rapper, not a
+short-break fallback. Those three must layer over an instrumental-only
+bed (or a looped cued section of a full mix), two decks at once.
 
 ## Acceptance criteria (observable)
 
@@ -63,21 +75,32 @@ full song.
      instrumental bed (instrumental-only track, or a verified instrumental
      stretch / break in a full mix). Both decks share a beat; the vocal is
      not a solo sequential ride through the whole file.
+   - The instrumental bed **stays live** (`keep_outgoing_live`). After the
+     layer, fade the vocal out and keep the bed; do not stop the
+     instrumental when the acapella ends.
+   - Canonical pattern (accepted 2026-08-28, 50centgunitera): *Outta
+     Control - Instrumental* rides a short intro, then *Get Up (Acapella)*
+     layers 96 beats on the other deck, xfader center, bed still playing,
+     next song loads onto the freed vocal deck.
    - Preferred beds, in order:
      1. an **interesting** instrumental-only track already in the set
         (same-song instrumental is allowed but **not required**);
      2. an interesting beat / instrumental break in another full song.
    - The plan records that pairing (vocal track_id + bed track_id) so
      Arrange / dry-run can show it as a layer, not as “next song.”
+   - Pairing a vocal that already has `entry_style=vocal_over_bed` still
+     **moves the bed immediately before it**. A note is not enough if the
+     previous track is a full mix with vocals.
 
-3. **Do not play the acapella in full**
-   - Default ride on a vocals-only track is a **short break** (a hook,
-     a verse slice, or a verified lyric window) — not `full_track` and
-     not a profile-length solo body.
-   - Playing more of a dry vocal requires an explicit human note
-     (`showcase_acapella` / trusted ride on that track) naming why
-     (the Banks exception). Without that note, a long solo acapella
-     body is a plan error.
+3. **Do not play the acapella on its own**
+   - Any solo `play_body` on a vocals-only track is a plan error,
+     including a 32-beat or 64-beat "short break."
+   - Playing a dry vocal sequentially requires an explicit human note
+     (`showcase_acapella`) naming why. Banks On Fire/Warrior is **not**
+     that exception — those dry rides sounded bad.
+   - Default: `entry_style=vocal_over_bed` over an instrumental-only
+     bed already in the set. If the only usable bed is a full mix,
+     cue an instrumental stretch and loop it (`bed_loop_beats=32`).
 
 4. **Same-song instrumental is not the interesting default**
    - If both the acapella and its matching instrumental are in the set,
@@ -97,9 +120,11 @@ full song.
 
 In `50centgunitera` the planner sequenced Lloyd Banks *On Fire (Feat.
 50 Cent)* → *On Fire (Acapella)* → *Warrior (Acapella)* → *On Fire
-(Instrumental)* → *Warrior (Instrumental)* as five consecutive full
-slots. The Banks acapellas sounding good dry is the **exception** named
-above, not acceptance of that sequence as the product.
+(Instrumental)* as consecutive full slots, then *Baby By Me (Acapella)*
+as a smooth_blend off that instrumental. Playing those acapellas on their
+own sounded really bad. They must layer over the instrumental (or a
+looped cued section) at the same time. The earlier "Banks exception"
+is revoked.
 
 **2026-08-19 cut:** first layer used the radio *Still Will (Acapella)*
 (clean CDS stem). Ernest: it sounded bad mostly because it is the
@@ -107,11 +132,23 @@ above, not acceptance of that sequence as the product.
 over the same instrumental; clean *Still Will* acapella is excluded.
 
 **2026-08-20 regression:** the live plan emitted `play_body` for 50 Cent
-*Get Up (Acapella)* for 129 beats. This is now an executable build failure,
-not merely discouraged prose. In this tribute, the selected *Outta Control
-- Instrumental* is the compatible preceding bed; *Get Up (Acapella)* uses
-`entry_style=vocal_over_bed` for a 64-beat layer and then fades while the
-instrumental remains live.
+*Get Up (Acapella)* for 129 beats. Treated as a build failure.
+
+**2026-08-28 regression:** Get Up (Acapella) still rode **32 dry beats**
+(`ride_beats=32; trust_ride_beats`) after Best Friend. The 64-beat ceiling
+had been treating a short solo as legal. It is not — you still only hear
+vocals. Pairer now prefers the adjacent different-song *Outta Control -
+Instrumental* (92 Ebm, relative to Get Up's F# / double-time 186) over
+same-song *Get Up (Instrumental)*. Layer is `vocal_over_bed` 96 beats;
+the instrumental stays live. Any remaining dry acapella without
+`showcase_acapella` fails the build.
+
+**2026-08-28 accepted first attempt:** the Get Up / Outta Control layer
+is the pattern to keep. Ernest: no further mix-craft ideas on that pair;
+enforce the story. Build fails if an acapella has a solo `play_body`, is
+not `vocal_over_bed`, the bed is not kept live, or the bed is a full mix
+with vocals and no `bed_loop`. Already-noted `vocal_over_bed` vocals still
+get their instrumental moved in front of them.
 
 ## Source
 

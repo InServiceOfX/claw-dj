@@ -39,8 +39,9 @@
   short break in another full song).
 - Do not sequence an acapella as a full solo slot.
 - Matching same-song instrumental is allowed, not preferred.
-- Lloyd Banks dry acapella holding attention is an exception, not the
-  rule.
+- Lloyd Banks dry acapella holding attention was tried and sounded bad;
+  that exception is revoked. Canonical accepted layer: Get Up (Acapella)
+  over Outta Control Instrumental, bed stays live.
 
 ## Story
 

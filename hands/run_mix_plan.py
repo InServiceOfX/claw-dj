@@ -395,6 +395,7 @@ def cue_deck(
     cue_seconds: float | None = None,
     duration: float | None = None,
     settle_s: float = 1.5,
+    timeout_s: float = 8.0,
 ) -> tuple[float, str]:
     """Seek a stopped deck and verify Mixxx accepted the requested cue.
 
@@ -433,24 +434,32 @@ def cue_deck(
     position = min(0.95, max(0.0, position))
     tolerance = max(0.002, 1.0 / duration)
 
+    # Do not fail-closed on the first poll. Mixxx CueRecall (IntroStart)
+    # fires on a delay after load, and a deck that just hit end-of-track
+    # (Back Down ~4:00 of a 4:03 file) can ignore the first seek. Keep
+    # re-asserting until the position holds, same as the 2026-07-14 race.
     mixxx.set(group, "playposition", position)
-    _wait_for(mixxx, group, "playposition", lambda value: abs(value - position) <= tolerance, 3.0)
-
-    # Outlast Mixxx's deferred seek-on-load: keep reasserting until the
-    # position holds steady for a continuous window, not just once.
-    deadline = time.monotonic() + settle_s
+    hold_s = 0.5 if settle_s > 0 else 0.0
+    deadline = time.monotonic() + max(0.0, timeout_s)
     stable_since: float | None = None
     while time.monotonic() < deadline:
         actual = mixxx.get(group, "playposition")
         if abs(actual - position) > tolerance:
             mixxx.set(group, "playposition", position)
             stable_since = None
+        elif hold_s <= 0:
+            break
         elif stable_since is None:
             stable_since = time.monotonic()
-        elif time.monotonic() - stable_since >= 0.5:
+        elif time.monotonic() - stable_since >= hold_s:
             break
         time.sleep(0.05)
     actual_position = mixxx.get(group, "playposition")
+    if abs(actual_position - position) > max(tolerance, 0.02):
+        print(
+            f"  WARNING: {group} playposition {actual_position:.3f} never "
+            f"held at {position:.3f} — proceeding so the mix does not die"
+        )
     actual_seconds = actual_position * duration
     cue_label = (
         f"{cue_seconds:.2f}s verified at {actual_seconds:.2f}s"
@@ -476,6 +485,9 @@ def load_deck(
     # barrier. Otherwise a valid new track can wait forever for its native BPM.
     mixxx.set(group, "rate", 0.0)
     mixxx.set(group, "pitch_adjust", 0.0)
+    # End-of-track decks (playposition ≈ 1) sometimes refuse the next seek
+    # until they are walked off the end marker.
+    mixxx.set(group, "playposition", 0.0)
     try:
         mixxx.set(group, "eject", 1)
         _wait_for(mixxx, group, "track_loaded", lambda v: v < 0.5, 5.0)
@@ -1113,6 +1125,10 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             return
         mixxx.set(in_g, "volume", 1.0)
         mixxx.set(in_g, "play", 1)
+        loop_beats = int(event.get("bed_loop_beats") or 0)
+        if loop_beats in {1, 2, 4, 8, 16, 32}:
+            mixxx.set(out_g, f"beatloop_{loop_beats}_activate", 1)
+            print(f"  bed loop {loop_beats} beats on deck {from_deck}")
         if sync:
             mixxx.set(in_g, "beatsync", 1)
         elif phase_only_sync:
@@ -1136,6 +1152,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         mixxx.set("[Master]", "crossfader", crossfader_target(from_deck))
         mixxx.set(in_g, "play", 0)
         mixxx.set(in_g, "volume", 1.0)
+        if loop_beats in {1, 2, 4, 8, 16, 32}:
+            mixxx.set(out_g, "loop_enabled", 0)
         print(f"  vocal-over-bed {beats} beats; bed deck {from_deck} still live")
         return
 
@@ -1423,13 +1441,42 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                 # timeout scales with the ride: full verses (verse tour) can outlast
                 # the old fixed 90s at slower tempos
                 if steady_beats:
-                    wait_for_beats(
-                        port,
-                        deck_group(int(event["deck"])),
-                        steady_beats,
-                        timeout_s=max(90.0, steady_beats * 1.5),
-                        phase_anchor=phase_anchor,
-                    )
+                    skip_after = int(event.get("skip_after_beats") or 0)
+                    skip_beats = int(event.get("skip_beats") or 0)
+                    group = deck_group(int(event["deck"]))
+                    if skip_beats > 0 and 0 <= skip_after < steady_beats:
+                        if skip_after > 0:
+                            wait_for_beats(
+                                port,
+                                group,
+                                skip_after,
+                                timeout_s=max(90.0, skip_after * 1.5),
+                                phase_anchor=phase_anchor,
+                                trust_ride_beats=bool(event.get("trust_ride_beats")),
+                            )
+                        mixxx.set(group, "beatjump_size", float(skip_beats))
+                        mixxx.set(group, "beatjump_forward", 1)
+                        print(
+                            f"  skip {skip_beats} beats "
+                            f"({event.get('skip_from_seconds')}s -> "
+                            f"{event.get('skip_to_seconds')}s)"
+                        )
+                        wait_for_beats(
+                            port,
+                            group,
+                            steady_beats - skip_after,
+                            timeout_s=max(90.0, (steady_beats - skip_after) * 1.5),
+                            trust_ride_beats=bool(event.get("trust_ride_beats")),
+                        )
+                    else:
+                        wait_for_beats(
+                            port,
+                            group,
+                            steady_beats,
+                            timeout_s=max(90.0, steady_beats * 1.5),
+                            phase_anchor=phase_anchor,
+                            trust_ride_beats=bool(event.get("trust_ride_beats")),
+                        )
                 if ramp_beats:
                     ramp_bpm_target(
                         mixxx,
@@ -1473,6 +1520,11 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                 print(
                     f"  holding deck {to_deck} at bridge tempo "
                     f"{float(event['incoming_bpm_target']):.2f} BPM"
+                )
+            elif event.get("keep_blend_tempo"):
+                print(
+                    f"  holding deck {to_deck} at blend tempo "
+                    "(keep_blend_tempo; not settling to native)"
                 )
             else:
                 settle_rate(

@@ -905,6 +905,121 @@ class MixPlanTest(TestCase):
         self.assertEqual(directives["ride_beats"], 96)
         self.assertEqual(directives["cue_seconds"], 61.97)
 
+    def test_skip_from_to_emits_a_64_beat_in_play_jump(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/igetmoney.mp3",
+                "artist": "50 Cent",
+                "title": "I Get Money (1, 2, 3 Remix) (Album)",
+                "bpm": 92.3,
+                "key": "A",
+                "duration_seconds": 272.8,
+                "dj_notes": (
+                    "cue_seconds=0.36; trust_cue_seconds; "
+                    "skip_from_seconds=91.34; skip_to_seconds=132.93; "
+                    "ride_beats=268; trust_ride_beats"
+                ),
+            },
+            {
+                "track_id": "/music/next.mp3",
+                "artist": "50 Cent",
+                "title": "Heat Ja Diss (feat. G-Unit)",
+                "bpm": 93.8,
+                "key": "D",
+                "duration_seconds": 178.0,
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        body = next(
+            event
+            for event in plan["events"]
+            if event.get("op") == "play_body" and "I Get Money" in event.get("track", "")
+        )
+        self.assertEqual(body.get("skip_beats"), 64)
+        self.assertGreaterEqual(body.get("skip_after_beats"), 140)
+        self.assertLessEqual(body.get("skip_after_beats"), 142)
+        self.assertEqual(body.get("beats"), 268)
+        self.assertAlmostEqual(body.get("skip_from_seconds"), 91.34, places=2)
+        self.assertAlmostEqual(body.get("skip_to_seconds"), 132.93, places=2)
+
+    def test_skip_after_subtracts_incoming_blend_beats(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/ludacris.mp3",
+                "artist": "50 Cent",
+                "title": "I Get Money (Feat. Ludacris) (Remix) (Exclu)",
+                "bpm": 92.3,
+                "key": "A",
+                "duration_seconds": 200.0,
+                "dj_notes": "cue_seconds=0; ride_beats=96; trust_ride_beats",
+            },
+            {
+                "track_id": "/music/igetmoney.mp3",
+                "artist": "50 Cent",
+                "title": "I Get Money (1, 2, 3 Remix) (Album)",
+                "bpm": 92.3,
+                "key": "A",
+                "duration_seconds": 272.8,
+                "dj_notes": (
+                    "cue_seconds=0.36; trust_cue_seconds; "
+                    "skip_from_seconds=91.34; skip_to_seconds=132.93; "
+                    "ride_beats=268; trust_ride_beats"
+                ),
+            },
+            {
+                "track_id": "/music/next.mp3",
+                "artist": "50 Cent",
+                "title": "Heat Ja Diss (feat. G-Unit)",
+                "bpm": 93.8,
+                "key": "D",
+                "duration_seconds": 178.0,
+            },
+        ]
+        plan = build_plan(
+            tracks,
+            count=3,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+            transition_beats_by_pair={("/music/ludacris.mp3", "/music/igetmoney.mp3"): 32},
+        )
+        body = next(
+            event
+            for event in plan["events"]
+            if event.get("op") == "play_body" and "1, 2, 3 Remix" in event.get("track", "")
+        )
+        # 141 file beats from cue to skip_from, minus the 32-beat landing.
+        self.assertGreaterEqual(body.get("skip_after_beats"), 108)
+        self.assertLessEqual(body.get("skip_after_beats"), 110)
+        self.assertEqual(body.get("skip_beats"), 64)
+
+    def test_keep_blend_tempo_does_not_pin_native_or_settle(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/compton.mp3",
+                "artist": "N.W.A",
+                "title": "Straight Outta Compton",
+                "bpm": 102.83,
+                "key": "Ab",
+                "duration_seconds": 258.0,
+                "dj_notes": "cue_seconds=2.9; ride_beats=108; trust_ride_beats",
+            },
+            {
+                "track_id": "/music/southside.mp3",
+                "artist": "G-Unit",
+                "title": "Straight Outta Southside",
+                "bpm": 92.22,
+                "key": "Em",
+                "duration_seconds": 200.0,
+                "dj_notes": "keep_blend_tempo; no_flourish",
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        self.assertTrue(transition.get("keep_blend_tempo"))
+        self.assertIsNone(transition.get("incoming_bpm_target"))
+        self.assertIsNone(transition.get("incoming_settle_bpm"))
+        self.assertIn("sync", transition.get("moves") or [])
+
     def test_vocal_over_bed_keeps_instrumental_live(self) -> None:
         tracks = [
             {
@@ -966,6 +1081,175 @@ class MixPlanTest(TestCase):
         ]
         self.assertEqual(len(loads_after), 1)
         self.assertEqual(loads_after[0]["deck"], transitions[0]["to_deck"])
+
+    def test_get_up_over_outta_control_is_the_canonical_layer(self) -> None:
+        from brain.stems import apply_vocal_layers, assert_vocals_layered
+
+        tracks = [
+            {
+                "track_id": "/music/best-friend.mp3",
+                "artist": "50 Cent",
+                "title": "Best Friend",
+                "bpm": 90.8,
+                "key": "Db",
+                "duration_seconds": 251.0,
+            },
+            {
+                "track_id": "/music/get-up-acapella.mp3",
+                "artist": "50 Cent",
+                "title": "Get Up (Acapella)",
+                "bpm": 186.0,
+                "key": "F#",
+                "duration_seconds": 166.0,
+                "dj_notes": (
+                    "entry_style=vocal_over_bed; ride_beats=96; "
+                    "trust_ride_beats; no_flourish"
+                ),
+            },
+            {
+                "track_id": "/music/outta-inst.mp3",
+                "artist": "50 Cent",
+                "title": "Outta Control - Instrumental",
+                "bpm": 92.0,
+                "key": "Ebm",
+                "duration_seconds": 249.0,
+                "dj_notes": "cue_seconds=0.26; trust_cue_seconds; ride_beats=16; trust_ride_beats",
+            },
+            {
+                "track_id": "/music/remix.mp3",
+                "artist": "50 Cent",
+                "title": "Out Of Control (Remix) (ft. Mobb Deep)",
+                "bpm": 92.0,
+                "key": "Ebm",
+                "duration_seconds": 250.0,
+            },
+        ]
+        layered, _ = apply_vocal_layers(tracks)
+        self.assertEqual(
+            [row["title"] for row in layered],
+            [
+                "Best Friend",
+                "Outta Control - Instrumental",
+                "Get Up (Acapella)",
+                "Out Of Control (Remix) (ft. Mobb Deep)",
+            ],
+        )
+        plan = build_plan(layered, count=4, seconds_per_track=20.0, affinity_lookup={})
+        assert_vocals_layered(plan)
+        layer = next(e for e in plan["events"] if e.get("technique") == "vocal_over_bed")
+        self.assertTrue(layer.get("keep_outgoing_live"))
+        self.assertEqual(layer["bed_track_id"], "/music/outta-inst.mp3")
+        self.assertEqual(layer["vocal_track_id"], "/music/get-up-acapella.mp3")
+        self.assertEqual(layer["transition_beats"], 96)
+        bodies = [e["track"] for e in plan["events"] if e.get("op") == "play_body"]
+        self.assertTrue(any("Outta Control - Instrumental" in track for track in bodies))
+        self.assertFalse(any("Get Up (Acapella)" in track for track in bodies))
+
+    def test_phrase_body_mid_verse_rewrites_to_zero(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/on-fire.mp3",
+                "artist": "Lloyd Banks",
+                "title": "On Fire (Feat. 50 Cent)",
+                "bpm": 95.0,
+                "key": "Gm",
+                "duration_seconds": 187.3,
+            },
+            {
+                "track_id": "/music/next.mp3",
+                "artist": "50 Cent",
+                "title": "Disco Inferno",
+                "bpm": 97.0,
+                "key": "Gm",
+                "duration_seconds": 200.0,
+            },
+        ]
+        phrases = {
+            "/music/on-fire.mp3": {
+                "intro": {"cue_seconds": 0.2, "beat_index": 0, "confidence": 0.7, "score": 1.1},
+                "body": {"cue_seconds": 41.35, "beat_index": 65, "confidence": 0.54, "score": 0.68},
+            }
+        }
+        segments = {
+            "/music/on-fire.mp3": [
+                {"kind": "verse", "start": 3.60, "end": 12.92},
+                {"kind": "chorus", "start": 12.92, "end": 27.75},
+                {"kind": "verse", "start": 27.75, "end": 73.30},
+                {"kind": "chorus", "start": 73.30, "end": 88.11},
+            ]
+        }
+        plan = build_plan(
+            tracks,
+            count=2,
+            seconds_per_track=40.0,
+            affinity_lookup={},
+            phrase_lookup=phrases,
+            lyric_segment_lookup=segments,
+        )
+        load_event = next(
+            event
+            for event in plan["events"]
+            if event.get("op") == "load" and event.get("track_id") == "/music/on-fire.mp3"
+        )
+        self.assertEqual(load_event["cue_seconds"], 0.0)
+        self.assertIn("verse_guard_intro_top", str(load_event.get("cue_source")))
+
+    def test_consecutive_vocals_layer_on_the_same_bed(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/bed.mp3",
+                "artist": "Lloyd Banks",
+                "title": "On Fire (Instrumental)",
+                "bpm": 94.83,
+                "key": "Gm",
+                "duration_seconds": 186.0,
+                "dj_notes": "cue_seconds=0; ride_beats=16; trust_ride_beats",
+            },
+            {
+                "track_id": "/music/on-fire-acapella.mp3",
+                "artist": "Lloyd Banks",
+                "title": "On Fire (Acapella)",
+                "bpm": 95.0,
+                "key": "Bb",
+                "duration_seconds": 150.0,
+                "dj_notes": "entry_style=vocal_over_bed; ride_beats=80; trust_ride_beats; no_flourish",
+            },
+            {
+                "track_id": "/music/warrior-acapella.mp3",
+                "artist": "Lloyd Banks",
+                "title": "Warrior (Acapella)",
+                "bpm": 187.0,
+                "key": "Bb",
+                "duration_seconds": 153.0,
+                "dj_notes": "entry_style=vocal_over_bed; ride_beats=80; trust_ride_beats; no_flourish",
+            },
+            {
+                "track_id": "/music/disco.mp3",
+                "artist": "50 Cent",
+                "title": "Disco Inferno",
+                "bpm": 97.0,
+                "key": "Gm",
+                "duration_seconds": 214.0,
+            },
+        ]
+        plan = build_plan(
+            tracks,
+            count=4,
+            seconds_per_track=20.0,
+            affinity_lookup={},
+            transition_beats_by_pair={("/music/bed.mp3", "/music/disco.mp3"): 32},
+        )
+        transitions = [event for event in plan["events"] if event.get("op") == "transition"]
+        self.assertEqual(transitions[0]["technique"], "vocal_over_bed")
+        self.assertEqual(transitions[1]["technique"], "vocal_over_bed")
+        self.assertIn("On Fire (Instrumental)", transitions[0]["from_track"])
+        self.assertIn("On Fire (Instrumental)", transitions[1]["from_track"])
+        self.assertIn("Warrior (Acapella)", transitions[1]["to_track"])
+        self.assertIn("On Fire (Instrumental)", transitions[2]["from_track"])
+        self.assertIn("Disco Inferno", transitions[2]["to_track"])
+        self.assertEqual(transitions[2]["transition_beats"], 32)
+        bodies = [event["track"] for event in plan["events"] if event.get("op") == "play_body"]
+        self.assertTrue(all("Acapella" not in track for track in bodies))
 
     def test_no_flourish_directive_suppresses_showcase_moves(self) -> None:
         directives = track_directives({"dj_notes": "no_flourish"})

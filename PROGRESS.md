@@ -6,7 +6,159 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
-## Active cross-machine priorities (updated 2026-08-19)
+## Active cross-machine priorities (updated 2026-08-28)
+
+- [x] **I Get Money 1-2-3: skip Diddy talk AND verse (2026-08-28).**
+      Old 64-beat jump from 91.34 still played Diddy: `skip_after`
+      counted from cue, so the 32-beat Ludacris landing delayed the
+      jump ~21s into the verse, and Diddy already talks on the hook
+      at 1:22. `skip_after` is now live beats after the incoming
+      blend. Skip 80.97→132.93 (80 beats) from the bar before the
+      interlude to the chorus after the verse. 50 v1 + first hook,
+      then Jay-Z.
+
+- [x] **Gangsta'd Up through Banks; Ghetto Qu'ran in the opening
+      (2026-08-28).** 96 live beats from 0 died ~0:59 — Banks's verse
+      (1:10.57–1:31.08) never started. Ride **152** so fade ~1:33 on
+      the hook after Banks; 16-beat Compton landing still in that hook.
+      Ghetto Qu'ran (POT, librosa 89.1 Bm) sits after I'm a Hustler
+      before the PW instrumental helper. 141 tracks.
+
+- [x] **Patiently Waiting inst is a short mix-in, not the next song
+      (2026-08-28).** Vocal → own instrumental is a boring same-beat
+      strip. No matching Bm ~79 acapella in the crate. Inst 16-beat
+      helper **before** the vocal (cue 0), 24-beat blend into the full
+      mix from 0. Vocal ride **314** through 50's second verse after
+      Eminem (2:57.61–3:58.47); fade ~3:58.5 on the last hook. Old 219
+      died on the post-Em hook.
+
+- [x] **G.O.D. / Have a Party are soundtrack-era, after Beg for Mercy
+      (2026-08-28).** First G-Unit album is **Beg for Mercy** (Nov
+      2003). GRODT film OST is Nov 2005, after The Massacre (Mar 2005)
+      and BFM. Moved Have a Party → G.O.D. Pt. III to after G'd Up
+      (BFM) before T.O.S. G.O.D. still skips the window skit
+      (`verse_landing` 87.05, ride 274) into T.O.S. same Em. Many Men
+      now → If I Can't (same Em, 24). Have a Party cue 0 (not
+      phrase_body 49s inside 50's verse), ride 224.
+
+- [x] **Many Men ≠ Patiently Waiting groove (2026-08-28).** Legal on
+      paper (80.7 Em→79 Bm, snare parity) but dirge vs boom-bap; 32-beat
+      blend held 79 against 80.66. Split: I'm a Hustler → Patiently
+      Waiting Inst helper (24); Many Men → If I Can't same Em (24).
+
+- [x] **GRODT-era opening includes Power of the Dollar (2026-08-28).**
+      I'm a Hustler (C#m 90.6) sits after Heat. Same key as What Up
+      Gangsta; Heat F#m→C#m neighbor. Cue 0, ride 280. How to Rob stays
+      after So Amazing (that Ab→Ebm blend). Guess Who's Back / Future /
+      No Mercy tracks already in the set still count as this era.
+
+- [x] **What Up Gangsta → Heat (2026-08-28).** I Don't Need 'Em is
+      languid Massacre; Heat is the same GRODT album, C#m→F#m neighbor,
+      82.5→86. Skip Heat's 0:28 stakeout skit; cue the hook “If there's
+      beef”. Ride 224 through both verses. Don't Need 'Em stays third.
+
+- [x] **cue_deck no longer kills the live mix (2026-08-28).** After
+      Back Down rode to end-of-track, loading the next file timed out
+      on a single 3s `playposition` wait. Runner now re-asserts the
+      seek (CueRecall / EOT) and warns instead of raising.
+
+- [x] **Ja Rule bunch off; Back Down earlier; Bump Heads in full (2026-08-28).**
+      Deactivated `Bump Heads → Back Down`. Back Down sits after If I
+      Can't (GRODT track 10). Bump Heads stays after Outta Control and
+      now rides **412** through 50 / Eminem / Yayo / Banks; 24-beat
+      blend on Yayo talking “'Cause we move units” (4:29) into This Is
+      50. Magic Stick still follows This Is 50.
+
+- [x] **If I Can't earlier + all three verses (2026-08-28).** After
+      Many Men in the GRODT-album stretch (Have a Party / G.O.D. moved
+      to soundtrack era). Old 76-beat If I Can't died in verse 1 and
+      the blend ate verse 2. Cue 0 (Yeah / opening hook); ride **240**
+      trust through v1–v3; fade on the last hook (~2:33). 24-beat out
+      to Back Down.
+
+- [x] **G.O.D. Pt. III skips the window skit (2026-08-28).** Cue 0
+      played the whole scene; verse_guard treated the skit as a verse
+      and the 32-beat blend cut Prodigy. 32-beat `verse_landing` onto
+      87.05 (hook pre-roll, Prodigy “Awright…” 1:28); ride **274**
+      through Havoc; fade on the last hook. Skits are almost never
+      played. Story:
+      `user_stories/story__when_a_track_opens_with_a_skit_i_skip_it.md`.
+
+- [x] **Get Up over Outta Control is the canonical vocal layer (2026-08-28).**
+      Ernest accepted the first two-deck attempt: instrumental intro,
+      `vocal_over_bed` 96, bed stays live, next song loads on the vocal
+      deck. Enforce the story: no dry acapella `play_body`; bed must be
+      instrumental-only (or `bed_loop`); `keep_outgoing_live`; already-
+      noted vocals still get the bed moved in front of them.
+
+- [x] **Best Friend chorus is not a verse (2026-08-28).** Opening hook
+      “If I was your best friend” (0:27) is chorus; 50’s verse is
+      “First we get the talkin” (0:49). Old 26.899 landing + 96-beat
+      ride cut mid-v1 into Outta Control Instrumental. Now 24-beat
+      `verse_landing` onto 49.48, ride **236** trust so fade starts on
+      the last hook after verse 2. Use the playlist `track_id`
+      (`Get Rich Or Die Tryin'`, capital Or) — the lowercase-or copy
+      is a silent no-op.
+
+- [x] **Instrumentals have no verse boundaries (2026-08-28).** Verse
+      guard skips instrumental-only / no-vocal tracks. Inherited vocal
+      LRC on an Instrumental stem is not a verse. Story:
+      `user_stories/story__when_a_track_has_no_vocals_verse_boundaries_do_not_apply.md`.
+
+- [x] **Biggie My Downfall → 50 Pray 4 My Downfall (2026-08-28).**
+      Interpolation, original first. 50's Radio 10 cut was a 44-beat
+      end-of-track clip. Biggie after the phone skit (cue 66.65, 96);
+      50 from 0 on the shared hook (128) into Gunz same Db.
+
+- [x] **Never Enough through 50's verse (2026-08-28).** 128 beats died on
+      Nate's first hook; blend ate 50 (1:39–2:19). Ride 224, fade on the
+      last hook, 24-beat out to Niggas. Stays after How to Rob.
+
+- [x] **GRODT earlier (2026-08-28).** Patiently Waiting was late (134).
+      Now 21 Questions → Many Men (203, was a 59-beat first-hook clip) →
+      Patiently Waiting (219 from 0) → Inst, then So Amazing / How to Rob.
+      Magic Stick stays after Back Down (2003 guest, Dm).
+
+- [x] **mix-to-listen verse window (2026-08-28).** The blend, not just the
+      cue, must sit outside a verse. 21 Questions cue 52s + 32-beat blend
+      finished mid verse 2; I Don't Need 'Em 96-beat body let the blend eat
+      verse 2. Function (`brain.verse` / `clawdj verse cue` + `audit_mix_plan`),
+      not a subagent. Lyrics JSON fills sqlite gaps. Locked: Need 'Em 180
+      from 0; 21 Questions 243 from 0.
+
+- [x] **Disco Inferno plays the hit (2026-08-28).** Cue 0 (iconic
+      count-in). 32-beat blend from On Fire Instrumental finishes before
+      verse 1 ("Go, go, go, 50 in the house" 0:22). Ride 260 through all
+      three verses; 32-beat blend out on the last chorus, not mid-verse.
+      Pair-beat overrides now apply on a live-bed handoff too.
+
+- [x] **Do not blend mid-verse (2026-08-28).** Automatic `phrase_body`
+      cues ~40s in are usually *inside* a rap/sung verse. Story:
+      `user_stories/story__when_i_mix_i_respect_the_start_and_stop_of_a_verse.md`.
+      Rust/Python: `clawdj verse cue` / `brain.verse.respect_verse_entry`
+      rewrite those to 0:00 when an intro exists, otherwise pre-roll onto
+      verse bar 1. Exit extends the ride to the verse end unless
+      `trust_ride_beats`. 50centgunitera: On Fire (Feat. 50) cues 0:00
+      (iconic NYC / We on fire); On Fire / Warrior / Baby By Me acapellas
+      layer over On Fire Instrumental — the Banks dry showcase is revoked.
+
+- [x] **Skip a middle verse while the deck keeps playing (2026-08-28).**
+      `skip_from_seconds` / `skip_to_seconds` emit an in-play Mixxx
+      `beatjump`. 50centgunitera: I Get Money (1, 2, 3 Remix) jumps 16
+      bars over P. Diddy's verse, then 50's bridge + Jay-Z.
+
+- [x] **`keep_blend_tempo` + Compton verse-land (2026-08-28).** Southside
+      syncs to Compton ~103 and stays; no native 92 settle. Compton
+      pre-rolls so Ice Cube's first line is the landing. JCC Vocal Remix
+      acapella layers over its instrumental; dry acapella is very rare.
+      Story: `user_stories/story__when_i_say_a_track_can_sit_slightly_fast_the_mix_keeps_that_tempo.md`.
+
+- [x] **Dry acapella `play_body` is a build error, even at 32 beats (2026-08-28).**
+      Get Up (Acapella) was still a solo 32-beat body. Tightened the stem
+      story: two decks at once (`vocal_over_bed`), not a mix transition.
+      Rust: `clawdj stems classify|pair`. Planner: `brain.stems.apply_vocal_layers`.
+      50centgunitera: Get Up layers 96 beats over Outta Control Instrumental.
+      Banks On Fire/Warrior / Baby By Me acapellas are **not** a dry showcase.
 
 - [x] **`vocal_over_bed` keeps the instrumental playing (2026-08-19).**
       Mixxx already has two decks — no extra Rust. Incoming
@@ -15,8 +167,8 @@
       50centgunitera: radio *Still Will (Acapella)* is the clean CDS stem
       and is excluded. Promo VLS *I'll Still Kill (Acappella)* layers
       over the instrumental (192 beats). Gatman cues 0.117 and rides 280
-      through the last chorus. On Fire/Warrior acapellas remain the Banks
-      exception. Story:
+      through the last chorus. On Fire/Warrior/Baby By Me acapellas layer
+      over On Fire Instrumental — dry Banks is revoked. Story:
       `user_stories/story__when_i_add_vocals_only_and_instrumental_only_tracks_i_layer_them_i_do_not_play_the_acapella_in_full.md`.
 
 ## Earlier 2026-08-19

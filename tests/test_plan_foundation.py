@@ -253,17 +253,66 @@ class PlanFoundationTest(TestCase):
             with self.assertRaisesRegex(ValueError, "vocals-only.*Get Up.*vocal_over_bed"):
                 plan_mix_build.build(meta.slug)
 
-    def test_13d_vocals_only_validator_allows_short_break_and_explicit_showcase(self):
+    def test_13d_vocals_only_validator_rejects_short_dry_break_allows_showcase_and_layer(self):
         track_id = "/music/get-up-acapella.mp3"
         plan = {
             "tracks": [{"track_id": track_id, "artist": "Artist", "title": "Get Up (Acapella)"}],
-            "events": [{"op": "play_body", "track": "Artist — Get Up (Acapella)", "beats": 64}],
+            "events": [{"op": "play_body", "track": "Artist — Get Up (Acapella)", "beats": 32}],
         }
-        plan_mix_build._validate_vocals_only_playback(plan, {})
-        plan["events"][0]["beats"] = 129
+        with self.assertRaisesRegex(ValueError, "solo play_body"):
+            plan_mix_build._validate_vocals_only_playback(plan, {})
         plan_mix_build._validate_vocals_only_playback(
-            plan, {track_id: "showcase_acapella; ride_beats=129; trust_ride_beats"}
+            plan, {track_id: "showcase_acapella; ride_beats=32; trust_ride_beats"}
         )
+        layered = {
+            "tracks": [
+                {"track_id": "/music/bed.mp3", "artist": "Artist", "title": "Outta Control - Instrumental"},
+                {"track_id": track_id, "artist": "Artist", "title": "Get Up (Acapella)"},
+            ],
+            "events": [
+                {
+                    "op": "transition",
+                    "technique": "vocal_over_bed",
+                    "moves": ["sync", "vocal_over_bed"],
+                    "keep_outgoing_live": True,
+                    "vocal_track_id": track_id,
+                    "bed_track_id": "/music/bed.mp3",
+                }
+            ],
+        }
+        plan_mix_build._validate_vocals_only_playback(layered, {})
+        over_full_mix = {
+            "tracks": [
+                {"track_id": "/music/best-friend.mp3", "artist": "50 Cent", "title": "Best Friend"},
+                {"track_id": track_id, "artist": "Artist", "title": "Get Up (Acapella)"},
+            ],
+            "events": [
+                {
+                    "op": "transition",
+                    "technique": "vocal_over_bed",
+                    "moves": ["sync", "vocal_over_bed"],
+                    "keep_outgoing_live": True,
+                    "vocal_track_id": track_id,
+                    "bed_track_id": "/music/best-friend.mp3",
+                }
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, "instrumental-only bed"):
+            plan_mix_build._validate_vocals_only_playback(over_full_mix, {})
+        no_keep = {
+            "tracks": layered["tracks"],
+            "events": [
+                {
+                    "op": "transition",
+                    "technique": "vocal_over_bed",
+                    "moves": ["sync", "vocal_over_bed"],
+                    "vocal_track_id": track_id,
+                    "bed_track_id": "/music/bed.mp3",
+                }
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, "keep the instrumental bed"):
+            plan_mix_build._validate_vocals_only_playback(no_keep, {})
 
     def test_14_staleness_detects_note_transition_and_pure_order_changes(self):
         meta = self._plan()

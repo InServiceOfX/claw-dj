@@ -42,6 +42,69 @@ grammars with hard, machine-enforced rules live separately under
   `brain.build_mix_plan.snap_to_lyric_line()` already fixes this
   automatically whenever synced lyrics exist; it's a structural rule, not
   something to re-litigate per track.
+- **Camelot + BPM + snare parity is not groove.** Two records can be
+  neighbors at ~80 BPM and still refuse to blend if the drum pocket
+  differs — *Many Men* is a sparse Dre dirge; *Patiently Waiting* is
+  boom-bap wait. A 32-beat overlap that holds 79 against 80.66 also
+  drifts. Split those; do not “fix” them with a longer crossfade.
+- **A first-album era is wider than the album.** For *Get Rich or Die
+  Tryin'*, Power of the Dollar and 2002 mixtapes (*Guess Who's Back*,
+  *50 Cent Is The Future*, *No Mercy, No Fear*, *Wanksta*) count as
+  the same stretch. *I'm a Hustler* (same C#m as *What Up Gangsta*)
+  belongs in that opening; *How to Rob* already sits early for the
+  blend into Never Enough. *Ghetto Qu'ran* (~89 Bm) is the POT
+  bridge from *I'm a Hustler* (90.6 C#m) into *Patiently Waiting*
+  (79 Bm) — same key as the destination, not a 13% cold drop.
+- **Play Banks on *Gangsta'd Up*.** Order is 50 v1, Banks (1:10
+  “These hoes want me to stop”), then 50 v3. A ~96-beat body from 0
+  dies in the hook after 50 and never reaches Banks. Fade on the
+  hook after Banks before the Compton `verse_landing`.
+- **In-play skips count from play_body, after the incoming blend.**
+  *I Get Money (1, 2, 3 Remix)*: a 64-beat jump from 91.34 (1s before
+  Diddy “Bo knows”) still played Diddy because skip_after was file
+  beats from cue and the 32-beat landing had already used 32 of
+  them. Diddy also talks on the hook at 1:22 — skip that too, land
+  on the chorus after the verse.
+- **The movie soundtrack is a later era.** *Get Rich or Die Tryin'*
+  the film OST (Nov 2005: *Have a Party*, *Best Friend*, *Hustler's
+  Ambition*, *Window Shopper*, *What If*) sits after *The Massacre*
+  (Mar 2005) and G-Unit's first album ***Beg for Mercy*** (Nov 2003).
+  *G.O.D. Pt. III* (Hell on Earth, 1996) travels with *Have a Party*
+  for Mobb Deep — it is not GRODT-album opening material.
+- **Same-song instrumental after the vocal is boring.** *Patiently
+  Waiting* into its own instrumental is a same-beat strip, not a mix.
+  Either layer a matching acapella over that bed, park the
+  instrumental for later, or use it as a **short helper into the full
+  mix** (16-beat intro, then blend). Do not ride it as the next song.
+  This crate has no Bm ~79 acapella to layer. Ride the vocal through
+  50's second verse after Eminem (2:57–3:58); a 219-beat body dies on
+  the post-Em hook.
+- **Never blend mid-verse.** Respect the start and stop of a rap or sung
+  verse. `phrase_body` hunts energy past ~30s, which in hip-hop is usually
+  *inside* the first verse (On Fire 41.35 “Running your bitch…”, Gunz
+  43.27, Stunt 101 42.64). Lyric-line snap then lands on a *word* in that
+  verse, which is not a mix-in. `brain.verse.respect_verse_entry` /
+  `clawdj verse cue` rewrite an automatic mid-verse cue to **0:00** when
+  the intro is there to blend (iconic intros are allowed and often what
+  we want), otherwise to a pre-roll onto verse bar 1. On the way out,
+  `respect_verse_exit` extends the ride to the verse’s end. Human
+  `trust_cue_seconds` / `trust_ride_beats` / `verse_landing` still win.
+  **Instrumentals are exempt** — there is no verse. Inherited vocal LRC on
+  an `(Instrumental)` stem is not a verse map.
+  **An opening chorus is not a verse.** Best Friend starts with Olivia’s
+  hook “If I was your best friend” (0:27); 50’s first rap is “First we
+  get the talkin” (0:49). Landing the fader on that chorus is a legal
+  blend-in, not `verse_landing`. 96 beats from the chorus landing still
+  cut mid-verse 1 into Outta Control Instrumental — ride through verse 2
+  and fade on the last hook.
+  **Skip spoken skits.** Almost never play the dialogue/scene at 0:00
+  (G.O.D. Pt. III window skit, Biggie My Downfall phone skit). Cue the
+  first hook or the first real verse. The lyric detector labels skit
+  lines as “verse,” so `verse_guard` will *protect the skit* and then
+  cut the rapper — do not let it. Iconic musical intros are still 0:00.
+  Story: `user_stories/story__when_i_mix_i_respect_the_start_and_stop_of_a_verse.md`,
+  `user_stories/story__when_a_track_has_no_vocals_verse_boundaries_do_not_apply.md`,
+  `user_stories/story__when_a_track_opens_with_a_skit_i_skip_it.md`.
 - **Ground every cue/ride/landing claim in real synced lyrics** (LRCLIB via
   `brain.lyric_timeline`), not memory of the song. Verify the exact
   `track_id` against `playlist.json` before writing dj_notes — the crate
@@ -81,12 +144,13 @@ grammars with hard, machine-enforced rules live separately under
   the matching lyric — not the whole album cut.** G-Unit *Straight Outta
   Southside* interpolates Ice Cube’s *Straight Outta Compton* couplet
   (“Straight outta …, crazy motherfucker named …”). Cue Compton on the
-  bar-1 before Cube’s first word (synced LRC 12.52s, grid beat 20 at
-  12.24s); ride his verse only; land Southside on Banks’s matching line
-  (11.36s). Tempo gap here is ~10.6 BPM / 11.5% — pin the incoming
-  `play_bpm` to native so Mixxx does not stretch the tribute onto 102.
-  `no_flourish` on the handoff. An ordered bunch locks original → tribute
-  so greedy rebuilds cannot reverse the torch-pass.
+  bar-1 before Cube’s first word (synced LRC 12.52s). Pre-roll the intro
+  so the incoming blend **finishes** on that line (`verse_landing`), then
+  ride Cube’s verse only; land Southside on Banks’s matching line
+  (11.36s). Southside **can sit at Compton’s tempo** (`keep_blend_tempo`)
+  — do not pin native 92 and do not settle back; this record still sounds
+  like itself a bit fast. `no_flourish` on the handoff. An ordered bunch
+  locks original → tribute so greedy rebuilds cannot reverse the torch-pass.
 - **Same for Case → 50 Touch Me.** *Touch Me, Tease Me* (1996, Case / Foxy
   / Mary J.) is the original; Forever King *Touch Me* (2009) is 50’s
   abbreviated remake of that hook (Wikipedia; Genius sample credit). Play
@@ -100,20 +164,29 @@ grammars with hard, machine-enforced rules live separately under
   sequence.** Identify them from version tags (`Acapella` / `A Cappella` /
   `Instrumental`), not from “Vocal Remix” or a folder named Instrumentals.
   Default: beat-match the dry vocal **over** an interesting instrumental
-  bed or a short break in another full song — not necessarily the matching
-  instrumental (that stack *is* the original record). Do **not** ride an
-  acapella end-to-end as its own slot unless a human note showcases a
-  slice. Put the bed immediately before the vocal and mark the vocal
-  `entry_style=vocal_over_bed` so Mixxx keeps the bed playing (two decks;
-  no extra Rust gesture). A sung hook (Akon on *Still Will*) needs a
+  bed or a **cued, looped** instrumental section of another full song —
+  not necessarily the matching instrumental (that stack *is* the original
+  record). This is two decks at once, not a mix transition; otherwise all
+  you hear are vocals. A 32-beat dry `play_body` is still solo — forbidden.
+  Playing an acapella on its own is **very rare** (`showcase_acapella` only).
+  The agent picks an initial pair (`clawdj stems pair` / `brain.stems`);
+  later we can swap either stem. Put the bed immediately before the vocal
+  and mark the vocal `entry_style=vocal_over_bed` so Mixxx keeps the bed
+  playing (`keep_outgoing_live`; `bed_loop_beats=32` when the bed is a
+  full mix, not a stem). Canonical accepted first attempt: *Get Up
+  (Acapella)* over *Outta Control - Instrumental* — short instrumental
+  intro, 96-beat vocal layer, bed stays, next song loads on the vocal
+  deck. A `vocal_over_bed` note is not enough if the previous track is a
+  full mix; move the instrumental in front. A sung hook (Akon on *Still Will*) needs a
   key-safe bed — relative major/minor of the same song is legal when a
   more interesting bed would clash. Prefer **Dirty / Album / explicit**
   vocal stems in a hip-hop set. A radio retitle plus a CDS acapella that
   sits next to `(Clean)` is the clean vocal — *Still Will* is *I'll Still
   Kill* with the title and the curses taken off. Do not layer that. Use
-  the Promo VLS / Album acappella, or just play the Dirty mix. Lloyd
-  Banks dry vocals holding attention (*On Fire* / *Warrior* in
-  50centgunitera) is an ear-certified exception, not the rule.
+  the Promo VLS / Album acappella, or just play the Dirty mix. Do **not**
+  treat Lloyd Banks *On Fire* / *Warrior* (or 50 *Baby By Me*) acapellas
+  as a dry showcase — those sounded bad on their own. Layer them over an
+  instrumental or a looped cued section; two decks at once.
   Story: `user_stories/story__when_i_add_vocals_only_and_instrumental_only_tracks_i_layer_them_i_do_not_play_the_acapella_in_full.md`
 - **Same-beat remixes play the original first.** G-Unit *Soldier* (No Mercy,
   No Fear) is Eminem’s *Soldier* instrumental with G-Unit verses over the

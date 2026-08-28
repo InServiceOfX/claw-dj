@@ -23,6 +23,7 @@ from pathlib import Path
 
 from brain.mix_graph import bpm_compatibility, key_compatibility, parse_key
 from brain.phrase_analysis import seekable_cue_seconds, usable_first_beat_seconds
+from brain.verse import fill_segment_lookup, respect_verse_entry, respect_verse_exit
 
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_PLAYLIST = DATA_DIR / "playlist.json"
@@ -260,6 +261,17 @@ def track_directives(track: dict) -> dict:
         # nearest real beat below; otherwise a half-beat cue can never be
         # repaired by changing an integer ride count.
         "trust_cue_seconds": bool(re.search(r"\btrust_cue_seconds\b", notes, re.I)),
+        # Ear-certified: stay at the blend tempo after landing. Do not glide
+        # back to the analyzed native BPM (chipmunk-safe records only).
+        "keep_blend_tempo": bool(re.search(r"\bkeep_blend_tempo\b", notes, re.I)),
+        # Loop the outgoing bed under a dry vocal (instrumental section of a
+        # full mix). vocal_over_bed uses this; ignored for other entry styles.
+        "bed_loop_beats": (
+            int(value) if (value := number("bed_loop_beats")) is not None else None
+        ),
+        # Skip a middle region (e.g. a guest verse) while the deck keeps playing.
+        "skip_from_seconds": number("skip_from_seconds"),
+        "skip_to_seconds": number("skip_to_seconds"),
     }
 
 
@@ -893,6 +905,26 @@ def build_plan(
         )
         if did_snap:
             source = f"{source}+lyric_snap"
+        # phrase_body + lyric-line snap still lands mid-verse (~40s). If
+        # lyrics prove that, start from 0:00 (iconic intro) or pre-roll
+        # onto the verse. Human cue_seconds already returned above.
+        segments = lyric_segment_lookup.get(track["track_id"]) or []
+        if segments:
+            grid = phrase or beat_phase_lookup.get(track["track_id"]) or {}
+            first_beat = 0.0
+            if grid.get("first_beat_seconds") is not None:
+                first_beat = float(usable_first_beat_seconds(grid["first_beat_seconds"]))
+            decision = respect_verse_entry(
+                cue_seconds,
+                segments,
+                first_beat=first_beat,
+                bpm=track.get("bpm"),
+                title=str(track.get("title") or ""),
+                path=str(track.get("track_id") or ""),
+            )
+            if not decision.legal:
+                cue_seconds = decision.cue_seconds
+                source = f"{source}+verse_guard_{decision.source}"
         return _remember_cue_beat_index(track["track_id"], {
             "cue_seconds": cue_seconds,
             "cue_beat_index": 0 if sanitized else pick.get("beat_index"),
@@ -1225,14 +1257,88 @@ def build_plan(
         if skip_outgoing_body:
             # Previous incoming was a vocals-only layer. The instrumental bed
             # is still the live deck; this outgoing acapella must not play dry.
-            skip_outgoing_body = False
             bed = bed_live_track or outgoing
+            incoming_directive = track_directives(incoming)
+            if incoming_directive["entry_style"] == "vocal_over_bed":
+                # Another dry vocal on the same still-playing bed.
+                aff = affinity_lookup.get(
+                    tuple(sorted((bed["track_id"], incoming["track_id"])))
+                )
+                tech = pick_technique(
+                    bed, incoming, aff, avoid_silence=profile.avoid_silence
+                )
+                layer_beats = (
+                    incoming_directive["ride_beats"]
+                    or incoming_directive["landing_beats"]
+                    or 96
+                )
+                tech.update(
+                    technique="vocal_over_bed",
+                    transition_beats=max(16, int(layer_beats)),
+                    moves=["sync", "vocal_over_bed"],
+                    showcase_move="vocal_over_bed",
+                    keep_outgoing_live=True,
+                    bed_track_id=bed["track_id"],
+                    vocal_track_id=incoming["track_id"],
+                    notes=(
+                        "Human DJ note: keep the outgoing instrumental bed playing. "
+                        "Start the vocals-only track on the other deck, beat-matched, "
+                        "crossfader center. Do not ride the acapella dry. After the "
+                        "layer, fade the vocal out and keep the bed."
+                    ),
+                )
+                loop_beats = incoming_directive.get("bed_loop_beats")
+                if loop_beats:
+                    tech["bed_loop_beats"] = int(loop_beats)
+                    tech["moves"] = ["sync", "vocal_over_bed", "bed_loop"]
+                if incoming_directive["play_bpm"] is not None:
+                    tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
+                events.append(
+                    {
+                        "op": "load",
+                        "deck": in_deck,
+                        "track_id": incoming["track_id"],
+                        "artist": incoming["artist"],
+                        "title": incoming["title"],
+                        **cue_fields(incoming, 0.12, index + 1),
+                    }
+                )
+                events.append(
+                    {
+                        "op": "transition",
+                        "from_deck": out_deck,
+                        "to_deck": in_deck,
+                        "from_track": bed_live_label
+                        or f"{bed['artist']} — {bed['title']}",
+                        "to_track": f"{incoming['artist']} — {incoming['title']}",
+                        **tech,
+                    }
+                )
+                segments.append(
+                    {
+                        "index": index,
+                        "from": bed_live_label or f"{bed['artist']} — {bed['title']}",
+                        "to": f"{incoming['artist']} — {incoming['title']}",
+                        "technique": tech["technique"],
+                        "beats": tech["transition_beats"],
+                        "score": tech["score"],
+                        "showcase_move": tech["showcase_move"],
+                    }
+                )
+                skip_outgoing_body = True
+                previous_fade_beats = 0
+                continue
+            skip_outgoing_body = False
             aff = affinity_lookup.get(tuple(sorted((bed["track_id"], incoming["track_id"]))))
             tech = pick_technique(bed, incoming, aff, avoid_silence=profile.avoid_silence)
             tech.setdefault("showcase_move", "bass_swap")
-            incoming_directive = track_directives(incoming)
             if incoming_directive["play_bpm"] is not None:
                 tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
+            override_beats = transition_beats_by_pair.get(
+                (bed["track_id"], incoming["track_id"])
+            )
+            if override_beats is not None:
+                tech["transition_beats"] = max(1, int(override_beats))
             # Vocal deck is free after the layer. Load the next full song
             # there before handing off from the still-playing bed.
             events.append(
@@ -1434,6 +1540,10 @@ def build_plan(
                     "layer, fade the vocal out and keep the bed."
                 ),
             )
+            loop_beats = incoming_directive.get("bed_loop_beats")
+            if loop_beats:
+                tech["bed_loop_beats"] = int(loop_beats)
+                tech["moves"] = ["sync", "vocal_over_bed", "bed_loop"]
         elif incoming_directive["entry_style"] == "verse_landing":
             landing_beats = incoming_directive["landing_beats"] or 24
             tech.update(
@@ -1472,12 +1582,14 @@ def build_plan(
             )
         if incoming_directive["play_bpm"] is not None:
             tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
+        elif incoming_directive["keep_blend_tempo"]:
+            tech["keep_blend_tempo"] = True
         if incoming_directive["settle_bpm"] is not None and incoming.get("bpm"):
             # Enter matched to the outgoing deck (ordinary sync, so the
             # overlap stays drift-free), then glide to this tempo instead of
             # all the way home. Meaningless alongside a play_bpm hold, which
             # skips the settle entirely -- play_bpm wins and this is dropped.
-            if tech.get("incoming_bpm_target") is None:
+            if tech.get("incoming_bpm_target") is None and not tech.get("keep_blend_tempo"):
                 tech["incoming_settle_bpm"] = incoming_directive["settle_bpm"]
                 tech["incoming_native_bpm"] = float(incoming["bpm"])
 
@@ -1827,6 +1939,32 @@ def build_plan(
         if override_beats is not None:
             tech["transition_beats"] = max(1, int(override_beats))
 
+        # mix-to-listen: the whole outgoing blend must sit after the verse,
+        # not start in a hook and then eat the next rap. Showcase profiles
+        # may still cut for a transition trick.
+        listen_mode = profile.name == "mix-to-listen" or profile.flourish_every == 0
+        if (
+            listen_mode
+            and not directive["trust_ride_beats"]
+            and outgoing.get("bpm")
+        ):
+            outgoing_cue = float(
+                cue_fields(outgoing, 0.1, index).get("cue_seconds") or 0.0
+            )
+            ride_beats, verse_reason = respect_verse_exit(
+                outgoing_cue,
+                ride_beats,
+                float(outgoing["bpm"]),
+                lyric_segment_lookup.get(outgoing["track_id"]) or [],
+                blend_beats=int(tech.get("transition_beats") or 32),
+                title=str(outgoing.get("title") or ""),
+                path=str(outgoing.get("track_id") or ""),
+            )
+            if verse_reason != "unchanged":
+                print(
+                    f"  [verse] {outgoing['artist']} — {outgoing['title']}: {verse_reason}"
+                )
+
         # Real onset/waveform check (brain.onset_analysis): a standard
         # backbeat puts the snare on every OTHER beat, so which beat-in-bar
         # the transition anchors on (kick vs. snare position) is a real,
@@ -1899,6 +2037,28 @@ def build_plan(
             }
         if directive["trust_ride_beats"]:
             body_event["trust_ride_beats"] = True
+        skip_from = directive.get("skip_from_seconds")
+        skip_to = directive.get("skip_to_seconds")
+        if (
+            skip_from is not None
+            and skip_to is not None
+            and outgoing.get("bpm")
+            and float(skip_to) > float(skip_from)
+        ):
+            period = 60.0 / float(outgoing["bpm"])
+            cue_s = float(outgoing.get("cue_seconds") or 0.0)
+            # play_body starts after the incoming blend, so those beats have
+            # already elapsed on this deck. Counting skip_after from cue
+            # fired the Diddy jump 32 beats late (into the verse).
+            skip_after = max(0, round((float(skip_from) - cue_s) / period))
+            skip_after = max(0, skip_after - int(previous_fade_beats or 0))
+            skip_beats = max(4, round((float(skip_to) - float(skip_from)) / period))
+            skip_beats -= skip_beats % 4
+            if skip_beats > 0 and skip_after < int(body_event["beats"]):
+                body_event["skip_after_beats"] = skip_after
+                body_event["skip_beats"] = skip_beats
+                body_event["skip_from_seconds"] = round(float(skip_from), 3)
+                body_event["skip_to_seconds"] = round(float(skip_to), 3)
         # Loading the next track happens synchronously while this outgoing
         # track keeps playing. That variable delay means the live body
         # counter may begin on a different grid beat than cue arithmetic
@@ -2199,6 +2359,11 @@ def compose_mix_plan(
             tracks = count_floor
         order_notes.append(f"honored {len(fixed_groups)} active ordered bunch(es)")
 
+    from brain.stems import apply_vocal_layers, assert_vocals_layered
+
+    pool, layer_notes = apply_vocal_layers(pool)
+    order_notes.extend(layer_notes)
+
     count = len(pool) if tracks is None else min(tracks, len(pool))
     # When the agent narrowed to a short showcase, don't re-inflate with tracks.
     if order_constraints and order_constraints.get("use_only"):
@@ -2223,7 +2388,7 @@ def compose_mix_plan(
         affinity_lookup=load_affinity_lookup(),
         phrase_lookup=load_phrase_lookup(phrase_analysis),
         lyric_line_lookup=load_lyric_line_lookup(),
-        lyric_segment_lookup=load_lyric_segment_lookup(),
+        lyric_segment_lookup=fill_segment_lookup(pool, load_lyric_segment_lookup()),
         beat_phase_lookup=load_beat_phase_lookup(),
         phrase_beats=(
             dj_format.phrase_beats
@@ -2237,6 +2402,7 @@ def compose_mix_plan(
     )
     if control_port is not None:
         plan.setdefault("runtime", {})["mixxx_control_port"] = int(control_port)
+    assert_vocals_layered(plan, {row["track_id"]: row.get("dj_notes") or "" for row in pool})
     out.parent.mkdir(parents=True, exist_ok=True)
     temporary = out.with_name(f".{out.name}.tmp")
     temporary.write_text(json.dumps(plan, indent=2) + "\n")

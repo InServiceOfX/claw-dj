@@ -7,8 +7,9 @@ use std::{
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use clawdj::{
-    JsonCommand, analyze_paths, command::Deck, open_mixxx_database, open_output_port,
-    port_presence_summary, queue_clear, queue_init, queue_set, send_message,
+    JsonCommand, StemTrack, VerseCueRequest, analyze_paths, classify_stem, command::Deck,
+    open_mixxx_database, open_output_port, pair_vocals, port_presence_summary, queue_clear,
+    queue_init, queue_set, respect_verse_entry, send_message,
 };
 use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -81,6 +82,36 @@ enum Commands {
         #[arg(long, default_value_t = clawdj::control_api::DEFAULT_PORT)]
         port: u16,
     },
+    /// Classify vocals-only / instrumental-only stems, or pair dry vocals
+    /// with a beat-matched bed (two decks at once, not a mix transition).
+    Stems {
+        #[command(subcommand)]
+        command: StemCommands,
+    },
+    /// Respect verse start/stop when choosing a mix-in cue.
+    Verse {
+        #[command(subcommand)]
+        command: VerseCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum StemCommands {
+    /// Print `vocals_only`, `instrumental_only`, or `full_mix` for one title.
+    Classify {
+        #[arg(long)]
+        title: String,
+        #[arg(long, default_value = "")]
+        path: String,
+    },
+    /// Read a JSON array of tracks on stdin; write pairing JSON on stdout.
+    Pair,
+}
+
+#[derive(Debug, Subcommand)]
+enum VerseCommands {
+    /// Read a VerseCueRequest JSON object on stdin; write the decision.
+    Cue,
 }
 
 #[derive(Debug, Subcommand)]
@@ -184,6 +215,47 @@ fn main() -> Result<()> {
         Commands::Chroma { out, paths } => run_chroma(out, paths),
         Commands::Ctl { command, port } => run_ctl(command, port),
         Commands::Gesture { command, port } => run_gesture(command, port),
+        Commands::Stems { command } => run_stems(command),
+        Commands::Verse { command } => run_verse(command),
+    }
+}
+
+fn run_stems(command: StemCommands) -> Result<()> {
+    match command {
+        StemCommands::Classify { title, path } => {
+            let kind = classify_stem(&title, &path);
+            println!("{}", serde_json::to_string(&kind)?);
+            Ok(())
+        }
+        StemCommands::Pair => {
+            let tracks: Vec<StemTrack> = serde_json::from_reader(std::io::stdin())
+                .context("stems pair expects a JSON array of tracks on stdin")?;
+            let report = pair_vocals(&tracks);
+            serde_json::to_writer(std::io::stdout(), &report)?;
+            println!();
+            Ok(())
+        }
+    }
+}
+
+fn run_verse(command: VerseCommands) -> Result<()> {
+    match command {
+        VerseCommands::Cue => {
+            let request: VerseCueRequest = serde_json::from_reader(std::io::stdin())
+                .context("verse cue expects a JSON object on stdin")?;
+            let decision = respect_verse_entry(
+                request.proposed_cue,
+                &request.segments,
+                request.first_beat.unwrap_or(0.0),
+                request.bpm,
+                request.blend_beats,
+                &request.title,
+                &request.path,
+            );
+            serde_json::to_writer(std::io::stdout(), &decision)?;
+            println!();
+            Ok(())
+        }
     }
 }
 

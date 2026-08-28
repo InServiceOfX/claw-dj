@@ -45,6 +45,9 @@ semicolon-separated, exactly like the examples below — build_mix_plan.py's \
 track_directives() parses these with a regex, so spelling/casing of the \
 keys must match exactly):
   cue_seconds=<number>       seconds into the track to start riding from
+  trust_cue_seconds          bare flag — keep this cue even if lyrics prove it is mid-verse.
+                             Automatic phrase_body cues that land inside a verse are rewritten
+                             to 0:00 (iconic intro) or a verse-start pre-roll unless this is set.
   ride_phrases=<int>         how many 32-beat phrases to ride before the next transition
   ride_beats=<int>           exact beat count to ride (overrides ride_phrases when set)
   play_bpm=<number>          play this track at a specific BPM instead of its native one
@@ -52,12 +55,21 @@ keys must match exactly):
                              after the landing instead of all the way back to native. Use when a
                              song carries being sped up and you want to keep some of the lift
                              without holding the full blend tempo. Ignored if play_bpm is also set.
+  keep_blend_tempo           bare flag — stay at the outgoing/blend tempo after landing. Do not
+                             settle back to native. Only for records the human certified can sit
+                             slightly fast without sounding chipmunked. Ignored if play_bpm is set.
+  skip_from_seconds=<number> start of a region to jump over while the deck keeps playing
+  skip_to_seconds=<number>   landing after that skip (same grid). File times.
+                             skip_after is live beats *after the incoming blend*
+                             (play_body start), not from cue. 16-bar verses are
+                             64 beats; a hook-talk + verse may be 80.
   exit_bpm=<number>          gradually bring this track to a target BPM before its exit
   tempo_ramp_beats=<int>     number of final ride beats used for the exit_bpm glide
   entry_style=beat_drop | gentle_blend | halftime_blend | verse_landing | vocal_over_bed
   exit_style=echo_out | filter_drop | tempo_ramp_blend
   landing_seconds=<number>   (with entry_style=verse_landing) exact second the vocal/verse lands
   landing_beats=<int>        (with entry_style=verse_landing) beat count to land on
+  bed_loop_beats=<int>       (with entry_style=vocal_over_bed) loop the outgoing bed (1/2/4/8/16/32) so an instrumental section of a full mix repeats under the vocal
   opener_style=echo_tease_drop | juggle_intro | juggle_brake_intro   (only meaningful on the first track)
   juggle_chops=<int>          number of alternating cue drops for a juggle opener
   juggle_hold_beats=<number>  beats to hold each juggle chop (4 = one bar)
