@@ -79,6 +79,15 @@ grammars with hard, machine-enforced rules live separately under
   This crate has no Bm ~79 acapella to layer. Ride the vocal through
   50's second verse after Eminem (2:57–3:58); a 219-beat body dies on
   the post-Em hook.
+- **Same-beat / sample-lineage mixes may reuse that instrumental as a
+  short bridge.** When the set is interpolations, freestyles, or
+  remixes on one beat *and* the instrumental is in the crate, load it
+  on the free deck between two vocals: 8–32 naked beats, or a center
+  blend so the rappers do not collide. It may appear more than once;
+  each time is short. Who Shot Ya variations (2026-08-31): Biggie
+  album version from 0:00, then the VLS instrumental as a helper, not
+  a 3-minute chapter. Story:
+  `user_stories/story__when_i_mix_the_same_beat_or_sample_lineage_i_use_the_instrumental_as_a_short_bridge.md`.
 - **Never blend mid-verse.** Respect the start and stop of a rap or sung
   verse. `phrase_body` hunts energy past ~30s, which in hip-hop is usually
   *inside* the first verse (On Fire 41.35 “Running your bitch…”, Gunz
@@ -99,7 +108,10 @@ grammars with hard, machine-enforced rules live separately under
   and fade on the last hook.
   **Skip spoken skits.** Almost never play the dialogue/scene at 0:00
   (G.O.D. Pt. III window skit, Biggie My Downfall phone skit). Cue the
-  first hook or the first real verse. The lyric detector labels skit
+  first hook or the first real verse. Mid-song / outro skits too:
+  Biggie *Who Shot Ya* (Ready to Die remaster) last-verse gun-in-mouth
+  / victim-squeal (~3:24–3:44) is skipped in every mix
+  (`skip_from_seconds=203.5; skip_to_seconds=224.5`). The lyric detector labels skit
   lines as “verse,” so `verse_guard` will *protect the skit* and then
   cut the rapper — do not let it. Iconic musical intros are still 0:00.
   Story: `user_stories/story__when_i_mix_i_respect_the_start_and_stop_of_a_verse.md`,

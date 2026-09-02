@@ -14,6 +14,18 @@ Written 2026-07-11 mid-hackathon so work can resume on a different machine
 
 Both goals point at the same architecture, so there's one codebase.
 
+## Who Shot Ya variations (2026-08-31)
+
+Active named plan: `notorious-big-who-shot-ya-variations`. Editorial
+lock, not a planner rewrite: Notorious B.I.G. album *Who Shot Ya*
+(Ready to Die remaster) opens from 0:00, skips the gun-in-mouth /
+victim-squeal skit (`skip_from_seconds=203.5; skip_to_seconds=224.5`,
+also in global `dj_notes` for every mix), and blends out on the
+chorus. VLS instrumental is not a solo song (`ride_beats=0`) — a
+32-beat gentle blend into DMX so beat and vocal play together. Club
+Mix sits after the interpolators, not after the album. Rebuild with
+`--profile mix-to-listen`.
+
 ## Anthology and short-form program (2026-08-02)
 
 The long-running product direction is now explicit in

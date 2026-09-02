@@ -6,6 +6,31 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
+## Active cross-machine priorities (updated 2026-08-31)
+
+- [x] **Who Shot Ya album: skip the gun-in-mouth skit, every mix
+      (2026-08-31).** Ready to Die remaster last-verse scene
+      (~3:24–3:44, “Can't talk with a gun in your mouth” + victim
+      squeal) is a skit, not a verse. Global `dj_notes` on that
+      `track_id`: `skip_from_seconds=203.5; skip_to_seconds=224.5`
+      onto “As we proceed”. This plan rides 344 then blends on that
+      chorus. Club Mix sits after the interpolators, not after the
+      album. Instrumental is not a solo song: `ride_beats=0` then a
+      32-beat gentle blend into DMX (vocal + beat together).
+
+- [x] **Who Shot Ya variations: original first, verses, instrumental
+      as a blend not a song (2026-08-31).** Active plan
+      `notorious-big-who-shot-ya-variations`. Hard lock: Notorious
+      B.I.G. *Who Shot Ya* (Ready to Die remaster) opens from 0:00 and
+      rides through the verses (skit skipped, see above). Other vocals
+      cue 0 with `trust_ride_beats`. Planner still cannot emit the same
+      `track_id` twice; the instrumental is one playlist slot used as
+      a simultaneous blend into DMX. Stories:
+      `user_stories/story__when_i_mix_the_same_beat_or_sample_lineage_i_use_the_instrumental_as_a_short_bridge.md`,
+      `user_stories/story__when_lyrics_are_missing_i_find_verse_boundaries_from_the_vocal_in_the_audio.md`.
+      DMX/Jim/Ja/K-Dot have no synced LRC; duration-from-0 is the
+      fallback until audio verse detection exists.
+
 ## Active cross-machine priorities (updated 2026-08-28)
 
 - [x] **I Get Money 1-2-3: skip Diddy talk AND verse (2026-08-28).**
