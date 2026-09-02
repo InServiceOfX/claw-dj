@@ -46,6 +46,17 @@ past the dialogue). Do not invent timestamps without synced lyrics.
    skit); ride through Havoc; fade on the last hook.
 6. **Example (already locked).** Biggie *My Downfall*: skip the phone
    skit, cue 66.65.
+7. **Example (Who Shot Ya album, any mix, 2026-08-31).** Ready to Die
+   remaster: last verse ends ~3:20 (“Hammer cock, in the fire
+   position”). Then the gun-in-mouth / victim-squeal scene
+   (~3:24–3:44, “Can't talk with a gun in your mouth”). That is a
+   skit, not a verse, and it is demoralizing — skip it, cut it, or
+   start the outgoing blend **before** it in **every** mix that uses
+   this song. Enforcement is the library `tracks.dj_notes` row
+   (`skip_from_seconds=203.5; skip_to_seconds=224.5` onto “As we
+   proceed”), including Born Again / Greatest Hits copies of the same
+   cut. A plan overlay may add ride/cue notes; it must not drop those
+   skip tokens. A shorter ride that never reaches 3:24 is also legal.
 
 ## Must not
 
@@ -53,6 +64,8 @@ past the dialogue). Do not invent timestamps without synced lyrics.
   opening is a skit.
 - Do not auto-skip every long first verse — many songs rap from bar 1
   with no skit. This is a skit/dialogue skip, not “skip the first verse.”
+- Do not let a plan overlay drop library `skip_from_seconds` /
+  `skip_to_seconds`. Those crate notes are the any-mix enforcement.
 - Do not start Mixxx to prove the cue.
 
 ## Source

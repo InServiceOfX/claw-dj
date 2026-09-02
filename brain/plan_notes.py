@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from contextlib import closing
 
@@ -10,6 +11,39 @@ from brain.plan_revision import file_rev, write_checked
 from brain.plan_types import Author, EffectiveNote
 
 DEFAULT_INDEX = library_index.DEFAULT_INDEX
+
+# Library-level "never play this region" tokens. A plan overlay may add
+# ride/cue notes for one mix; it must not silently drop a skip that the
+# crate recorded for every mix (Who Shot Ya gun-in-mouth skit).
+_LIBRARY_SKIP_TOKEN = re.compile(
+    r"\b(skip_from_seconds|skip_to_seconds)\s*=\s*\d+(?:\.\d+)?",
+    re.IGNORECASE,
+)
+
+
+def carry_library_skips(global_note: str, plan_note: str) -> str:
+    """Keep library skip_from/to on the effective note when the overlay omitted them.
+
+    Explicit skip tokens in the plan overlay still win (last-match parser).
+    """
+    global_note = (global_note or "").strip()
+    plan_note = (plan_note or "").strip()
+    if not plan_note:
+        return global_note
+    if not global_note:
+        return plan_note
+    extras: list[str] = []
+    for token in _LIBRARY_SKIP_TOKEN.findall(global_note):
+        key = token.split("=", 1)[0].strip()
+        if not re.search(rf"\b{re.escape(key)}\s*=", plan_note, re.I):
+            match = re.search(
+                rf"\b{re.escape(key)}\s*=\s*\d+(?:\.\d+)?", global_note, re.I
+            )
+            if match:
+                extras.append(match.group(0))
+    if not extras:
+        return plan_note
+    return f"{plan_note}; {'; '.join(extras)}"
 
 
 def _overrides(slug) -> list[dict]:
@@ -45,7 +79,16 @@ def get_effective(slug: str, track_ids: list[str]) -> list[EffectiveNote]:
             result.append(EffectiveNote(track_id, global_note, "global", False, available))
         else:
             baseline = override.get("global_note_at_override")
-            result.append(EffectiveNote(track_id, override.get("note", ""), "plan", baseline is not None and baseline != global_note, available))
+            plan_note = str(override.get("note", "") or "")
+            result.append(
+                EffectiveNote(
+                    track_id,
+                    carry_library_skips(global_note, plan_note),
+                    "plan",
+                    baseline is not None and baseline != global_note,
+                    available,
+                )
+            )
     return result
 
 

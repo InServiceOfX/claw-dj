@@ -149,6 +149,39 @@ class PlanFoundationTest(TestCase):
         with library_index.connect(self.db) as db:
             self.assertEqual(db.execute("SELECT dj_notes FROM tracks").fetchone()[0], "global human note")
 
+    def test_09b_plan_overlay_keeps_library_skip_tokens(self):
+        meta = self._plan()
+        self._track(
+            "/music/who-shot-ya.mp3",
+            "Skip the gun skit. skip_from_seconds=203.5; skip_to_seconds=224.5",
+        )
+        path = plan_paths.resolve(meta.slug).notes
+        plan_notes.set_override(
+            meta.slug,
+            "/music/who-shot-ya.mp3",
+            "cue_seconds=0; ride_beats=344; trust_ride_beats",
+            Author.AGENT,
+            plan_revision.file_rev(path),
+        )
+        effective = plan_notes.get_effective(meta.slug, ["/music/who-shot-ya.mp3"])[0]
+        self.assertEqual(effective.layer, "plan")
+        self.assertIn("ride_beats=344", effective.note)
+        self.assertIn("skip_from_seconds=203.5", effective.note)
+        self.assertIn("skip_to_seconds=224.5", effective.note)
+        overlay_only = plan_notes.carry_library_skips(
+            "skip_from_seconds=203.5; skip_to_seconds=224.5",
+            "skip_from_seconds=180; skip_to_seconds=224.5; ride_beats=200",
+        )
+        self.assertEqual(
+            overlay_only,
+            "skip_from_seconds=180; skip_to_seconds=224.5; ride_beats=200",
+        )
+        with library_index.connect(self.db) as db:
+            self.assertIn(
+                "skip_from_seconds=203.5",
+                db.execute("SELECT dj_notes FROM tracks").fetchone()[0],
+            )
+
     def test_10_transition_overrides_are_pair_keyed_sparse_and_reactivate(self):
         meta = self._plan()
         path = plan_paths.resolve(meta.slug).transitions
