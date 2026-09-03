@@ -121,6 +121,21 @@ class PlanIntegrationTest(TestCase):
         with self.assertRaises(plan_revision.StalePlanError):
             self.call(api_plan_tracks, meta.slug, "POST", {"add": ["d"], "base_rev": arranged["rev"]})
 
+    def test_arrange_snapshot_returns_collection_unavailable_instead_of_traceback(self):
+        from brain.collection_registry import CollectionUnavailable
+
+        meta = self.plan()
+        paths = plan_paths.resolve(meta.slug)
+        paths.selection.write_text(json.dumps({"track_ids": ["a"]}))
+        paths.playlist.write_text(json.dumps([{"track_id": "a", "title": "a"}]))
+        missing = CollectionUnavailable("collection 'ElementsMusic' is not mounted at /Volumes/Elements")
+        with patch.object(plan_notes, "get_effective", side_effect=missing):
+            with self.assertRaises(ApiError) as caught:
+                snapshot(meta.slug)
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(caught.exception.payload["error"], "collection_unavailable")
+        self.assertIn("not mounted", caught.exception.payload["message"])
+
     def test_track_removal_reconciles_activation_without_mutating_library_bunch(self):
         meta = self.plan()
         paths = plan_paths.resolve(meta.slug)
