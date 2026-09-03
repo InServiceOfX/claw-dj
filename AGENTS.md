@@ -45,6 +45,11 @@ an explicit `--author`. `mark` writes `wip|ready|archived`; `status` only reads
 artifact staleness. Mutations require `--base-rev` from `show --json` or an
 intentional `--force`.
 
+If a live blend is "on beat but off the snare / off by one count," flip the
+outgoing `ride_beats` by ±1. Do not move the incoming cue one beat later.
+`trust_ride_beats` does not block that one-count snare fix. Story:
+`user_stories/story__when_i_blend_i_match_the_snare_not_just_the_beat.md`.
+
 ## Data and secrets
 
 - `brain/data/` is intentionally ignored because it contains derived personal-library state.
