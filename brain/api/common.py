@@ -1,12 +1,13 @@
 """Shared response, revision, hydration, and snapshot helpers for plan routes."""
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+import logging
 from dataclasses import asdict
 from http import HTTPStatus
 
-from brain import bunch_store, library_index, plan_bunch_activation, plan_notes, plan_paths, plan_revision, plan_staleness, plan_store, transition_overrides
+from brain import bunch_store, collection_registry, library_index, plan_bunch_activation, plan_notes, plan_paths, plan_revision, plan_staleness, plan_store, transition_overrides
 from brain.plan_mix_envelope import read_tolerant
 
 
@@ -119,7 +120,11 @@ def _snapshot_once(slug):
     stale = plan_staleness.is_stale(slug)
     tracks = list(((artifact or {}).get("tracks") if not stale["stale"] else None) or fallback_rows)
     order = [row.get("track_id") for row in tracks if row.get("track_id")]
-    notes = [asdict(item) for item in plan_notes.get_effective(slug, order)]
+    try:
+        notes = [asdict(item) for item in plan_notes.get_effective(slug, order)]
+    except collection_registry.CollectionUnavailable as error:
+        logging.getLogger(__name__).warning("%s", error)
+        raise ApiError(503, "collection_unavailable", str(error)) from error
     order_changed = bool({"selection", "playlist"}.intersection(stale.get("changed_inputs", [])))
     derived = [] if order_changed else list((artifact or {}).get("segments") or [])
     overrides = transition_overrides.reconcile(order, transition_overrides.load(slug))

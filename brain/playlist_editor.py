@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import shutil
 import threading
@@ -1599,6 +1600,9 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     self._json(payload, status, response_headers)
             except ApiError as error:
                 self._json(error.payload, error.status)
+            except collection_registry.CollectionUnavailable as error:
+                logging.getLogger(__name__).warning("%s", error)
+                self._json({"error": "collection_unavailable", "message": str(error)}, HTTPStatus.SERVICE_UNAVAILABLE)
             except (plan_paths.PlanNotFound, KeyError) as error:
                 self._json({"error": "not_found", "message": str(error)}, HTTPStatus.NOT_FOUND)
             except (ValueError, json.JSONDecodeError) as error:
