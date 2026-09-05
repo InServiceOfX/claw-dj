@@ -1183,6 +1183,10 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     elif phase_only_sync:
         mixxx.set(in_g, "beatsync_phase", 1)
         print(f"  phase-locked deck {to_deck} to {out_g} beat (tempo held at play_bpm)")
+    if "snare_align" in moves:
+        # beatsync locks ticks; this flips kick-on-snare to snare-on-snare.
+        mixxx.set(in_g, "beatjump_1_forward", 1)
+        print(f"  snare-align: jumped incoming deck {to_deck} 1 beat")
 
     start_cf = mixxx.get("[Master]", "crossfader")
     end_cf = crossfader_target(to_deck)

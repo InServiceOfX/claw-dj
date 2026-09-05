@@ -71,6 +71,10 @@ incoming deck and moves the crossfader instead of aborting the whole set.
 Listener-locked `trust_ride_beats` values block planner auto-nudges of ride
 length, but the trusted count still defines a planned `phase_anchor` so runtime
 can absorb preload/settle jitter without abandoning the 1-2-3-4 target.
+Snare lock is a separate move: `snare_align` after Mixxx `beatsync` jumps the
+incoming deck one beat. Ticks can lock while kick sits on snare; changing
+`ride_beats` or `cue_seconds` by one is the wrong lever. Incoming `snare_align`
+in dj_notes, or a high-confidence phase mismatch, emits that move.
 Transition beat overrides must enter `build_plan` before previous-fade math;
 post-build event patching alone left anchors assuming the default fade while
 the runner executed longer human blends (one-count lineage defects on

@@ -132,10 +132,10 @@ Inspect destinations before copying into a profile that is not new.
 6. Human ride lock overridden at runtime: `trust_ride_beats` bodies must not
    carry a runtime phase anchor; automatic correction must preserve modulo-four
    bar position, not only odd/even parity.
-6b. Off-by-one snare: Mixxx ticks can lock while snares do not. Flip the
-   **outgoing** `ride_beats` by ±1. Do not slide the incoming `cue_seconds`
-   one beat later. `trust_ride_beats` means "do not shorten the song," not
-   "refuse the one-count snare fix the ear just asked for." See
+6b. Off-by-one snare: Mixxx ticks can lock while snares do not. Put
+   `snare_align` on the incoming track; the runner `beatjump_1_forward`
+   after beatsync. Do not slide `cue_seconds` one beat later and do not
+   use outgoing `ride_beats` ±1 as the snare lock. See
    `user_stories/story__when_i_blend_i_match_the_snare_not_just_the_beat.md`.
 7. End-of-track arithmetic that ignores overlaps: incoming audio is already
    advancing during its fade-in, and the outgoing fade also needs runway. The

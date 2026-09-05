@@ -256,6 +256,10 @@ def track_directives(track: dict) -> dict:
         # measurement (seen live 2026-07-19: confidence 0.015 drove a nudge
         # the ear then flagged as off by one).
         "trust_ride_beats": bool(re.search(r"\btrust_ride_beats\b", notes, re.I)),
+        # After Mixxx beatsync, jump the incoming deck one beat so snares
+        # lock. Ticks can match while kick sits on snare; ride_beats ±1
+        # does not fix that. Ear flag, or high-confidence phase mismatch.
+        "snare_align": bool(re.search(r"\bsnare_align\b", notes, re.I)),
         # Rare escape hatch for an ear-certified cue that deliberately sits
         # between analyzed beatgrid lines. Ordinary cues are snapped to the
         # nearest real beat below; otherwise a half-beat cue can never be
@@ -467,7 +471,7 @@ def build_plan(
 ) -> dict:
     from brain.dj_formats import format_provenance, get_format
     from brain.mix_profiles import PROFILES
-    from brain.onset_analysis import count_shift_beats
+    from brain.onset_analysis import count_shift_beats, phase_shift_beats
 
     profile = profile or PROFILES["dj-showcase"]
     dj_format = dj_format or get_format("none")
@@ -2020,6 +2024,38 @@ def build_plan(
                     f"{ride_beats} -> {ride_beats + shift} to match {reason}"
                 )
                 ride_beats += shift
+
+        # Mixxx beatsync locks beatgrid ticks. Opposite snare identity still
+        # puts kick on snare. Jump the incoming deck one beat after sync.
+        # An incoming `snare_align` note is the ear override when analysis
+        # claims the snares already match (Wall to Wall → On Fire).
+        want_snare_align = bool(incoming_directive.get("snare_align"))
+        if (
+            not want_snare_align
+            and outgoing_phase
+            and incoming_phase
+            and outgoing_entry_beat is not None
+            and incoming_entry_beat is not None
+            and float(outgoing_phase.get("confidence") or 0.0) >= min_snare_confidence
+            and float(incoming_phase.get("confidence") or 0.0) >= min_snare_confidence
+        ):
+            anchor = outgoing_entry_beat + previous_fade_beats + ride_beats + 1
+            if phase_shift_beats(
+                outgoing_snare_parity=outgoing_phase["snare_parity"],
+                outgoing_anchor_beat_index=anchor,
+                incoming_snare_parity=incoming_phase["snare_parity"],
+                incoming_cue_beat_index=incoming_entry_beat,
+            ):
+                want_snare_align = True
+        if want_snare_align:
+            moves = list(tech.get("moves") or [])
+            if "snare_align" not in moves and "sync" in moves:
+                moves.insert(moves.index("sync") + 1, "snare_align")
+                tech["moves"] = moves
+                print(
+                    f"  [beat-phase] {outgoing['artist']} — {outgoing['title']} -> "
+                    f"{incoming['artist']} — {incoming['title']}: snare-align after sync"
+                )
 
         # Play body of outgoing track
         body_event = {

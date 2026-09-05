@@ -95,3 +95,14 @@ Each accepted change links to an immutable intent event.
 
 > If you're able to scan and see I have a volume called "Elements". In the GUI I have, http://127.0.0.1:8787/#curate is there a way to "switch" to the new music collection and restart "the scan" of the music collection for useful metadata? Also would need to create a new sqlite on the volume if it's not there. It's ok upon start.sh or start of GUI to default to the previously used music collection. so that start up isn't asking use which music collection. But help me implement ability to start a new music collection while saving the previous music collection "settings" if any.
 <!-- pdd-intent-entry:if-you-re-able-to-scan-and-see-i-have-a-volume-c-a1c09a58:end -->
+
+<!-- pdd-intent-entry:when-i-blend-i-match-the-snare-not-just-the-beat:start -->
+## A blend matches the snare, not just Mixxx beat ticks
+
+- Intent event: [`docs/intents/intent__when_i_blend_i_match_the_snare_not_just_the_beat.md`](intents/intent__when_i_blend_i_match_the_snare_not_just_the_beat.md)
+- Change kind: `add`
+- Story: [`user_stories/story__when_i_blend_i_match_the_snare_not_just_the_beat.md`](../user_stories/story__when_i_blend_i_match_the_snare_not_just_the_beat.md)
+- Scope: mix planner + Mixxx runner
+
+> Beatsync locking Mixxx beatgrid ticks is not a finished blend. The snares must hit together (usually 2 and 4 in 4/4, sometimes only 2 or only 4). After sync, jump the incoming deck one beat (`snare_align`) when the ear or high-confidence snare-phase analysis says the landing is one count off. Do not slide the incoming cue one beat later and do not treat outgoing ride length ±1 as the snare lock. If the user says a blend is still off by one, put `snare_align` on the incoming track and rebuild.
+<!-- pdd-intent-entry:when-i-blend-i-match-the-snare-not-just-the-beat:end -->

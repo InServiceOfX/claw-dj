@@ -33,17 +33,17 @@ lock.
    is usable. If a record only has a snare on 2, or only on 4, match
    *that* hit. Weak/coin-flip snare reads stay on bar-count alignment
    only — they must not drive a one-beat nudge.
-3. **The one-count fix is the outgoing ride, ±1 beat.** Flip
-   `ride_beats` on the **outgoing** track (308→309 or 308→307). That is
-   the same musical ride plus or minus one count. Do **not** move the
-   incoming song’s musical cue by one beat to fake a snare lock — that
-   changes where the record starts and throws the *next* blend.
-4. **Human “fix the snare” overrides a locked ride.** `trust_ride_beats`
-   means “do not shorten this song.” It does **not** mean “refuse the
-   one-count snare flip I just asked for.” After that ask, the note
-   still keeps the body length and records `ride_beats` as the flipped
-   count (`trust_ride_beats` remains). Runtime must actually play that
-   count; it must not bar-guard the snare flip back.
+3. **The Mixxx fix is `snare_align`, not a cue slide.** After beatsync,
+   jump the incoming deck one beat (`beatjump_1_forward`). That flips
+   kick-on-snare to snare-on-snare without changing where the incoming
+   record is cued. Do **not** move `cue_seconds` one beat later — that
+   changes where the song starts and throws the *next* blend. Do **not**
+   treat outgoing `ride_beats` ±1 as the snare lock; that only changes
+   when the fade starts.
+4. **Ear note `snare_align` on the incoming track.** `trust_ride_beats`
+   is a how-long lock and must not strip this move. High-confidence
+   snare-phase mismatch may add `snare_align` automatically. Weak or
+   coin-flip snare reads must not.
 5. **Ear is the oracle.** Analyzer agreement is not proof. If the live
    mix is still one count off, flip again (or revert a bad cue hack)
    rather than explaining that the math already matched.
@@ -52,8 +52,8 @@ lock.
    beats locked, snares did not. An agent moved On Fire’s cue 0.29→0.92
    (one beat later) and kept 308/180. Live listen: still off by one, and
    On Fire → Biggie *Who Shot Ya* was then off by one as well. The fix
-   is restore On Fire’s downbeat cue and flip the outgoing counts
-   (Wall 308→309, On Fire 180→181).
+   is restore On Fire’s downbeat cue, keep the 308-beat Wall ride, and
+   put `snare_align` on On Fire so the runner jumps one beat after sync.
 
 ## Must not
 
@@ -61,8 +61,8 @@ lock.
 - Do not assume every hip-hop/R&B grid has snares on both 2 and 4.
 - Do not “fix” parity by sliding the incoming `cue_seconds` one beat
   later when the human certified that cue.
-- Do not leave `trust_ride_beats` blocking a requested one-count snare
-  flip.
+- Do not use outgoing `ride_beats` ±1 as the snare lock.
+- Do not let `trust_ride_beats` strip `snare_align`.
 - Do not claim the blend is fixed without a live listen, or after only
   changing prose in the note.
 
