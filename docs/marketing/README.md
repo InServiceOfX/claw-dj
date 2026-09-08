@@ -28,6 +28,14 @@ Checked in under `agent/hermes-skill/scripts/`:
 | `full-mix/make_overlays.py` | PNG titles (Homebrew ffmpeg has no `drawtext`) |
 | `ab-shorts/render_shorts.py` | 9:16 A/B shorts from the two 2026-08-09 mixes |
 | `ab-shorts/POSTING.md` | Noe-structured captions |
+| `recruit/render_attention_short.py` | 9:16 recruit attention short (DJ expert + customer CTA) |
+
+Campaign briefs:
+
+| Doc | Job |
+|---|---|
+| `PRODUCT_DEMO_AND_RECRUIT_CAMPAIGN.md` | Product demo + recruit short scripts, Noe stack, CTAs |
+| `VELTRIA_DJCLAW.md` | Competitor category note |
 
 Procedure and verification gates:
 `agent/hermes-skill/references/media-export.md`
