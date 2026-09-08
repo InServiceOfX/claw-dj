@@ -23,8 +23,14 @@ victim-squeal skit (`skip_from_seconds=203.5; skip_to_seconds=224.5`,
 also in global `dj_notes` for every mix), and blends out on the
 chorus. VLS instrumental is not a solo song (`ride_beats=0`) — a
 32-beat gentle blend into DMX so beat and vocal play together. Club
-Mix sits after the interpolators, not after the album. Rebuild with
-`--profile mix-to-listen`.
+Mix sits after the interpolators, not after the album, and skips the
+same gun-in-mouth skit (`skip_from_seconds=202.0; skip_to_seconds=223.7`).
+Ear 2026-09-05: album → instrumental was off by one count (`snare_align`
+on the incoming instrumental only — do not full-rebuild this plan on
+`feat/snare-align-blends`, auto-align would jump already-good blends).
+Ja Rule → Jim Jones and Jim Jones → K-Dot are the gold-standard
+same-instrumental blends. Rebuild with `--profile mix-to-listen` only
+after auto `snare_align` is gated.
 
 ## Anthology and short-form program (2026-08-02)
 

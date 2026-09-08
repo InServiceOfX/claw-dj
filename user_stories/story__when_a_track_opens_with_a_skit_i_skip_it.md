@@ -57,6 +57,13 @@ past the dialogue). Do not invent timestamps without synced lyrics.
    proceed”), including Born Again / Greatest Hits copies of the same
    cut. A plan overlay may add ride/cue notes; it must not drop those
    skip tokens. A shorter ride that never reaches 3:24 is also legal.
+8. **Example (Who Shot Ya Club Mix, any mix, 2026-09-05).** VLS Club
+   Mix has the same last-verse gun-in-mouth / victim-squeal scene
+   (synced: “in the fire position” ~3:20, “Can't talk with a gun in
+   your mouth” ~3:35). Skip it the same way: library `dj_notes`
+   `skip_from_seconds=202.0; skip_to_seconds=223.7` onto “As we
+   proceed” / “Who shot ya?”. Do not treat Club Mix as exempt because
+   it is a remix.
 
 ## Must not
 

@@ -17,6 +17,11 @@
       chorus. Club Mix sits after the interpolators, not after the
       album. Instrumental is not a solo song: `ride_beats=0` then a
       32-beat gentle blend into DMX (vocal + beat together).
+      **Club Mix (2026-09-05):** same skit — library + plan
+      `skip_from_seconds=202.0; skip_to_seconds=223.7` onto “As we
+      proceed”. Ear pass: album→instrumental off by one (`snare_align`
+      on the instrumental only); Ja Rule→Jim Jones and Jim Jones→K-Dot
+      are the gold-standard same-beat blends.
 
 - [x] **Who Shot Ya variations: original first, verses, instrumental
       as a blend not a song (2026-08-31).** Active plan
