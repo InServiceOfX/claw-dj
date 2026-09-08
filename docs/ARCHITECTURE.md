@@ -1,5 +1,22 @@
 # claw-dj: two-layer architecture
 
+## Measured backbeat path (2026-09-04)
+
+Normal composition runs `brain.rhythm.prepare_plan` on final overridden
+events before publishing the artifact. Rust `clawdj rhythm analyze|align`
+owns signal analysis and cue-preserving entrance timing; local JSON caches
+carry audio/grid/analyzer/annotation identity. `hands.backbeat` uses the
+existing Python control-API connection to launch a muted incoming deck,
+verify measured source-time phase, and monitor the overlap. Unknown evidence
+keeps the planned gradual fade, explicitly unverified. Confirmed mismatch is
+reported without shortening either: gradual-v3 permits zero automatic
+evidence-triggered short handoffs. Corroborated remaining audio can limit
+duration. Build/live share `blend_seconds`; `FadeEnvelope` never extends/reverses a
+running fade. Planned/executed durations and reasons are logged. No LLM is in the
+timing path. `brain.backbeat_audit` renders source-audio previews and keeps
+predicted timing separate from actual position logs and audible acceptance.
+Details: [BACKBEAT_MATCHING.md](BACKBEAT_MATCHING.md).
+
 ## Why two layers
 
 H Company's computer-use agent runs a screenshot → vision model → click/type/scroll

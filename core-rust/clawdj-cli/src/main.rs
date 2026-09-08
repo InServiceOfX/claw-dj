@@ -93,6 +93,26 @@ enum Commands {
         #[command(subcommand)]
         command: VerseCommands,
     },
+    /// Analyze section-local backbeats or solve a cue-preserving entrance.
+    Rhythm {
+        #[command(subcommand)]
+        command: RhythmCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RhythmCommands {
+    Analyze {
+        path: PathBuf,
+        #[arg(long)]
+        bpm: f64,
+        #[arg(long, allow_hyphen_values = true)]
+        first_beat: f64,
+    },
+    /// AlignmentRequest JSON on stdin; Alignment JSON on stdout. No deck I/O.
+    Align,
+    /// Rhythm JSON with explicit drum onsets on stdin; refitted sections on stdout.
+    Refit,
 }
 
 #[derive(Debug, Subcommand)]
@@ -217,6 +237,25 @@ fn main() -> Result<()> {
         Commands::Gesture { command, port } => run_gesture(command, port),
         Commands::Stems { command } => run_stems(command),
         Commands::Verse { command } => run_verse(command),
+        Commands::Rhythm { command } => {
+            let result = match command {
+                RhythmCommands::Analyze {
+                    path,
+                    bpm,
+                    first_beat,
+                } => serde_json::to_value(clawdj::rhythm::analyze_file(&path, bpm, first_beat)?)?,
+                RhythmCommands::Align => {
+                    let request = serde_json::from_reader(std::io::stdin())?;
+                    serde_json::to_value(clawdj::rhythm::align(&request)?)?
+                }
+                RhythmCommands::Refit => {
+                    let request = serde_json::from_reader(std::io::stdin())?;
+                    serde_json::to_value(clawdj::rhythm::refit(request)?)?
+                }
+            };
+            println!("{}", serde_json::to_string(&result)?);
+            Ok(())
+        }
     }
 }
 

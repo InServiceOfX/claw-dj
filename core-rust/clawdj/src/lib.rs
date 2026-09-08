@@ -5,6 +5,7 @@ pub mod gesture;
 pub mod live;
 pub mod midi;
 pub mod queue;
+pub mod rhythm;
 pub mod stems;
 pub mod verse;
 

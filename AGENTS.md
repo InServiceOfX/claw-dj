@@ -45,11 +45,23 @@ an explicit `--author`. `mark` writes `wip|ready|archived`; `status` only reads
 artifact staleness. Mutations require `--base-rev` from `show --json` or an
 intentional `--force`.
 
-If a live blend is "on beat but off the snare / off by one count," put
-`snare_align` on the incoming track. The runner jumps one beat after
-Mixxx beatsync. Do not slide the incoming cue one beat later, and do not
-treat outgoing `ride_beats` ±1 as the snare lock. Story:
+Backbeat means the snare/clap accents (usually beats 2 and 4). New builds
+prepare section-local rhythm evidence and cue-preserving launch timing.
+Do not prescribe blind `snare_align` jumps or ±1 ride-beat nudges: inspect
+the backbeat preview and live position log. Weak/missing/lost evidence keeps
+the planned gradual blend, explicitly unverified, never an automatic short
+handoff. Even confirmed mismatch must retain the planned fade and be reported
+honestly: ZERO automatic evidence-triggered short handoffs per mix, not one
+for the runner to spend. Only corroborated exhausted/stopped outgoing audio
+can force a shorter fade; deliberate DJ cuts are separate. Reviewed
+source-time markers can resolve uncertainty. Never move an
+audible deck or silently slide the incoming cue to fix alignment. Story:
 `user_stories/story__when_i_blend_i_match_the_snare_not_just_the_beat.md`.
+Regression lesson: alignment fixes must also test fade duration, continuity,
+both directions, noisy/stale transport readings, and half/double-time tracks.
+Do not make a smooth mix into abrupt cuts to hide uncertainty. Keep intentional
+DJ cuts separate; log executed, not just requested, duration. Story:
+`user_stories/story__when_i_blend_tracks_the_crossfader_moves_gradually_and_seamlessly.md`.
 
 ## Data and secrets
 

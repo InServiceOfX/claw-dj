@@ -1,5 +1,283 @@
 # Handoff / continuation notes
 
+## Current: 50 Cent / G-Unit tribute plan reproducibility (2026-09-05)
+
+`brain/data/plans/50-cent-g-unit-tribute-vol-1/mix_plan.json` (active plan,
+being listened to on 2026-09-05) is the unchanged Aug 28 artifact copied from
+the archived `50centgunitera` plan: 147 tracks, `dj-showcase` +
+`hiphop-rnb-guided`, H-agent order, no `backbeat` metadata, no `snare_align`
+moves. The runner treats it as a legacy artifact (planned fades unchanged,
+no measured entrances, no run log). Its selection has since shrunk to 116
+tracks but `playlist.json` still has 147, so Build without Finalize would
+still compose 147. A rebuild today would differ: `prepare_plan` backbeat
+metadata, no parity ride nudges, different ordering engine result, and no
+phrase cues unless Analyze & enrich runs first (the shared phrase export is
+empty). Named-plan Build overwrites the artifact without archiving. Full
+review and reproduction options:
+[PLAN_REPRODUCIBILITY_50_CENT_G_UNIT_TRIBUTE_VOL_1_2026-09-05.md](PLAN_REPRODUCIBILITY_50_CENT_G_UNIT_TRIBUTE_VOL_1_2026-09-05.md).
+Nothing in the plan, code or Mixxx was changed for this review.
+
+## Current: listening corrections, notes and review candidate (2026-09-05)
+
+Ernest continued the gradual-v3 listen: fades improved, several backbeats
+still one count off. Keep ZERO automatic evidence-triggered short handoffs.
+Independent reviewer challenged both UI and Rust changes; blockers fixed and
+re-reviewed. No commit/push/PR or live Mixxx commands.
+
+- Added multiline **Edit playback note…** to Arrange, linked from Mix.
+  Existing plan-only revision-checked API; Save/Cancel/confirmed library-default
+  restoration. Forms bind to rendered plan, late snapshots cannot paint the
+  wrong plan, drafts survive other saves/Arrange refreshes/in-app switches,
+  stale edits never retry and browser navigation warns about unsaved drafts.
+  Fixed pre-existing populated-bunch rendering ReferenceError so the actual
+  three-bunch plan can reach the editor. Browser refresh loads these static
+  changes; no editor restart needed for this UI-only change.
+- Added song-note story; expanded opening-skit story to middle/ending skits,
+  reviewed regions, full fades ending BEFORE the scene, and optional same-song
+  two-deck continuation. That new splice/automatic skit identification is NOT
+  implemented. Biggie's active global note is empty and the plan overlay still
+  permits the unwanted spoken tag; event11 has no skip. Approximate210–230s
+  differs from historical203.5–224.5s. Do not invent reviewed bounds or claim
+  a saved sentence executes itself. See `WHO_SHOT_YA_LISTENING_REVIEW_2026-09-05.md`.
+- Rust `rhythm::align` now searches for reliable later evidence INSIDE the
+  planned overlap when the entrance is weak/missing. Require three matching
+  hits, compatible cadence, enough full-fade bed and no contradictory confident
+  selected interval. Exact window-boundary/center-midpoint partition closes
+  the reviewer's10ms-conflict case. Account for outgoing audio during launch
+  wait. Keep `uncertain`, identify the limited evidence window; no cue jumps,
+  threshold lowering or fade changes. Python execution code was not changed.
+- Ja→Jealous recorded-position replay: old grid fallback gave619ms mismatch;
+  new delay1.152042s versus0.510574s gives median−22.392ms/max33.982ms over10
+  counterfactual numeric readings. Not audible acceptance. OnFire→Biggie,
+  Instrumental→Part2, Superwoman→Heartbeat Club and CaughtUp→Fastlove remain
+  open. Details: `OVERLAP_PARITY_REVIEW_2026-09-05.md`.
+- Built/tested separate Rust target while Ernest listened. Installed normal
+  `core-rust/target/release/clawdj` only after log `run_end` and approved read-only
+  process check found no mix runner. No stop/restart or wrapper edits this turn.
+- Jadakiss Who Shot Ya moved24→7 immediately AFTER K.Dot (still6) in next-build
+  selection/playlist. Expanded only this plan's opening bunch8→9; preserved
+  all original members' relative order and all36 tracks. All10 overrides kept;
+  K.Dot→Aaliyah now orphaned, not deleted. Shared library bunch/DB unchanged.
+
+### Try the checked candidate, not the old default artifact
+
+```sh
+./scripts/run_mix.sh --plan brain/data/plans/heavy-rotation-vol-1/candidates/listening-fix-2026-09-05.json
+```
+
+Optional `--record`. This is a review candidate, not a claim all backbeats are
+fixed. 36 tracks/110 events; requested order, every old cue/body beat count and
+existing-pair fade length preserved. Stunt Instrumental's source grid restored
+without moving139.27s cue. New K.Dot→Jadakiss→Aaliyah pairs predict ready;
+overall7 ready/26 uncertain/2 separate, no analysis failures. It does NOT remove
+Biggie's skit. Candidate-only supported cue/ride locks freeze the prior listen's
+choices; plan/global note storage unchanged. Provenance identifies those locks.
+
+Current `mix_plan.json` is still SHA1826e5e2ddb51079bd23e4a48d5a1a4605183ae98fb0c4554efbb9550678263d;
+plain `run_mix.sh` still uses old order/grid metadata (with updated Rust live
+solver). Source inputs are now stale from Jadakiss move. Do not promote the
+rejected `candidates/ordered-backbeat-review-2026-09-05.json`: normal recomposition
+changed24 unrelated cues. Earlier `backbeat-grid-2026-09-05.json` is old order too.
+The checked listening candidate is SHAcd4f752750343e159f9116ae7e1d8c5a6d9e659a5019c3d60b8fc01822fa9504.
+Standard Build may recalculate unfrozen cues; do not silently claim its output
+equals the pinned listening candidate. Candidate bunch provenance uses the
+plan-local activated members; normal `decorate()` still looks up shared bunch
+members for its `honored` label (known reporting gap, ordering uses local list).
+
+Validation:254 scoped Python tests (one sandbox-skipped HTTP case separately
+passed with temporary loopback permission),38 Rust unit tests/workspace checks,
+Clippy/fmt, Node behavior/parsing, Bash syntax, diff checks and full110-event
+wrapper dry-run. Live-MIDI test is gated and did not open a port. PDD recorded
+notes and overlap-parity intents; model-stage prompt regeneration failed absent
+credentials/network, so source prompts/stories/tests were manually updated via
+the documented fallback. Strict structural checks are not semantic-model review.
+
+For the two latest unresolved pairs, short A/B source-audio review clips are at
+`brain/data/previews/backbeat-count-ab-2026-09-05/index.html`:01/02 are
+Superwoman→Heartbeat Club,03/04 CaughtUp→Fastlove. A reconstructs the first
+observed relative deck positions; B delays that same incoming cue one count.
+These are hypotheses for Ernest to compare, NOT installed runtime corrections
+or independently labelled snare hits. EQ/filter/Fastlove key bridge are not
+rendered; both versions keep the full fade. Files are decoded/probed and
+rendered with6dB headroom. Review metadata includes source positions and gain.
+Ask which count matches before encoding a reviewed pair-local constraint;
+never turn the A/B generation into a blind every-run beat jump.
+
+## Current: zero automatic short handoffs — gradual-v3 (2026-09-04)
+
+Ernest rejected the evidence-failure → two-beat fallback as an audible
+regression throughout heavy-rotation-vol-1. He approved implementation and
+requested an independent agent review. His final correction requires **zero
+automatic evidence-triggered short handoffs per mix**, not an allowance of
+one. The briefly proposed eight-beat mismatch recovery was also removed.
+Source: `docs/intents/request__zero_automatic_short_handoffs.md` (supersedes
+`request__implement_gradual_blend_recovery.md`). Do not reinstate either policy.
+
+Implemented and reviewed:
+
+- Build/live share a duration policy that takes planned time and physical
+  remaining audio, not evidence confidence. Weak/missing/noisy/lost evidence
+  AND confirmed mismatch keep the planned gradual fade. Mismatch is reported
+  honestly, never called aligned. Explicit DJ cuts remain separate recipes.
+- Multi-sample muted entrance checks retain the last cue-preserving timed
+  launch when inconclusive. Rust distinguishes weak evidence from confident
+  incompatibility and supplies best-effort grid timing without claiming
+  backbeat readiness. Half/double-time native BPMs alone are not mismatch.
+- Continuous monotonic envelope; only corroborated actual exhausted/stopped
+  outgoing audio can constrain duration. Reviewer found that one stale
+  stopped/near-EOF read could rush the earlier implementation; corrected and
+  tested .995/.999/1 readings in both directions. Do not confuse true audio
+  limits (e.g. 71-second 2 Bricks cued at 38.38s) with weak percussion evidence.
+- Log planned/scheduled/executed beats and seconds plus verification and
+  shortening reasons. Old two-/eight-beat metadata cannot override live v3.
+  Previews reject stale v1/v2 timing; Build advances nominal positions even
+  when DSP failed but source timing is available. Separate vocal/cut recipe
+  preview equivalence is not expanded by this change.
+- User reported `run_mix.sh: line 174: unexpected EOF while looking for
+  matching '"'` after `mix plan complete`. Current script passes `bash -n`;
+  likely caused by our in-place wrapper edits while Bash waited on old Python.
+  Final runner commands now use `exec` so Bash cannot resume reading the
+  edited file afterward. A fake-runner test changes the wrapper during both
+  live/dry-run branches and verifies clean completion, with no Mixxx access.
+
+Validation: 252 scoped Python tests passed (one sandbox-skipped ephemeral
+HTTP test rerun successfully with permission), 33 Rust unit tests, Clippy/fmt,
+Python/inline-JavaScript/Bash syntax and actual wrapper dry-run10. The Rust
+live-MIDI test returns without opening a port unless explicitly enabled;
+no live MIDI test is claimed. The independent agent passed final code review,
+35 backbeat/fade/wrapper tests including a 35-transition zero-handoff chain,
+and 12 held-out 85/94/169-BPM simulations (both directions, uncertain and
+incompatible solver outcomes). These checks are not audible acceptance.
+
+PDD recorded both approved intent corrections. Automatic model-stage updates
+again failed unavailable provider credentials/network; the scoped manual
+story/prompt/code fallback is explicit, not successful model regeneration.
+Stories, prompt, agent rules and current architecture reflect final v3.
+No commit/push/PR. Preserve the extensive pre-existing dirty worktree.
+
+**Next listen:** `./scripts/run_mix.sh` or `--record`. Look for
+`Crossfade policy: gradual-v3`. Runtime fixes need no active-plan rebuild.
+No active plan/order/cues, library database or running Mixxx session were
+changed in this correction. An old CLI process keeps old Python until the
+user restarts; do not edit playback code/wrapper during their next listen.
+For new GUI Build behavior reload the editor at a safe idle point; refreshing
+the browser alone cannot reload Python. Old rendered previews remain old
+until regenerated. The user was told the checks passed and could restart.
+Still awaiting listening acceptance for fader curve, EQ, groove and backbeats.
+
+## Historical: fades too fast; story started (2026-09-04)
+
+Ernest ran the mix and reports backbeat matching seems fine, but many
+crossfades are too fast. Added
+`user_stories/story__when_i_blend_tracks_the_crossfader_moves_gradually_and_seamlessly.md`
+from his exact feedback in
+`docs/intents/request__gradual_seamless_crossfader_blends.md`.
+Ordinary blends should be gradual and seamless; deliberate DJ-performance cuts
+are exceptions. He found On Fire → Biggie's 32-beat fade acceptable and is
+open to longer blends when musical material supports them.
+
+Cause of the supplied abrupt Wall → On Fire example is visible in the log
+and code: `hands/backbeat.launch` did not verify the muted entrance;
+`hands/run_mix_plan.perform_transition` then clamps the fade to
+`fallback_beats=2` (~1.28 seconds at 94 BPM). The other transition was
+position-verified (+15ms) and retained 32 beats (~20.21 seconds at 95 BPM).
+The generic “could not be verified” message does not establish whether timing
+was wrong or observation was unavailable; this turn did not diagnose the
+underlying verification failure. Do not infer it was a false alarm from
+the listener report alone, or treat “bass swap (gradual)” as proof of a slow fade.
+
+Documentation/story only: no runtime, tests, prompts, active plan or Mixxx
+were changed. No automated contract/regression generation or semantic
+validation was requested/performed. Read-only PDD intent planning was used;
+manual story drafting stays within the explicit request. Before implementing,
+reconcile this feedback with the earlier blanket-short-handoff prompt contract
+and define/test recovery for inconclusive checks separately from known drift
+or an actual end-of-track emergency. Do not just remove verification or
+globally force every blend to 64 beats. Live fader/audio acceptance is pending.
+
+## Analyze & enrich backbeat wiring (2026-09-04 follow-up)
+
+Ernest explicitly approved moving reusable analysis earlier in the workflow.
+`brain/enrich_set.py` now calls shared `brain.rhythm.analyze_track` after
+phrases, for missing/stale finalized tracks only. No new DSP implementation
+was needed: this uses the already-built Rust multiband/section analyzer.
+Build remains the pair/cue-specific step and fills missing evidence if Analyze
+was skipped; playback retains actual-position/rate verification. Legacy
+`beat_phase` stays compatible but is not proof of the new cached analysis.
+
+`brain/rhythm.py` publishes lightweight per-file/grid cache references.
+Read-only UI polling uses metadata, tool fingerprints and annotations, never
+audio hashing/decoding or DSP. Build still checks the full audio content hash.
+Changed audio/grid/tools/markers or missing/corrupt caches are gaps; uncertain
+but successfully analyzed sections are cached, not endlessly retried. The UI
+shows analyzed, missing/stale and uncertain-section counts separately from
+built-transition readiness. CLI supports `--skip-backbeat`; `--skip-bpm`
+does not discover/control Mixxx just to run offline enrichment.
+
+Verified the new local stage on the 36 finalized heavy-rotation tracks using
+a read-only connection to the external library: 36 cached, no errors, 27
+tracks with at least one uncertain section. The built plan is byte-for-byte
+unchanged. Did not run lyric fetches, schema writes, reorder/rebuild the plan,
+or control Mixxx. Restarted only the idle editor (8787, control port 9995),
+and verified `/api/mix` reports 36 analyzed / 0 missing-stale plus the existing
+32/36 fully enriched (four lyric gaps). This does not change its 7-ready /
+26-fallback / 2-separate-recipe plan prediction or prove audible acceptance.
+
+Validation: 232 scoped Python tests passed, with the sandbox-skipped loopback
+HTTP test rerun successfully under permission; 15 new enrichment/cache/action
+tests include offline GUI Analyze, cue preservation and Build cache reuse.
+JavaScript syntax, diff checks and strict PDD structural contracts passed.
+Approved intent: `docs/intents/request__backbeat_analysis_during_enrichment.md`.
+Model-driven PDD apply again stopped at unavailable provider credentials;
+recorded intent succeeded and scoped manual story/prompt/code edits followed.
+No successful model regeneration/semantic validation is claimed. No commit,
+push or PR; preserve the pre-existing worktree. Live listening remains next.
+
+## Backbeat implementation (2026-09-04 — supersedes blind-jump workaround)
+
+Backbeat = the snare/clap accent. The amended story and
+`prompts/brain/plan_mix_build_Python.prompt` require preparation from the first
+transition in every build/profile/format. Rust `rhythm.rs` owns multiband
+onset/section analysis and alignment. `brain/rhythm.py` owns cache, reviewed
+and optional independent evidence, final-event preparation and artifact
+upgrade; `hands/backbeat.py` owns muted launches, live position checks and
+logs. No post-launch beatsync or automatic audible-deck jumps in measured
+transitions. At this historical stage missing evidence used a two-beat
+handoff; gradual-v3 above supersedes that regression. The legacy direct
+`build_plan` / old-artifact path remains compatible; normal compositions
+disable parity nudges and legacy snare moves.
+
+Current `heavy-rotation-vol-1` was upgraded without changing its 36-track
+order, cues, bodies or tempo choices; the previous artifact is backed up
+under its `backups/`. First two blends pass offline onset comparison (about
+5ms median each), but the full plan is conservative: 7 ready, 26 fallback,
+2 separate recipes. Opening audio previews and the full timing report are
+under `brain/data/previews/heavy-rotation-vol-1-backbeat/`. No live playback
+or ear acceptance was performed. Do not describe all transitions as fixed.
+
+See [BACKBEAT_MATCHING.md](BACKBEAT_MATCHING.md) for commands, controls,
+confidence limits, reviewed markers, optional model adapters and evidence.
+PDD recorded the exact approved intent but model-driven architecture/apply
+failed because configured credentials/network were unavailable. Scoped
+direct implementation used the documented fallback. Deterministic contract
+checking passed with zero warnings/errors; this is not successful model
+regeneration or semantic validation. Keep future generated changes aligned
+with the amended prompt and story.
+
+Verification: 209 focused Python tests passed using a temporary isolated
+collection registry/index (never schema-write the real removable library
+from tests); 31 Rust unit tests plus one integration test passed. Cargo fmt,
+Clippy `-D warnings`, Python compilation, inline JavaScript parsing and
+`git diff --check` passed. The opening 10 events dry-run without Mixxx.
+The idle editor was restarted on 8787, preserving its control port 9995;
+GET `/api/mix` reports ready/non-stale and includes the backbeat counts.
+Mixxx was left running untouched; no mix playback was started. No commit,
+push or PR was made; unrelated pre-existing worktree edits were preserved.
+Read-only checks against the existing Mixxx control API confirmed `file_bpm`,
+`rate_ratio`, duration, playposition and sync/quantize controls are available;
+both decks were stopped and position roundtrips were approximately 0.1ms.
+This confirms control availability, not live launch or audio verification.
+
 Written 2026-07-11 mid-hackathon so work can resume on a different machine
 (Linux desktop) with full context. See also [HACKATHON.md](HACKATHON.md)
 (event rules/links) and [ARCHITECTURE.md](ARCHITECTURE.md) (system design).
@@ -71,10 +349,11 @@ incoming deck and moves the crossfader instead of aborting the whole set.
 Listener-locked `trust_ride_beats` values block planner auto-nudges of ride
 length, but the trusted count still defines a planned `phase_anchor` so runtime
 can absorb preload/settle jitter without abandoning the 1-2-3-4 target.
-Snare lock is a separate move: `snare_align` after Mixxx `beatsync` jumps the
-incoming deck one beat. Ticks can lock while kick sits on snare; changing
-`ride_beats` or `cue_seconds` by one is the wrong lever. Incoming `snare_align`
-in dj_notes, or a high-confidence phase mismatch, emits that move.
+Historical artifacts used a separate `snare_align=±1` jump after beatsync.
+This is superseded by the measured backbeat implementation above. One beat
+forward on either side flips the same relative parity for a two-beat cycle;
+changing “direction” alone is not a diagnosis. Do not add those moves to new
+compositions or treat a trusted ride length as proof of phase alignment.
 Transition beat overrides must enter `build_plan` before previous-fade math;
 post-build event patching alone left anchors assuming the default fade while
 the runner executed longer human blends (one-count lineage defects on

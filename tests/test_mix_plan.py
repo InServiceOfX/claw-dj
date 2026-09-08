@@ -1472,6 +1472,24 @@ class MixPlanTest(TestCase):
         body = next(event for event in plan["events"] if event["op"] == "play_body")
         self.assertEqual(body["beats"], 32)
 
+    def test_snare_align_minus_one_emits_back_move(self) -> None:
+        tracks = [
+            {
+                "track_id": "/music/a.mp3", "artist": "A", "title": "Outgoing",
+                "bpm": 100.0, "key": "Am",
+                "dj_notes": "cue_seconds=0; ride_beats=32; trust_ride_beats",
+            },
+            {
+                "track_id": "/music/b.mp3", "artist": "B", "title": "Incoming",
+                "bpm": 100.0, "key": "Am",
+                "dj_notes": "cue_seconds=0; trust_cue_seconds; snare_align=-1",
+            },
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        transition = next(event for event in plan["events"] if event["op"] == "transition")
+        self.assertIn("snare_align_back", transition["moves"])
+        self.assertNotIn("snare_align", transition["moves"])
+
     def test_trust_ride_beats_blocks_the_auto_nudge(self) -> None:
         # Ear override (Ernest, 2026-07-19): the parity measurement driving
         # a nudge can be a near-coin-flip (confidence 0.015 seen live), and

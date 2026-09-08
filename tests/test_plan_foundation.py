@@ -230,7 +230,7 @@ class PlanFoundationTest(TestCase):
         captured = {}
         def fake_compose(**kwargs):
             captured.update(kwargs)
-            return {"version": 2, "track_count": 2, "tracks": rows, "segments": [{"technique": "blend", "beats": 16}], "events": [{"op": "load"}, {"op": "transition", "technique": "blend", "transition_beats": 16}], "runtime": {"mixxx_control_port": kwargs["control_port"]}}
+            return {"version": 2, "track_count": 2, "tracks": rows, "segments": [{"technique": "blend", "beats": 16}], "events": [{"op": "load", "deck": 1, "track_id": "a"}, {"op": "transition", "from_deck": 1, "to_deck": 2, "technique": "blend", "transition_beats": 16}], "runtime": {"mixxx_control_port": kwargs["control_port"]}}
         with patch.object(plan_mix_build, "compose_mix_plan", fake_compose):
             result = plan_mix_build.build(meta.slug, control_api_port=10001)
         self.assertEqual(captured["playlist"], paths.playlist)

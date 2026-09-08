@@ -1,7 +1,7 @@
 """Enrich the finalized playlist with everything the mix stage needs.
 
 Runs AFTER "Finalize for Mixxx" and only over the finalized set — never the
-full crate. Every step checks SQLite first and fills only what's missing:
+full crate. Steps check SQLite or the shared rhythm cache and fill gaps:
 
   1. bpm/key   — muted-deck Mixxx analysis over the control API (port 9995)
   2. lyrics    — LRCLIB (cached on disk), full text into the `lyrics` table
@@ -10,12 +10,15 @@ full crate. Every step checks SQLite first and fills only what's missing:
                  mix ordering/plan techniques get real texture coverage
   4. phrases   — beat-aligned energy cue analysis (intro/body entries) into
                  the `phrases` table + phrase_analysis.json for the planner
-  5. beat_phase — real onset/waveform snare-parity analysis (which beat-in-
+  5. backbeat — Rust multiband percussion/section analysis in the shared
+                 rhythm cache. Runs after phrases, without deck control.
+                 Build reuses it for pair/cue-specific entrances; playback
+                 still verifies actual positions/rates.
+  6. beat_phase — real onset/waveform snare-parity analysis (which beat-in-
                  bar carries the backbeat) into the `beat_phase` table;
                  depends on phrases (bpm/first_beat_seconds come from
-                 there). build_mix_plan.py uses this to auto-correct
-                 transitions whose kick/snare land on the wrong beat --
-                 see brain/onset_analysis.py and docs/DJ_STYLE_GUIDE.md.
+                 there). Retained for legacy compatibility, not proof that
+                 the new backbeat analysis is complete.
 
 Usage:
     uv run python -m brain.enrich_set                # fill all missing
@@ -43,12 +46,70 @@ CHROMA_SIMILARITY = DATA_DIR / "chroma_similarity.json"
 PHRASE_OUT = DATA_DIR / "phrase_analysis.json"
 
 
+def rhythm_inputs(db, track_ids: list[str]) -> dict[str, dict]:
+    """Source grids, independent of plan order/cues and playback tempo holds."""
+    if not track_ids:
+        return {}
+    rows = db.execute(
+        f"SELECT track_id, payload FROM phrases WHERE track_id IN ({','.join('?' * len(track_ids))})",
+        track_ids,
+    ).fetchall()
+    result = {}
+    for tid, encoded in rows:
+        try:
+            payload = json.loads(encoded)
+            bpm, first = float(payload["bpm"]), float(payload["first_beat_seconds"])
+            if not 35 <= bpm <= 300 or not math.isfinite(first) or not -1 <= first <= 86400:
+                continue
+            result[tid] = {"track_id": tid, "bpm": bpm, "first_beat_seconds": first}
+        except (ValueError, TypeError, KeyError):
+            continue  # Invalid/missing grids are a gap, never an assumed beat 1.
+    return result
+
+
+def backbeat_status(db, track_ids: list[str]) -> dict[str, dict | None]:
+    from brain.rhythm import analysis_status
+
+    grids = rhythm_inputs(db, track_ids)
+    return {
+        tid: analysis_status(grids[tid], first_beat=grids[tid]["first_beat_seconds"]) if tid in grids else None
+        for tid in track_ids
+    }
+
+
+def fill_backbeat(db, tracks: list[dict], *, progress=None) -> dict:
+    """Prepare per-track evidence only; never build a plan or drive Mixxx."""
+    from brain.rhythm import analyze_track
+
+    grids = rhythm_inputs(db, [t["track_id"] for t in tracks])
+    result = {"prepared": 0, "errors": {}}
+    for i, track in enumerate(tracks, 1):
+        tid = track["track_id"]
+        if progress:
+            progress(f"  [backbeat] [{i}/{len(tracks)}] {track.get('artist')} — {track.get('title')}")
+        try:
+            if tid not in grids:
+                raise ValueError("missing valid phrase/source beatgrid; analyze phrases first")
+            grid = grids[tid]
+            evidence = analyze_track({**track, "bpm": grid["bpm"]}, first_beat=grid["first_beat_seconds"])
+            result["prepared"] += 1
+            weak = sum(s["confidence"] < 0.45 for s in evidence["sections"])
+            if progress:
+                progress(f"    cached {len(evidence['sections'])} sections; {weak} uncertain (Build checks the selected overlap)")
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            result["errors"][tid] = str(error)
+            if progress:
+                progress(f"    [backbeat] unavailable: {error}")
+    return result
+
+
 def load_set(playlist_path: Path) -> list[dict]:
     payload = json.loads(playlist_path.read_text())
     return payload["tracks"] if isinstance(payload, dict) else payload
 
 
 def status(db, track_ids: list[str]) -> dict[str, dict]:
+    rhythms = backbeat_status(db, track_ids)
     have = {
         table: {
             row[0] for row in db.execute(
@@ -89,6 +150,7 @@ def status(db, track_ids: list[str]) -> dict[str, dict]:
             # -- depends on phrases (that's where bpm/first_beat_seconds come
             # from), so it belongs after phrases in the pipeline.
             "beat_phase": tid in have["beat_phase"],
+            "backbeat": rhythms[tid] is not None,
         }
         for tid in track_ids
     }
@@ -289,13 +351,14 @@ def enrichment_status(playlist_path: Path = DEFAULT_PLAYLIST_JSON) -> dict:
         return {"ready": False, "error": "finalized playlist empty", "count": 0}
     with closing(connect()) as db:
         gaps = status(db, ids)
+        rhythms = backbeat_status(db, ids)
     need = {
         field: [
             {"artist": t.get("artist"), "title": t.get("title"), "track_id": t["track_id"]}
             for t in tracks
             if not gaps[t["track_id"]][field]
         ]
-        for field in ("bpm_key", "lyrics", "chroma", "phrases", "beat_phase")
+        for field in ("bpm_key", "lyrics", "chroma", "phrases", "beat_phase", "backbeat")
     }
     complete = sum(1 for g in gaps.values() if all(g.values()))
     return {
@@ -304,11 +367,18 @@ def enrichment_status(playlist_path: Path = DEFAULT_PLAYLIST_JSON) -> dict:
         "complete": complete,
         "missing": {k: len(v) for k, v in need.items()},
         "missing_tracks": need,
+        "backbeat": {
+            "analyzed": sum(r is not None for r in rhythms.values()),
+            "missing_or_stale": len(need["backbeat"]),
+            "tracks_with_uncertain_sections": sum(bool(r and r["uncertain_sections"]) for r in rhythms.values()),
+            "note": "Backbeat = snare/clap. Cached track analysis is not blend readiness; Build checks the selected overlaps, playback verifies live timing.",
+        },
         "message": (
             f"{complete}/{len(tracks)} fully enriched · "
             f"missing bpm/key {len(need['bpm_key'])}, lyrics {len(need['lyrics'])}, "
             f"chroma {len(need['chroma'])}, phrases {len(need['phrases'])}, "
-            f"beat_phase {len(need['beat_phase'])}"
+            f"beat_phase (legacy) {len(need['beat_phase'])}, "
+            f"backbeat (missing/stale) {len(need['backbeat'])}"
         ),
     }
 
@@ -323,6 +393,7 @@ def run_enrich(
     skip_phrases: bool = False,
     skip_timelines: bool = False,
     skip_beat_phase: bool = False,
+    skip_backbeat: bool = False,
     force_lyrics: bool = False,
     progress: Callable[[str], None] | None = None,
 ) -> dict:
@@ -352,6 +423,8 @@ def run_enrich(
         "phrases_analyzed": 0,
         "phrases_exported": 0,
         "beat_phase_analyzed": 0,
+        "backbeat_analyzed": 0,
+        "backbeat_errors": {},
         "complete": 0,
         "incomplete": [],
         "log": [],
@@ -365,7 +438,7 @@ def run_enrich(
         gaps = status(db, ids)
         need = {
             field: [t for t in tracks if not gaps[t["track_id"]][field]]
-            for field in ("bpm_key", "lyrics", "chroma", "phrases", "timeline", "beat_phase")
+            for field in ("bpm_key", "lyrics", "chroma", "phrases", "timeline", "beat_phase", "backbeat")
         }
         for field, rows in need.items():
             note(f"missing {field}: {len(rows)}")
@@ -440,6 +513,21 @@ def run_enrich(
         else:
             note("[phrases] skipped")
 
+        if not skip_backbeat:
+            gaps = status(db, ids)
+            targets = [t for t in tracks if not gaps[t["track_id"]]["backbeat"]]
+            if targets:
+                note(f"[backbeat] multiband percussion/section analysis for {len(targets)} missing or stale tracks…")
+                result = fill_backbeat(db, targets, progress=note)
+                summary["backbeat_analyzed"] = result["prepared"]
+                summary["backbeat_errors"] = result["errors"]
+                note(f"backbeat: {result['prepared']} prepared, {len(result['errors'])} unavailable")
+            else:
+                note(f"[backbeat] all {len(tracks)} tracks have current cached rhythm analysis")
+            note("[backbeat] Build uses the cache for cue-preserving entrances; live playback verifies alignment")
+        else:
+            note("[backbeat] skipped")
+
         if not skip_beat_phase:
             # Depends on phrases (bpm/first_beat_seconds come from there) --
             # tracks phrases just filled above are immediately eligible.
@@ -500,6 +588,9 @@ def run_enrich(
                     hints.append("beat_phase: re-run Analyze — should fill "
                                  "now that phrases exist")
                     retryable += 1
+                if "backbeat" in holes:
+                    reason = summary["backbeat_errors"].get(tid, "missing or stale cache; run Analyze & enrich missing")
+                    hints.append(f"backbeat: {reason}")
                 row = {
                     "artist": track.get("artist"),
                     "title": track.get("title"),
@@ -539,6 +630,7 @@ def main() -> None:
     parser.add_argument("--skip-phrases", action="store_true")
     parser.add_argument("--skip-timelines", action="store_true")
     parser.add_argument("--skip-beat-phase", action="store_true")
+    parser.add_argument("--skip-backbeat", action="store_true", help="skip multiband percussion and section-local rhythm analysis")
     parser.add_argument("--force-lyrics", action="store_true")
     args = parser.parse_args()
 
@@ -552,7 +644,7 @@ def main() -> None:
 
     from hands.mixxx_control import DEFAULT_PORT, discover_mixxx_control_port
 
-    port = discover_mixxx_control_port(
+    port = (args.port or DEFAULT_PORT) if args.skip_bpm else discover_mixxx_control_port(
         preferred=DEFAULT_PORT,
         explicit=args.port,
     )
@@ -565,6 +657,7 @@ def main() -> None:
         skip_phrases=args.skip_phrases,
         skip_timelines=args.skip_timelines,
         skip_beat_phase=args.skip_beat_phase,
+        skip_backbeat=args.skip_backbeat,
         force_lyrics=args.force_lyrics,
     )
 

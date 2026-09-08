@@ -1149,7 +1149,7 @@ class PlaylistApp:
         return self.mix_status()
 
     def start_enrich(self, *, port: int | None = None, slug: str | None = None) -> dict:
-        """Background: analyze missing bpm/key via Mixxx control API + lyrics/chroma/phrases."""
+        """Background finalized-set enrichment, including cached backbeat analysis."""
         if port is not None:
             self.control_port_override = int(port)
             self.explicit_control_port = True
@@ -1175,7 +1175,7 @@ class PlaylistApp:
         self.mix_state.update(
             enriching=1,
             enrich_error=None,
-            enrich_message="Starting enrichment (bpm/key via Mixxx, then lyrics/chroma/phrases)…",
+            enrich_message="Starting enrichment (bpm/key via Mixxx; lyrics/chroma/phrases and backbeat rhythm analysis)…",
             enrich_report=None,
             enrich_log=[],
         )
@@ -1212,7 +1212,7 @@ class PlaylistApp:
                         ) from error
                     progress(
                         f"Mixxx API down ({error}); skipping bpm analysis — "
-                        "filling lyrics/chroma/phrases only."
+                        "filling lyrics/chroma/phrases and backbeat rhythm analysis."
                     )
                     report = run_enrich(
                         playlist_path=playlist_path,

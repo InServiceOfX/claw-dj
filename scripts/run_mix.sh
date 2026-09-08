@@ -145,6 +145,10 @@ profile = s.get('profile') or {}
 dj_format = s.get('dj_format') or {}
 print(f\"  {s['track_count']} tracks, {s['event_count']} events, {s['segment_count']} transitions\")
 print(f\"  profile: {profile.get('name')}   dj_format: {dj_format.get('name', 'none')}\")
+if s.get('backbeat'):
+    b = s['backbeat']
+    print(f\"  backbeat (snare/clap): {b['ready']} prepared, {b['fallback']} need live verification, {b['not_applicable']} separate recipes\")
+    print(\"  gradual-v3: zero automatic backbeat-triggered short handoffs; keep the planned blend\")
 if s.get('format_compliance'):
     print(f\"  format compliance: {s['format_compliance']}\")
 # Warn if plan still points at an unmounted volume (common after collection switch).
@@ -162,8 +166,10 @@ if missing:
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run (no Mixxx moves):"
-  uv run python -m hands.run_mix_plan --plan "$PLAN" --dry-run ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+  exec uv run python -m hands.run_mix_plan --plan "$PLAN" --dry-run ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 else
   echo "Running LIVE — this will drive Mixxx using an explicit --port, plan metadata, or validated Mixxx discovery."
-  uv run python -m hands.run_mix_plan --plan "$PLAN" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+  # Replace the shell: it must not resume reading an edited wrapper after a
+  # long-running mix exits (that can surface a spurious unmatched-quote EOF).
+  exec uv run python -m hands.run_mix_plan --plan "$PLAN" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 fi

@@ -8,6 +8,94 @@
 
 ## Active cross-machine priorities (updated 2026-08-31)
 
+### 50 Cent / G-Unit tribute plan: reproducibility review — 2026-09-05
+
+- [x] Read-only review of `brain/data/plans/50-cent-g-unit-tribute-vol-1`
+  while Ernest listened to it. Its `mix_plan.json` is a byte-identical copy
+  of the archived `50centgunitera` artifact (built 2026-08-28 19:06 at
+  `14a80a2`, still stamped with the origin plan id). The duplicate has never
+  been built. Selection is now 116 tracks; playlist and artifact hold 147.
+  Staleness: `selection` only. Details and rebuild consequences:
+  `docs/PLAN_REPRODUCIBILITY_50_CENT_G_UNIT_TRIBUTE_VOL_1_2026-09-05.md`.
+- [ ] Before any rebuild of that plan: copy `mix_plan.json` (named-plan
+  Build does not archive), run Analyze & enrich on its finalized set first
+  (`brain/data/phrase_analysis.json` is currently empty), and compare cues
+  and body beat counts against the old artifact before promoting.
+- [ ] Joint listening in progress: verdicts per transition go in
+  `docs/LISTENING_LOG_50_CENT_G_UNIT_TRIBUTE_VOL_1_2026-09-05.md`. To test the
+  new backbeat/gradual-v3 code on the same mix, `brain.rhythm prepare` a
+  *copy* under the plan's `candidates/` and run it with `--plan` (recipe in
+  the reproducibility doc §8); do not rebuild.
+
+### Listening corrections and song notes — 2026-09-05
+
+- [x] Mix links to Arrange's per-song multiline playback-note editor. Plan-only
+  Save, Cancel, confirmed inherited-default restore; stale forms/snapshots,
+  draft retention, keyboard/drag safety and populated-bunch rendering tested
+  and independently reviewed. Browser refresh loads static UI changes.
+- [x] Song-note story added; skit story expanded to reviewed middle/end regions
+  and smooth avoidance. Actual Biggie skit removal/two-deck splice is NOT done.
+- [x] Rust fixes weak-entrance grid fallback losing usable later overlap parity.
+  Ja→Jealous replay619ms→median22ms residual; keeps cue/full32 beats and honest
+  uncertain status. Independent held-out contradictory-window test now passes.
+  Installed only after current run ended; no live controls or runner edits.
+- [x] Jadakiss Who Shot Ya placed after K.Dot in plan-local next-build order.
+  Checked `candidates/listening-fix-2026-09-05.json` has that order, restored
+  Stunt Instrumental grid, all36 original cues/body counts and existing-pair
+  fade lengths. Full110-event dry-run passed. Current default artifact NOT
+  replaced; explicit `--plan` command is in `docs/HANDOFF.md`.
+- [x] 254 scoped Python tests,38 Rust unit tests, Clippy/fmt/Node/Bash/contract
+  checks; isolated HTTP test passed separately. These are not listening passes.
+- [ ] Listen to candidate. Still unresolved: OnFire→Biggie, Instrumental→Part2,
+  Superwoman→Heartbeat Club and CaughtUp→Fastlove. Do not copy Ja→Jealous's
+  relative correction to them or shorten fades. Review actual percussion.
+- [ ] Verify Biggie spoken-region boundaries and implement smooth early-exit
+  deadline or reviewed same-song splice; existing skip is a same-deck jump.
+
+### Backbeat matching implementation — 2026-09-04
+
+- [x] Connect **Analyze & enrich missing** to the shared Rust rhythm cache
+  after phrases; Build reuses/fills it, playback retains live verification.
+  GUI separately reports cached/missing-stale/uncertain-section track counts.
+  Legacy `beat_phase` alone does not count as new backbeat analysis.
+- [x] Verify all 36 finalized tracks cached (27 have uncertain sections),
+  no errors and current plan byte-for-byte unchanged. Reload idle editor
+  on 8787/control 9995; new status served. 232 scoped Python tests pass
+  (loopback test rerun separately with permission), including 15 cache/action
+  regressions. This is analysis coverage, not 36 confirmed aligned tracks.
+- [x] Amend story/intent/prompt: backbeat means the snare/clap accents.
+- [x] Rust multiband transient analysis, local cadence/microtiming evidence,
+  overlap verification and cue-preserving entrance solver.
+- [x] Build integration for Club set, Mix to listen and other formats;
+  cache identity, reviewed markers, optional independent evidence adapters.
+- [x] Muted live launch verification, periodic overlap checks, restored
+  settings and per-run logs. Original short-handoff policy is superseded below.
+- [x] Refresh current heavy-rotation artifact with backup; preserve order/cues.
+  Opening two blends pass predicted timing checks; 7/35 total prepared,
+  26 fallback and 2 separate recipes. Opening previews rendered.
+- [x] Initial live listening feedback: Ernest reports backbeat matching seems
+  fine; Wall → On Fire's two-beat fallback is too abrupt. On Fire → Biggie's
+  verified 32-beat fade is acceptable, and a longer musical blend is welcome.
+- [x] Gradual-blend story/prompt/agent-rule correction implemented as
+  **gradual-v3: zero automatic evidence-triggered short handoffs**. Unknown
+  AND confirmed mismatch keep planned fades with honest status. Physical
+  audio limits require corroboration; deliberate DJ cuts remain separate.
+  No active artifact/cue/order or Mixxx changes. Existing CLI plan needs only
+  a user restart; old v1/v2 previews require re-preparation before rendering.
+- [x] Independent agent challenged and re-reviewed: stale near-EOF read,
+  half/double-time classification and stale preview defects corrected.
+  252 scoped Python tests, 33 Rust unit tests, Clippy/fmt and wrapper dry-run
+  pass; 35-transition chain has zero evidence-triggered short handoffs.
+- [x] Fix wrapper lifecycle: `exec` runner prevents Bash resuming an edited
+  script after the old mix completes; synthetic live/dry wrapper test passes.
+- [ ] Repeat live listening for smooth fades and backbeats; simulations and
+  logs do not certify audible acceptance. Do not edit runtime during the listen.
+- [ ] Resolve remaining uncertain sections through audition/reviewed evidence;
+  optional learned models are adapters, not yet installed/benchmarked.
+
+See `docs/BACKBEAT_MATCHING.md` and the newest HANDOFF section. PDD structural
+contracts passed; model-driven intent application remained unavailable.
+
 - [x] **Who Shot Ya album: skip the gun-in-mouth skit, every mix
       (2026-08-31).** Ready to Die remaster last-verse scene
       (~3:24–3:44, “Can't talk with a gun in your mouth” + victim

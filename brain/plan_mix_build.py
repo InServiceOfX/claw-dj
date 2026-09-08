@@ -65,6 +65,7 @@ def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **
             dj_notes_lookup=notes,
             fixed_groups=[list(group) for group in constraints.groups],
             transition_beats_by_pair=beats_by_pair,
+            prepare_backbeat=False,
             **opts,
         )
         _validate_vocals_only_playback(plan, notes)
@@ -102,6 +103,10 @@ def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **
                 # event field aligned and refuse silent drift.
                 event["transition_beats"] = override.beats
             event["author"] = override.author.value if override.author else None
+        # Final technique/length overrides change what audio overlaps. Analyze
+        # and certify the final events, never an intermediate composition.
+        from brain.rhythm import prepare_plan
+        prepare_plan(plan)
         inputs_after = plan_rev(paths)
         if inputs_after.token != inputs_before.token:
             changed = [name for name, rev in inputs_before.files.items() if inputs_after.files.get(name) != rev]

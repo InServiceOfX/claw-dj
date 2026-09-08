@@ -116,6 +116,21 @@ def transition_specs(events: list[dict], tracks_by_id: dict[str, dict]) -> list[
         else:
             in_rate = 1.0
 
+        backbeat = event.get("backbeat") or {}
+        preview = backbeat.get("preview")
+        from brain.rhythm import FADE_POLICY_VERSION
+        if preview and backbeat.get("fade_policy_version", 1) < FADE_POLICY_VERSION:
+            raise ValueError("Cached backbeat preview uses a retired short-handoff policy; rebuild/prepare the plan before rendering previews. Live playback uses the current gradual policy.")
+        in_start = cue_by_id.get(in_tid, 0.0)
+        if preview:
+            # Prepared plans replay the whole chain, including the previous
+            # incoming fade and any short handoff. Do not reset to cue+body.
+            anchor_file_s = preview["outgoing_seconds"]
+            in_start = preview["incoming_seconds"]
+            out_rate, in_rate = preview["outgoing_rate"], preview["incoming_rate"]
+            fade_wall_s = preview["overlap_seconds"]
+        context = min(CONTEXT_SECONDS, anchor_file_s/out_rate)
+
         specs.append({
             "index": len([s for s in specs if "error" not in s]) + 1,
             "from_label": out_label,
@@ -123,15 +138,16 @@ def transition_specs(events: list[dict], tracks_by_id: dict[str, dict]) -> list[
             "technique": event.get("technique"),
             "out_path": out_tid,
             "in_path": in_tid,
-            "out_start_s": max(0.0, anchor_file_s - CONTEXT_SECONDS * out_rate),
-            "out_duration_s": CONTEXT_SECONDS * out_rate + fade_wall_s * out_rate,
+            "out_start_s": max(0.0, anchor_file_s - context * out_rate),
+            "out_duration_s": (context + fade_wall_s) * out_rate,
             "out_rate": out_rate,
-            "in_start_s": cue_by_id.get(in_tid, 0.0),
+            "in_start_s": in_start,
             "in_duration_s": (fade_wall_s + CONTEXT_SECONDS) * in_rate,
             "in_rate": in_rate,
             "fade_wall_s": round(fade_wall_s, 3),
             "hard_cut": hard,
             "echo_out": echo_out,
+            "backbeat": {k:v for k,v in backbeat.items() if k not in {"outgoing","incoming"}},
         })
     return specs
 
@@ -225,13 +241,12 @@ def main() -> None:
 
     plan = json.loads(args.plan.read_text())
     events = plan["events"] if isinstance(plan, dict) else plan
-    from brain.library_index import connect
-
-    with connect() as db:
-        tracks_by_id = {
-            row["track_id"]: dict(row)
-            for row in db.execute("SELECT track_id, bpm, dj_notes FROM tracks")
-        }
+    if isinstance(plan, dict) and plan.get("tracks"):
+        tracks_by_id = {t["track_id"]:t for t in plan["tracks"]}
+    else:
+        from brain.library_index import connect
+        with connect() as db:
+            tracks_by_id = {row["track_id"]: dict(row) for row in db.execute("SELECT track_id, bpm, dj_notes FROM tracks")}
     specs = transition_specs(events, tracks_by_id)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     rendered = failed = 0

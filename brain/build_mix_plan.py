@@ -256,10 +256,15 @@ def track_directives(track: dict) -> dict:
         # measurement (seen live 2026-07-19: confidence 0.015 drove a nudge
         # the ear then flagged as off by one).
         "trust_ride_beats": bool(re.search(r"\btrust_ride_beats\b", notes, re.I)),
-        # After Mixxx beatsync, jump the incoming deck one beat so snares
-        # lock. Ticks can match while kick sits on snare; ride_beats ±1
-        # does not fix that. Ear flag, or high-confidence phase mismatch.
-        "snare_align": bool(re.search(r"\bsnare_align\b", notes, re.I)),
+        # After Mixxx beatsync, jump one beat so snares lock.
+        # +1 / bare snare_align: jump incoming forward.
+        # -1: jump outgoing forward (same relative flip; works when the
+        # incoming cue is at beat 0 and a backward jump would clamp).
+        "snare_align": (
+            int(signed[-1])
+            if (signed := re.findall(r"\bsnare_align\s*=\s*([+-]?\d+)", notes, re.I))
+            else (1 if re.search(r"\bsnare_align\b", notes, re.I) else 0)
+        ),
         # Rare escape hatch for an ear-certified cue that deliberately sits
         # between analyzed beatgrid lines. Ordinary cues are snapped to the
         # nearest real beat below; otherwise a half-beat cue can never be
@@ -468,10 +473,11 @@ def build_plan(
     dj_format: "DjFormat | None" = None,
     provenance: dict | None = None,
     transition_beats_by_pair: dict[tuple[str, str], int] | None = None,
+    legacy_parity: bool = True,
 ) -> dict:
     from brain.dj_formats import format_provenance, get_format
     from brain.mix_profiles import PROFILES
-    from brain.onset_analysis import count_shift_beats, phase_shift_beats
+    from brain.onset_analysis import count_shift_beats
 
     profile = profile or PROFILES["dj-showcase"]
     dj_format = dj_format or get_format("none")
@@ -531,6 +537,9 @@ def build_plan(
             and first_beat is not None
         ):
             period = 60.0 / float(phase["bpm"])
+            # Preserve source-grid provenance even when a human cue is
+            # deliberately between grid lines or this track has no solo body.
+            result["source_grid"] = {"grid_bpm": float(phase["bpm"]), "first_beat_seconds": first_beat}
             raw_index = (float(cue_seconds) - first_beat) / period
             # The analyzed grid's public beat indices start at zero.  A cue
             # near the file head can round to a hypothetical negative beat;
@@ -1992,7 +2001,7 @@ def build_plan(
         incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
         min_snare_confidence = 0.15
         if (
-            not directive["trust_ride_beats"]
+            legacy_parity and not directive["trust_ride_beats"]
             and outgoing_phase and incoming_phase
             and outgoing_entry_beat is not None and incoming_entry_beat is not None
         ):
@@ -2025,36 +2034,18 @@ def build_plan(
                 )
                 ride_beats += shift
 
-        # Mixxx beatsync locks beatgrid ticks. Opposite snare identity still
-        # puts kick on snare. Jump the incoming deck one beat after sync.
-        # An incoming `snare_align` note is the ear override when analysis
-        # claims the snares already match (Wall to Wall → On Fire).
-        want_snare_align = bool(incoming_directive.get("snare_align"))
-        if (
-            not want_snare_align
-            and outgoing_phase
-            and incoming_phase
-            and outgoing_entry_beat is not None
-            and incoming_entry_beat is not None
-            and float(outgoing_phase.get("confidence") or 0.0) >= min_snare_confidence
-            and float(incoming_phase.get("confidence") or 0.0) >= min_snare_confidence
-        ):
-            anchor = outgoing_entry_beat + previous_fade_beats + ride_beats + 1
-            if phase_shift_beats(
-                outgoing_snare_parity=outgoing_phase["snare_parity"],
-                outgoing_anchor_beat_index=anchor,
-                incoming_snare_parity=incoming_phase["snare_parity"],
-                incoming_cue_beat_index=incoming_entry_beat,
-            ):
-                want_snare_align = True
-        if want_snare_align:
+        # Compatibility for legacy direct callers only. New compositions use
+        # measured cue-preserving entrances, not blind one-beat jumps.
+        align_dir = int(incoming_directive.get("snare_align") or 0)
+        if legacy_parity and align_dir and "sync" in (tech.get("moves") or []):
+            move = "snare_align" if align_dir > 0 else "snare_align_back"
             moves = list(tech.get("moves") or [])
-            if "snare_align" not in moves and "sync" in moves:
-                moves.insert(moves.index("sync") + 1, "snare_align")
+            if "snare_align" not in moves and "snare_align_back" not in moves:
+                moves.insert(moves.index("sync") + 1, move)
                 tech["moves"] = moves
                 print(
                     f"  [beat-phase] {outgoing['artist']} — {outgoing['title']} -> "
-                    f"{incoming['artist']} — {incoming['title']}: snare-align after sync"
+                    f"{incoming['artist']} — {incoming['title']}: {move} after sync"
                 )
 
         # Play body of outgoing track
@@ -2310,6 +2301,7 @@ def compose_mix_plan(
     dj_notes_lookup: dict[str, str] | None = None,
     fixed_groups: list[list[str]] | None = None,
     transition_beats_by_pair: dict[tuple[str, str], int] | None = None,
+    prepare_backbeat: bool = True,
 ) -> dict:
     """Build a mix plan from the finalized playlist and write it to disk.
 
@@ -2435,10 +2427,14 @@ def compose_mix_plan(
         dj_format=dj_format,
         provenance=provenance,
         transition_beats_by_pair=transition_beats_by_pair,
+        legacy_parity=False,
     )
     if control_port is not None:
         plan.setdefault("runtime", {})["mixxx_control_port"] = int(control_port)
     assert_vocals_layered(plan, {row["track_id"]: row.get("dj_notes") or "" for row in pool})
+    if prepare_backbeat:
+        from brain.rhythm import prepare_plan
+        prepare_plan(plan)
     out.parent.mkdir(parents=True, exist_ok=True)
     temporary = out.with_name(f".{out.name}.tmp")
     temporary.write_text(json.dumps(plan, indent=2) + "\n")
@@ -2479,6 +2475,7 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
         "order_notes": profile.get("order_notes") or [],
         "techniques": techniques,
         "format_compliance": format_compliance,
+        "backbeat": plan.get("backbeat"),
         "cue_sources": cue_sources,
         "tracks": [
             {

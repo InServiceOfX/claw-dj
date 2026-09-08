@@ -28,6 +28,13 @@ mix feel and DJ transition format, Build mix plan, then Start mix (or
 3. **Analyze & enrich missing**
    - Analyzes tracks that still lack BPM/key (and optional lyrics/phrases/
      related enrichment) for the **finalized** set only — not the whole library.
+   - Includes cached multiband percussion and section-local backbeat analysis
+     after source beatgrids are available. Backbeat means the snare/clap
+     accents. Cache identity covers audio, grid, analyzer and annotations.
+   - Reports cached tracks, missing/stale analysis and uncertain sections
+     separately from transition readiness. Legacy `beat_phase` does not mean
+     the new analysis exists. Repeated Analyze reuses current results;
+     status refreshes do not decode audio or run DSP.
    - Progress appears in a terminal-style console (dark background, green
      text) and the action button returns from a disabled/lightened state when
      finished.
@@ -42,6 +49,12 @@ mix feel and DJ transition format, Build mix plan, then Start mix (or
      whether an external engine reorders (when configured).
    - **Build mix plan** succeeds only when the finalized set has required
      analysis for included tracks.
+   - Build reuses backbeat analysis from enrichment (or fills missing/stale
+     entries), then plans entrances for the chosen order, cues and sections,
+     including the first transition in Club set, Mix to listen and DJ formats.
+     Weak evidence remains an explicit short-handoff fallback. Playback
+     rechecks timing using actual deck positions and rates before the fade
+     and during the overlap; cached analysis alone is not an audible guarantee.
    - After a successful build, **Start mix** is enabled (bright red) and
      drives Mixxx via the control API.
 

@@ -95,6 +95,31 @@ class MixRunnerTests(TestCase):
         sync_at = mixxx.writes.index(("[Channel2]", "beatsync", 1))
         jump_at = mixxx.writes.index(("[Channel2]", "beatjump_1_forward", 1))
         self.assertGreater(jump_at, sync_at)
+        self.assertEqual(mixxx.writes[jump_at][0], "[Channel2]")
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 0.0, 30.0, 30.0])
+    def test_snare_align_back_jumps_outgoing_one_beat(
+        self, _monotonic, _sleep, _wait_for_next_beat
+    ) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "bpm")] = 94.0
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 32,
+                "technique": "smooth_blend",
+                "moves": ["sync", "snare_align_back", "crossfade"],
+            },
+            port=9995,
+        )
+        sync_at = mixxx.writes.index(("[Channel2]", "beatsync", 1))
+        jump_at = mixxx.writes.index(("[Channel1]", "beatjump_1_forward", 1))
+        self.assertGreater(jump_at, sync_at)
 
     def test_cue_deck_retries_when_the_first_seek_is_ignored(self) -> None:
         # Live: Back Down rode to end-of-track, then loading Magic Stick

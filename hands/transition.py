@@ -156,7 +156,7 @@ def wait_for_beats(
     count = 0
     gaps = 0
     max_gaps = 8
-    phase_resolved = phase_anchor is None or trust_ride_beats
+    phase_resolved = phase_anchor is None
 
     while count < beats and time.monotonic() <= deadline:
         previous = 0.0
@@ -172,7 +172,7 @@ def wait_for_beats(
                                 first_beat = _current_grid_beat_index(
                                     port, group, phase_anchor or {}
                                 )
-                                beats = _phase_corrected_beat_count(
+                                corrected = _phase_corrected_beat_count(
                                     requested_beats,
                                     first_counted_beat_index=first_beat,
                                     target_beat_mod4=(phase_anchor or {}).get(
@@ -182,6 +182,13 @@ def wait_for_beats(
                                         "target_beat_parity"
                                     ),
                                 )
+                                if trust_ride_beats:
+                                    print(
+                                        f"  trusted body: observed grid beat {first_beat}; "
+                                        "keeping ride duration, resolving backbeat at live entrance"
+                                    )
+                                else:
+                                    beats = corrected
                                 if beats != requested_beats:
                                     print(
                                         "  runtime bar guard: first counted grid beat "

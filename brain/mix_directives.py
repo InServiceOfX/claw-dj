@@ -58,10 +58,11 @@ keys must match exactly):
   keep_blend_tempo           bare flag — stay at the outgoing/blend tempo after landing. Do not
                              settle back to native. Only for records the human certified can sit
                              slightly fast without sounding chipmunked. Ignored if play_bpm is set.
-  snare_align                bare flag on the INCOMING track — after Mixxx beatsync, jump one
-                             beat so snares lock (ticks can match while kick sits on snare).
-                             Use when the ear says a blend is off by one count. Do not fake
-                             this by sliding cue_seconds one beat later.
+  backbeat                  the snare/clap accents, usually counts 2 and 4.
+                             Every build prepares a measured backbeat entrance.
+  snare_align                legacy note only; do not invent one-beat jumps.
+  snare_align=+1             historical incoming-jump hint; new builds supersede it.
+  snare_align=-1             historical outgoing-jump hint; new builds supersede it.
   skip_from_seconds=<number> start of a region to jump over while the deck keeps playing
   skip_to_seconds=<number>   landing after that skip (same grid). File times.
                              skip_after is live beats *after the incoming blend*

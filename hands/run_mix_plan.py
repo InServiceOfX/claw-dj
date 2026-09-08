@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import json
 import time
 from pathlib import Path
@@ -216,6 +217,7 @@ def reset_instrument(mixxx: MixxxControl) -> None:
         mixxx.set(group, "pitch_adjust", 0.0)
         mixxx.set(group, "keylock", 1)
         mixxx.set(group, "quantize", 1)
+        mixxx.set(group, "sync_enabled", 0)
         mixxx.set(group, "mute", 0)
         try:
             eg = eq_group(deck)
@@ -975,6 +977,11 @@ def perform_opener_effect(mixxx: MixxxControl, event: dict, *, port: int) -> Non
 
 
 def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
+    with ExitStack() as cleanup:
+        _perform_transition(mixxx, event, port=port, cleanup=cleanup)
+
+
+def _perform_transition(mixxx: MixxxControl, event: dict, *, port: int, cleanup: ExitStack) -> None:
     """Execute one beat-anchored transition with continuous instrument curves."""
     from_deck = int(event["from_deck"])
     to_deck = int(event["to_deck"])
@@ -1159,7 +1166,9 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
 
     print(f"  anchoring on {out_g} beat ({bpm:.2f} BPM)")
     looped_intro = "outgoing_intro_loop_8_bars" in moves
-    if not _wait_for_anchor_or_continue(
+    measured = bool(event.get("backbeat") and event["backbeat"].get("status") != "not_applicable" and not hard)
+    guard = None
+    if (not measured or looped_intro) and not _wait_for_anchor_or_continue(
             mixxx, port=port, out_group=out_g, in_group=in_g, to_deck=to_deck
         ):
             return
@@ -1177,16 +1186,34 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             f"  Song A intro loop armed at {loop_seconds:.3f}s "
             f"for {int(event.get('outgoing_loop_beats', 32))} beats"
         )
-    mixxx.set(in_g, "play", 1)
-    if sync:
+    if measured:
+        from hands.backbeat import launch
+        guard = launch(mixxx, event, port=port)
+        cleanup.callback(guard.restore)
+    else:
+        mixxx.set(in_g, "play", 1)
+    if sync and not measured:
         mixxx.set(in_g, "beatsync", 1)
-    elif phase_only_sync:
+    elif phase_only_sync and not measured:
         mixxx.set(in_g, "beatsync_phase", 1)
         print(f"  phase-locked deck {to_deck} to {out_g} beat (tempo held at play_bpm)")
-    if "snare_align" in moves:
-        # beatsync locks ticks; this flips kick-on-snare to snare-on-snare.
-        mixxx.set(in_g, "beatjump_1_forward", 1)
-        print(f"  snare-align: jumped incoming deck {to_deck} 1 beat")
+    if not measured and ("snare_align" in moves or "snare_align_back" in moves):
+        # beatsync locks ticks. Jumping immediately races Mixxx's sync.
+        # Wait one outgoing beat, drop quantize, then jump. +1 jumps the
+        # incoming deck; -1 jumps the outgoing deck (incoming stays on its
+        # cue — needed when that cue is beat 0 and a backward jump would clamp).
+        mixxx.set(in_g, "quantize", 0)
+        mixxx.set(out_g, "quantize", 0)
+        try:
+            wait_for_next_beat(port, out_g, timeout_s=3.0)
+        except TimeoutError:
+            pass
+        if "snare_align_back" in moves:
+            mixxx.set(out_g, "beatjump_1_forward", 1)
+            print(f"  snare-align: jumped outgoing deck {from_deck} 1 beat (incoming stays at cue)")
+        else:
+            mixxx.set(in_g, "beatjump_1_forward", 1)
+            print(f"  snare-align: jumped incoming deck {to_deck} 1 beat")
 
     start_cf = mixxx.get("[Master]", "crossfader")
     end_cf = crossfader_target(to_deck)
@@ -1196,7 +1223,18 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         print(f"  on-beat cut -> deck {to_deck} ({'sync' if sync else 'native tempo'})")
         return
 
-    fade_s = beats * 60.0 / bpm
+    from brain.rhythm import blend_seconds
+    from hands.backbeat import FadeEnvelope, evidence
+    planned_s = beats * 60.0 / bpm
+    fade_s = blend_seconds(planned_s, bpm,
+                           remaining_seconds=guard.seconds_left() if guard is not None else None)
+    fade_reasons = []
+    if guard is not None and guard.seconds_left() is not None and guard.seconds_left() < planned_s:
+        fade_reasons.append(guard.limit_reason)
+    print(f"  crossfade: planned {beats:g} beats ({planned_s:.1f}s); scheduled {fade_s * bpm / 60:.1f} beats ({fade_s:.1f}s)"
+          + (f" — {'; '.join(fade_reasons)}" if fade_reasons else ""))
+    evidence("crossfade_start", planned_beats=beats, planned_seconds=planned_s,
+             scheduled_seconds=fade_s, reasons=fade_reasons)
     bass_swap = any(move in moves for move in ("eq_kill_out_low", "eq_dip_out_mid", "eq_kill_out_high"))
     # Ernest, 2026-07-14: hip-hop needs bass "front and center" -- do NOT
     # pre-kill the incoming deck's low end at progress=0. The old code did,
@@ -1208,8 +1246,19 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     # by which point it's fading out anyway.
     swapped = False
     t0 = time.monotonic()
+    fade = FadeEnvelope(t0, fade_s)
     while True:
-        progress = min(1.0, (time.monotonic() - t0) / fade_s)
+        if guard is not None:
+            guard.check()
+            now = time.monotonic()
+            remaining = guard.seconds_left(now)
+            if remaining is not None and fade.shorten(now, remaining):
+                if guard.limit_reason not in fade_reasons:
+                    fade_reasons.append(guard.limit_reason)
+                    print(f"  crossfade constrained by {guard.limit_reason}")
+                evidence("crossfade_recovery", reason=guard.limit_reason, remaining_seconds=remaining)
+        frame_at = time.monotonic()
+        progress = fade.progress(frame_at)
         curve = smoothstep(progress)
         mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * curve)
         if bass_swap and progress >= 0.35:
@@ -1243,6 +1292,7 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             if phase < 4 and phase % 2 == 0:
                 mixxx.set("[Master]", "crossfader", start_cf)
         if progress >= 1.0:
+            executed_s = frame_at - t0
             break
         time.sleep(0.02)
 
@@ -1256,7 +1306,7 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     if key_shift:
         mixxx.set(in_g, "pitch_adjust", 0.0)
     mixxx.set(out_g, "play", 0)
-    if event.get("landing_seconds") is not None:
+    if event.get("landing_seconds") is not None and guard is None:
         duration = mixxx.get(in_g, "duration")
         actual_landing = mixxx.get(in_g, "playposition") * duration
         expected_landing = float(event["landing_seconds"])
@@ -1281,7 +1331,13 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
                 f"  verse landing verified at {actual_landing:.3f}s "
                 f"(target {expected_landing:.3f}s)"
             )
-    print(f"  {beats}-beat landing -> deck {to_deck}")
+    print(f"  crossfade landed -> deck {to_deck}: {executed_s * bpm / 60:.1f} beats / {executed_s:.1f}s executed (planned {beats:g} beats)"
+          + (f" — {'; '.join(fade_reasons)}" if fade_reasons else ""))
+    if guard is not None:
+        evidence("transition_end", outgoing_id=event["backbeat"].get("outgoing_id"),
+                 incoming_id=event["backbeat"].get("incoming_id"), status=guard.reason,
+                 verification=guard.verification, planned_beats=beats, planned_seconds=planned_s,
+                 executed_beats=executed_s * bpm / 60, executed_seconds=executed_s, fade_reasons=fade_reasons)
 
 
 def start_recording(mixxx: MixxxControl, *, timeout_s: float = 5.0) -> bool:
@@ -1340,7 +1396,13 @@ def run_plan(
             print("starting recording…")
             we_started_recording = start_recording(mixxx)
         try:
-            _run_events(mixxx, events, expected_bpms, port=port)
+            if plan.get("backbeat"):
+                from hands.backbeat import trace_run
+                with trace_run(plan):
+                    _run_events(mixxx, events, expected_bpms, port=port)
+            else:
+                print("Backbeat: legacy artifact; rebuild to enable measured entrances.")
+                _run_events(mixxx, events, expected_bpms, port=port)
         except KeyboardInterrupt:
             # Ctrl-C only kills this script -- Mixxx itself is a separate
             # process and keeps playing whatever was on the decks unless
