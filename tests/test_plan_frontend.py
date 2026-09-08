@@ -30,6 +30,12 @@ MODULES = (
 
 
 class PlanFrontendStaticTest(TestCase):
+    @skipUnless(shutil.which("node"), "node is not installed")
+    def test_song_note_editor_behavior(self):
+        result = subprocess.run([shutil.which("node"), str(ROOT / "tests/song_notes_frontend.cjs")],
+                                cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_playlist_integrates_picker_above_workflow_and_arrange_hash_tab(self):
         html = (WEB / "playlist.html").read_text()
         self.assertLess(html.index('id="plan-picker"'), html.index('class="nav"'))

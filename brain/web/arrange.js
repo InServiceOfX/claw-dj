@@ -13,6 +13,9 @@ function initialize() {
     slug: null,
     snapshot: null,
     loading: false,
+    refreshQueued: false,
+    pendingNoteSaves: 0,
+    noteDrafts: new Map(),
     selected: new Set(),
     draggedKey: null,
     keyboardKey: null,
@@ -22,6 +25,12 @@ function initialize() {
   const picker = mountPlanPicker(pickerRoot);
   const conflictBanner = document.getElementById('plan-conflict-banner');
   const conflictText = document.getElementById('plan-conflict-text');
+
+  window.addEventListener('beforeunload', event => {
+    if (!state.noteDrafts.size && !state.pendingNoteSaves) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
 
   function announce(message) {
     document.getElementById('arrange-live').textContent = message;
@@ -49,6 +58,7 @@ function initialize() {
     discardLocalBuffer();
     state.slug = plan?.slug || null;
     state.snapshot = null;
+    render(); // Remove the old plan's forms before any asynchronous work.
     try {
       if (window.clawDjLegacy?.refreshForPlan) await window.clawDjLegacy.refreshForPlan();
     } catch (error) {
@@ -63,7 +73,10 @@ function initialize() {
   });
 
   async function refresh() {
-    if (!state.slug || state.loading) return;
+    if (!state.slug) return;
+    if (state.loading || state.pendingNoteSaves) { state.refreshQueued = true; return; }
+    const requestSlug = state.slug;
+    state.refreshQueued = false;
     state.loading = true;
     conflictBanner.hidden = true;
     editor.close();
@@ -71,18 +84,21 @@ function initialize() {
     try {
       // This is deliberately the only request in Refresh: one Arrange
       // snapshot replaces the complete painted plan state.
-      const snapshot = await client.refreshPlan(state.slug, {});
+      const snapshot = await client.refreshPlan(requestSlug, {});
+      if (state.slug !== requestSlug) return;
+      if (snapshot.slug !== requestSlug) throw new Error('The returned snapshot belongs to another plan. Refresh before editing.');
       state.snapshot = snapshot;
       discardLocalBuffer();
       picker.setSnapshotState(state.slug, snapshot.stale);
       render();
       announce(`Refreshed ${snapshot.tracks.length} tracks from disk.`);
     } catch (error) {
-      if (error.name !== 'AbortError') renderError(error.message);
+      if (state.slug === requestSlug && error.name !== 'AbortError') renderError(error.message);
     } finally {
       state.loading = false;
       const button = document.getElementById('arrange-refresh');
       if (button) button.disabled = false;
+      if (state.slug && (state.refreshQueued || state.slug !== requestSlug)) await refresh();
     }
   }
 
@@ -116,7 +132,7 @@ function initialize() {
         </form>
         <button id="arrange-add-curate" type="button">Add from Curate selection</button>
         <button id="arrange-bunch" type="button" ${state.selected.size < 2 ? 'disabled' : ''}>Bunch these (${state.selected.size})</button>
-        ${renderAddToBunch(snapshot)}
+        ${renderAddToBunch(snapshot, state.selected.size)}
       </div>
       <div class="arrange-state ${snapshot.stale ? 'is-stale' : ''}">
         <span><strong>${snapshot.stale ? 'Stale' : 'Current'}</strong>${changed.length ? ` · changed: ${escapeHtml(changed.join(', '))}` : ''}</span>
@@ -183,6 +199,19 @@ function initialize() {
       const segment = orphaned[Number(button.dataset.orphanIndex)];
       if (segment) editor.open({segment, slug: state.slug});
     }));
+    wireSongNotes(root, {
+      getSlug: () => state.slug,
+      drafts: state.noteDrafts,
+      onPending: pending => {
+        state.pendingNoteSaves += pending ? 1 : -1;
+        if (!state.pendingNoteSaves && state.refreshQueued) refresh();
+      },
+      onSaved: async (slug, message) => {
+        if (state.slug !== slug) return;
+        await refresh();
+        if (state.slug === slug) announce(message);
+      },
+    });
     wireDragAndKeyboard(units);
     const details = document.getElementById('arrange-journal');
     details.addEventListener('toggle', () => { if (details.open) loadJournal(details); }, {once: true});
@@ -306,6 +335,8 @@ function initialize() {
         moveUnit(units, from, to);
       });
       element.addEventListener('keydown', event => {
+        // Typing a note or activating its controls is not keyboard reordering.
+        if (event.target.closest('input, textarea, select, button, summary, a, [contenteditable]')) return;
         const index = units.findIndex(unit => unit.key === element.dataset.unitKey);
         if (event.key === ' ' || event.key === 'Enter') {
           event.preventDefault();
@@ -413,7 +444,7 @@ function renderUnits(units, snapshot) {
   const notes = new Map((snapshot.notes || []).map(note => [note.track_id, note]));
   return units.map((unit, unitIndex) => {
     const startIndex = trackIndex;
-    const cards = unit.tracks.map(track => renderTrack(track, trackIndex++, notes.get(track.track_id), unit.bunch)).join('');
+    const cards = unit.tracks.map(track => renderTrack(track, trackIndex++, notes.get(track.track_id), unit.bunch, snapshot.slug)).join('');
     const transition = trackIndex < snapshot.tracks.length ? renderTransition(snapshot, trackIndex - 1) : '';
     return `<div class="arrange-unit ${unit.bunch ? 'is-bunch' : ''}" role="listitem" tabindex="0" draggable="true" data-unit-key="${escapeHtml(unit.key)}" aria-label="${escapeHtml(unit.label)}, position ${unitIndex + 1} of ${units.length}">
       <div class="unit-head">
@@ -427,7 +458,7 @@ function renderUnits(units, snapshot) {
   }).join('');
 }
 
-function renderAddToBunch(snapshot) {
+function renderAddToBunch(snapshot, selectedCount = 0) {
   // Adding and removing deliberately use DIFFERENT gestures. Driving both
   // from one checkbox set would require every existing member to render
   // pre-selected, so "deselect to remove" and "select to add" would fight
@@ -442,11 +473,11 @@ function renderAddToBunch(snapshot) {
     .join('');
   return `<span class="arrange-add-bunch">
     <select id="arrange-bunch-target" aria-label="Bunch to add the selected tracks to">${options}</select>
-    <button id="arrange-bunch-add" type="button" ${state.selected.size < 1 ? 'disabled' : ''}>Add to bunch (${state.selected.size})</button>
+    <button id="arrange-bunch-add" type="button" ${selectedCount < 1 ? 'disabled' : ''}>Add to bunch (${selectedCount})</button>
   </span>`;
 }
 
-function renderTrack(track, index, note, bunch) {
+function renderTrack(track, index, note, bunch, planSlug) {
   const available = note?.available ?? track.available ?? true;
   return `<article class="arrange-track ${available ? '' : 'is-unavailable'}">
     <label class="arrange-select"><input type="checkbox" data-select-track="${escapeHtml(track.track_id)}"> Select track ${index + 1}</label>
@@ -454,10 +485,89 @@ function renderTrack(track, index, note, bunch) {
     <div><div class="title">${escapeHtml(track.title || track.track_id)}</div><div class="artist">${escapeHtml(track.artist || '')}</div></div>
     <button type="button" class="preview-btn" data-preview-id="${escapeHtml(track.track_id)}" data-preview-label="${escapeHtml(`${track.artist || ''} — ${track.title || track.track_id}`)}" title="Preview in this tab (not Mixxx)">▶</button>
     <div class="track-facts"><span>${track.bpm ? `${Number(track.bpm).toFixed(1)} BPM` : 'BPM —'}</span><span>${escapeHtml(track.key || 'Key —')}</span><span>${available ? 'Available' : 'Unavailable'}</span></div>
-    <div class="effective-note"><strong>${escapeHtml(note?.layer || 'global')} note${note?.diverged ? ' · diverged' : ''}</strong><span>${escapeHtml(note?.note || 'No DJ note')}</span></div>
+    <div class="effective-note"><strong>${escapeHtml(note?.layer || 'global')} note${note?.diverged ? ' · diverged' : ''}</strong><span>${escapeHtml(note?.note || 'No DJ note')}</span>
+      <details class="song-note-editor"><summary>Edit playback note…</summary>
+        <form data-song-note="${escapeHtml(track.track_id)}" data-song-note-plan="${escapeHtml(planSlug)}">
+          <label>How should this recording be played?
+            <textarea name="note" rows="7">${escapeHtml(note?.note || '')}</textarea>
+          </label>
+          <p>Saved for this plan only. This does not change the running mix or library default. Plain-language requests need interpretation/review; supported DJ directives take effect after Build.</p>
+          <button type="submit">Save for this plan</button>
+          <button type="button" data-note-cancel>Cancel</button>
+          ${note?.layer === 'plan' ? '<button type="button" data-note-clear>Use library default</button>' : ''}
+          <div data-note-status role="status" aria-live="polite"></div>
+        </form>
+      </details>
+    </div>
     <button type="button" data-remove-track="${escapeHtml(track.track_id)}" aria-label="Remove ${escapeHtml(track.title || track.track_id)} from plan">Remove</button>
     ${bunch ? `<button type="button" class="unbunch-one" data-unbunch-track="${escapeHtml(track.track_id)}" data-unbunch-from="${escapeHtml(bunch.bunch_id)}" aria-label="Remove ${escapeHtml(track.title || track.track_id)} from bunch ${escapeHtml(bunch.label)}">Leave bunch</button>` : ''}
   </article>`;
+}
+
+function wireSongNotes(root, {getSlug, onSaved, drafts = new Map(), onPending = () => {}}) {
+  root.querySelectorAll('form[data-song-note]').forEach(form => {
+    let pending = false;
+    const slug = form.dataset.songNotePlan;
+    const trackId = form.dataset.songNote;
+    const draftKey = JSON.stringify([slug, trackId]);
+    const field = form.elements.note;
+    const status = form.querySelector('[data-note-status]');
+    const controls = [...form.querySelectorAll('button, textarea')];
+    const draft = drafts.get(draftKey);
+    if (draft) {
+      field.value = draft.value;
+      form.closest('details').open = true;
+      status.textContent = draft.base === field.defaultValue
+        ? 'Unsaved draft restored; Save to apply it to this plan.'
+        : 'Unsaved draft restored. The saved note changed; review both before saving.';
+    }
+    form.addEventListener('input', () => {
+      if (field.value === field.defaultValue) drafts.delete(draftKey);
+      else drafts.set(draftKey, {value: field.value, base: draft?.base ?? field.defaultValue});
+    });
+    // Editing text (including dragging selected text) must stay inside the form.
+    for (const kind of ['keydown', 'dragstart', 'drop']) {
+      form.addEventListener(kind, event => event.stopPropagation());
+    }
+    async function save(clear = false) {
+      if (pending) return;
+      const text = field.value;
+      if (!slug) { status.textContent = 'Choose a plan before saving.'; return; }
+      if (getSlug() !== slug) { status.textContent = 'The plan switched. Reopen this song in its original plan before saving.'; return; }
+      if (clear && !window.confirm('Remove this plan override and use the library default? The library note will not be changed.')) return;
+      pending = true;
+      // Keep failed edits and other songs' drafts across any Arrange repaint.
+      if (text !== field.defaultValue) drafts.set(draftKey, {value: text, base: draft?.base ?? field.defaultValue});
+      onPending(true);
+      controls.forEach(control => { control.disabled = true; });
+      status.textContent = 'Saving…';
+      try {
+        if (clear) await client.clearNote(slug, trackId);
+        else await client.setNote(slug, trackId, text, 'human');
+        drafts.delete(draftKey);
+        if (!clear) field.defaultValue = text;
+        if (getSlug() !== slug) return;
+        const message = `${clear ? 'Library default restored' : 'Playback note saved for this plan'}. Review the instruction and rebuild to apply supported directives; the running mix is unchanged.`;
+        status.textContent = message;
+        await onSaved(slug, message);
+      } catch (error) {
+        status.textContent = error.message || 'Could not save the note. Your text is still here.';
+      } finally {
+        pending = false;
+        controls.forEach(control => { control.disabled = false; });
+        onPending(false);
+      }
+    }
+    form.addEventListener('submit', event => { event.preventDefault(); return save(); });
+    form.querySelector('[data-note-clear]')?.addEventListener('click', () => save(true));
+    form.querySelector('[data-note-cancel]').addEventListener('click', () => {
+      if (pending) return;
+      form.reset();
+      drafts.delete(draftKey);
+      status.textContent = '';
+      form.closest('details').open = false;
+    });
+  });
 }
 
 function renderTransition(snapshot, index) {

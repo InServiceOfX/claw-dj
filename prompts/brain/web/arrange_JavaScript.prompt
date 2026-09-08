@@ -56,6 +56,8 @@ Implement and maintain `brain/web/arrange.js` as the Registers '3 . Arrange' as 
 
 % Product contract
 
+- Each song exposes an editable multiline playback note using the existing track-scoped plan-note API, never the transition-note API or global library writes. Seed the editor with the effective note; offer Save for this plan, Cancel (no write), and an explicit confirmed return to the library default for a plan override. Show scope and divergence. Saving records text, not arbitrary-prose interpretation, an automatic rebuild, or a change to live playback; say that clearly. Preserve revision checks and author=human. A stale-revision failure must be visible and must not be retried automatically; keep editing usable on ordinary save failure. An in-flight save remains bound to the original plan and must not refresh/close/edit another plan after a switch. Note typing, Space/Enter/arrow keys, and text selection must not trigger track reordering. Make the feature discoverable from Mix via Arrange.
+- Bind note forms to the plan in the rendered snapshot, not the plan selected later at submission. Reject stale forms, ignore late snapshots for another plan, and queue a fresh read after an in-flight refresh/Save completes. Preserve unsaved notes by plan and recording across Arrange refreshes, saves of other songs and plan switches; warn if the underlying saved note changed. Cancel discards only that song's draft. Warn before browser navigation/reload would abandon drafts or pending saves.
 - Preserve the exact public interface declared in `<pdd-interface>`.
 - Treat the reviewed architecture description in this prompt as normative behavior.
 - Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.
@@ -70,6 +72,12 @@ Implement and maintain `brain/web/arrange.js` as the Registers '3 . Arrange' as 
 Registers '3 . Arrange' as a third nav button and renders the order with the transition between each adjacent pair. THE PROMPT BASENAME MUST EQUAL THE GENERATED FILENAME 'arrange.js' AND THE <script src="/web/arrange.js"> in playlist.html: a mismatch is silent server-side and fatal client-side, because the file is generated, never served, and the tab simply never registers with no error in the log. Bunched tracks render as ONE VISUALLY CONTIGUOUS UNIT that drags as one block and cannot be split by a drop between its members. Drag and drop MUST preventDefault() on dragover or drop never fires, and ships keyboard pickup/move/drop plus Move up / Move down buttons alongside dragging, since drag alone is inaccessible; reorder announcements go through an aria-live=polite region, not assertive. Per-row Add / Remove call the tracks route, plus an 'Add from Curate selection' action. A collapsible 'What changed' strip renders fetchJournal with AUTHOR SHOWN ALONGSIDE ACTOR, marked up with the ARIA log role. A Refresh button repaints from /arrange with an EXPLICIT IN-FLIGHT STATE on the blocking fetch. 'Bunch these' on 2+ selected rows performs CREATE-THEN-ACTIVATE as one user action; on the activation 409 it names the conflicting bunch and the shared tracks AND states that the library bunch was still saved, because overlap is legal knowledge and only this plan's ordering rejected it. Each bunch unit carries an un-bunch control (activation enabled:false) and an overflow action archiving the library bunch, surfacing its affected-plans list. Avoid Element.moveBefore: not baseline.
 
 % Output
+
+<contract_rules>
+R201 - Song note scope (MUST): Saving a playback note targets the exact recording and selected plan through revision-checked note storage; it must not write library defaults, other plans, transition notes or live Mixxx controls.
+R202 - Explicit note actions (MUST): Show the effective note in a multiline editor, preserve it on opening, provide no-write Cancel and confirmed return-to-library-default, and report success/failure without implying that a saved sentence has changed the running mix.
+R203 - Editing safety (MUST NOT): Note typing or text selection must not reorder songs; a pending save must not affect a newly selected plan or automatically retry a stale edit.
+</contract_rules>
 
 - Primary output: `brain/web/arrange.js`.
 - PDD context tags: frontend, browser, page, arrange.

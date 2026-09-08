@@ -137,6 +137,11 @@
     .arrange-position { color:var(--muted); font-variant-numeric:tabular-nums; }
     .track-facts,.effective-note { display:flex; flex-direction:column; color:var(--muted); font-size:12px; }
     .effective-note strong { color:var(--ink); }
+    .effective-note > span { white-space:pre-wrap; overflow-wrap:anywhere; }
+    .song-note-editor summary { cursor:pointer; color:var(--ink); padding:7px 0; font-weight:600; }
+    .song-note-editor textarea { display:block; width:100%; min-height:150px; box-sizing:border-box; resize:vertical; }
+    .song-note-editor button { margin:4px 2px 4px 0; }
+    .song-note-editor p { line-height:1.4; }
     .transition-card { width:calc(100% - 32px); margin:5px 16px; display:grid; grid-template-columns:30px minmax(190px,1fr) minmax(100px,.5fr) minmax(160px,1fr); align-items:center; gap:10px; min-height:52px; text-align:left; border-style:dashed; background:#f8fbfa; color:var(--ink); }
     .transition-card small { display:block; color:var(--muted); }
     .transition-card.is-overridden { border-style:solid; border-color:var(--green); }
@@ -273,13 +278,15 @@
               <strong>Finalized set</strong>
               <div class="ingest-detail" id="finalized-detail">Not finalized yet — go back to Curate and press Finalize for Mixxx.</div>
               <div class="ingest-detail" id="enrich-status"></div>
+              <div class="ingest-detail" id="backbeat-analysis-status"></div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end">
               <button type="button" id="back-curate">← Back to curate</button>
+              <a href="#arrange" title="Open Arrange, then Edit playback note on a song">Edit song playback notes → Arrange</a>
               <button type="button" id="refresh-finalized" title="Reload crate + rewrite playlist.json from the enabled set">Refresh list</button>
               <button type="button" id="rescan-tags" title="Re-read tags/filenames for the set (picks up renames like Many Man→Many Men)">Rescan titles/paths</button>
               <button type="button" id="sync-mixxx" title="Pull BPM/key already in Mixxx's DB into claw-dj">Sync from Mixxx</button>
-              <button type="button" id="enrich-set" class="primary" title="Analyze missing BPM/key via Mixxx control API, then lyrics/chroma/phrases">Analyze &amp; enrich missing</button>
+              <button type="button" id="enrich-set" class="primary" title="Analyze missing BPM/key, lyrics/chroma/phrases, and backbeat (snare/clap) percussion/rhythm; reuse current cached analysis">Analyze &amp; enrich missing</button>
             </div>
           </div>
           <div class="brain-detail" id="enrich-detail"></div>
@@ -664,10 +671,15 @@
       if (!finalized || !finalized.count) {
         el('finalized-detail').textContent = 'Not finalized yet — go back to Curate and press Finalize for Mixxx.';
         el('enrich-status').textContent = '';
+        el('backbeat-analysis-status').textContent = '';
         el('finalized-rows').innerHTML = '<div class="empty">No finalized playlist on disk.</div>';
         return;
       }
       const miss = finalized.missing_bpm_count || 0;
+      const rhythm = enrichment?.backbeat;
+      el('backbeat-analysis-status').textContent = rhythm
+        ? `Backbeat (snare/clap): ${rhythm.analyzed}/${finalized.count} tracks analyzed · ${rhythm.missing_or_stale} missing/stale · ${rhythm.tracks_with_uncertain_sections} with uncertain sections. Build plans entrances; playback verifies live timing.`
+        : 'Analyze prepares reusable percussion/rhythm data; Build plans cue-preserving entrances; playback verifies live timing.';
       el('finalized-detail').textContent =
         `${finalized.count} tracks · ${finalized.analyzed_count} with BPM/key` +
         (miss ? ` · ${miss} missing analysis (red — Analyze & enrich will load them into a muted Mixxx deck)` : ' · BPM/key ready for plan build');
@@ -699,6 +711,7 @@
       const compliance = Object.entries(summary.format_compliance || {}).map(([k,v]) => `${k.replaceAll('_',' ')}×${v}`).join(' · ');
       const cues = Object.entries(summary.cue_sources || {}).map(([k,v]) => `${k}×${v}`).join(' · ') || '—';
       const engine = summary.order_engine || profile.order_engine || 'none';
+      const backbeat = summary.backbeat;
       el('mix-stats').innerHTML =
         `<span><strong>${summary.track_count}</strong> tracks in plan</span>` +
         `<span><strong>${summary.event_count}</strong> events</span>` +
@@ -710,6 +723,7 @@
         `<span>${esc(tech)}</span>` +
         (compliance ? `<span>format: ${esc(compliance)}</span>` : '') +
         `<span>cues: ${esc(cues)}</span>` +
+        (backbeat ? `<span>Backbeat (snare/clap): <strong>${backbeat.ready || 0}</strong> prepared · ${backbeat.fallback || 0} need live verification · ${backbeat.not_applicable || 0} separate recipes. Gradual blends remain the default when evidence is uncertain.</span>` : '<span class="warn">Rebuild to prepare backbeat (snare/clap) alignment.</span>') +
         `<span>${esc(summary.dry_run_note || 'dry-run ok')}</span>` +
         (stale ? '<span class="warn">STALE vs finalized set</span>' : '');
       const notes = summary.order_notes || profile.order_notes || [];
@@ -730,7 +744,7 @@
             `<div class="mix-seg"><span>${String(seg.index+1).padStart(2,'0')}</span>` +
             `<span class="title">${esc(seg.from)} → ${esc(seg.to)}</span>` +
             `<span class="tech">${esc(seg.technique)}${seg.showcase_move ? ' · '+esc(seg.showcase_move) : ''}${seg.format_compliance ? ' · '+esc(seg.format_compliance.replaceAll('_',' ')) : ''}</span>` +
-            `<span class="bpm">${seg.beats}b · ${seg.score}</span></div>`
+            `<span class="bpm">${seg.beats}b · ${seg.score}${seg.backbeat ? ' · '+esc(seg.backbeat.status === 'ready' ? 'backbeat prepared' : seg.backbeat.status === 'fallback' ? 'needs verification: '+seg.backbeat.reason : seg.backbeat.reason) : ''}</span></div>`
           ).join('')
         : '<div class="empty">No transitions in this plan.</div>';
     }
@@ -758,7 +772,7 @@
       const canStart = Boolean(data.plan_ready) && !data.plan_stale && !busy;
       el('start-mix').disabled = !canStart;
       if (data.enriching) {
-        el('enrich-detail').textContent = data.enrich_message || 'Enriching… (missing BPM uses a muted Mixxx deck; lyrics/chroma/phrases follow)';
+        el('enrich-detail').textContent = data.enrich_message || 'Enriching… (missing BPM uses a muted Mixxx deck; lyrics/chroma/phrases and backbeat analysis follow)';
       } else if (data.enrich_error) {
         el('enrich-detail').textContent = `Enrich failed: ${data.enrich_error}`;
       } else if (data.enrich_message) {

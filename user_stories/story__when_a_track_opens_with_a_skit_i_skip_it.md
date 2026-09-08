@@ -1,16 +1,19 @@
-<!-- pdd-story-status: drafted-2026-08-28 -->
+<!-- pdd-story-status: expanded-2026-09-05-awaiting-region-and-playback-validation -->
 <!-- pdd-story-areas: verse, mix_directives, build_mix_plan, lyric_timeline -->
 <!-- pdd-story-prompts: plan_mix_build_Python.prompt -->
 <!-- pdd-story-dev-units: plan_mix_build_Python.prompt -->
 
-# User Story: Skip spoken skits — mix the song, not the dialogue
+# User Story: Avoid opening, middle and ending skits without breaking the mix
 
 ## Story
 
 As a DJ I **almost never want to play a skit**. Album skits (phone calls,
 window-shooting scenes, skit tracks, spoken intros before the beat) are
-not the record. Cue past them. Blend into the first hook or the first
-real verse.
+not the record. Identify them at the start, middle or end of a recording.
+Cue past an opening scene, continue smoothly after a middle scene, or blend
+into the next song before the scene can be heard. Keep the musical intro,
+verses and gradual beat/backbeat-matched transfer; avoiding a skit must not
+reintroduce automatic short handoffs.
 
 `cue_seconds=0` is legal for an **iconic musical intro** (Disco Inferno
 count-in, On Fire “We on fire”). It is **not** legal for a spoken scene
@@ -52,11 +55,43 @@ past the dialogue). Do not invent timestamps without synced lyrics.
    (~3:24–3:44, “Can't talk with a gun in your mouth”). That is a
    skit, not a verse, and it is demoralizing — skip it, cut it, or
    start the outgoing blend **before** it in **every** mix that uses
-   this song. Enforcement is the library `tracks.dj_notes` row
-   (`skip_from_seconds=203.5; skip_to_seconds=224.5` onto “As we
-   proceed”), including Born Again / Greatest Hits copies of the same
-   cut. A plan overlay may add ride/cue notes; it must not drop those
-   skip tokens. A shorter ride that never reaches 3:24 is also legal.
+   this song. Historical requested bounds were 203.5–224.5 seconds onto
+   “As we proceed.” On September 5 Ernest estimated about 3:30–3:50 instead.
+   Review these competing bounds on the exact recording; equivalent releases
+   need their own verified source offsets. A plan overlay must not drop an
+   established library skip. Do not claim library enforcement merely because
+   a document says it exists. A complete next-song fade before the scene is
+   also legal.
+8. **Notes identify a region and treatment.** Record the exact recording,
+   approximate/reviewed source-file start/end, why it is a skit, and whether
+   to continue this song or leave it. Show whether the request is merely
+   recorded or implemented in built events. Vague notes are not certified
+   detector results.
+9. **Middle skit: seamless continuation when feasible.** Load the same
+   recording on the other deck at clean post-skit material, align beats and
+   backbeats, and blend gradually. Start early enough that the outgoing skit
+   never becomes audible. The incoming source position advances throughout
+   the overlap; if a specific phrase must land at completion, account for
+   overlap without pre-rolling into the skit. Reserve the second deck without
+   overwriting a live bed or upcoming track, then preload the next song on
+   the freed deck. This is an internal operation, not a duplicate playlist
+   entry. Do not substitute the different 50 Cent Who Shot Ya recording.
+10. **Ending skit or infeasible continuation: exit in advance.** Finish the
+    full next-song blend before the forbidden region starts. Merely starting
+    the fade at 3:30 with the scene still audible is insufficient. Reserve
+    source-time headroom for loading, incoming overlap, body and outgoing
+    fade; verify the deadline live without turning uncertainty into a cut.
+11. **Detect candidates; review uncertainty.** Use available audio and
+    transcript/section evidence to suggest skits. Spoken delivery, sparse
+    drums, unique lyrics or an automatic “verse” label are not sufficient
+    individually. Reviewed regions override contradictory labels. Never
+    auto-skip rap verses or iconic musical callouts because a classifier is
+    unsure.
+12. **Verify the chain.** Audition before/after windows, the complete skip or
+    early-exit blend, and the following transition. Confirm no forbidden
+    dialogue was audible, intended music survives, deck ownership/preload
+    works and the fade remains gradual. Keep planned, observed and listener
+    evidence separate.
 
 ## Must not
 
@@ -67,6 +102,10 @@ past the dialogue). Do not invent timestamps without synced lyrics.
 - Do not let a plan overlay drop library `skip_from_seconds` /
   `skip_to_seconds`. Those crate notes are the any-mix enforcement.
 - Do not start Mixxx to prove the cue.
+- Do not silently replace a requested two-deck smooth continuation with an
+  audible beatjump: that is a different technique.
+- Do not change a running mix, truncate audio files, or call a saved sentence
+  an implemented skip.
 
 ## Source
 
@@ -75,3 +114,7 @@ Ernest, 2026-08-28, after 50centgunitera mixed G.O.D. Pt. III from 0:00:
 > we DO NOT want to play any of the first beginning part where it's
 > just a skit. We almost never want to play any skits part. And we're
 > cutting off Prodigy's first verse in the middle.
+
+Expanded from [Ernest's September 5 request](../docs/intents/request__song_playback_notes_and_skit_avoidance.md).
+Implementation status is kept separately in
+[the evidence report](../docs/WHO_SHOT_YA_LISTENING_REVIEW_2026-09-05.md).
