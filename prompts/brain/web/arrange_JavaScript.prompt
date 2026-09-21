@@ -56,6 +56,13 @@ Implement and maintain `brain/web/arrange.js` as the Registers '3 . Arrange' as 
 
 % Product contract
 
+- Initial load and Refresh of a saved plan with enabled bunches must render
+  the ordered tracks, movement controls, and transition controls successfully.
+  The Add to bunch toolbar reflects the current page selection count, starts
+  disabled at zero, enables on selection, and resets on Refresh. It must not
+  depend on a legacy/global selection state or prevent the plan from rendering.
+- Every adjacent pair has an editable transition control, including pairs
+  inside a bunch; grouping tracks must not hide their transition editors.
 - Preserve the exact public interface declared in `<pdd-interface>`.
 - Treat the reviewed architecture description in this prompt as normative behavior.
 - Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.

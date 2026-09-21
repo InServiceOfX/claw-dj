@@ -116,7 +116,7 @@ function initialize() {
         </form>
         <button id="arrange-add-curate" type="button">Add from Curate selection</button>
         <button id="arrange-bunch" type="button" ${state.selected.size < 2 ? 'disabled' : ''}>Bunch these (${state.selected.size})</button>
-        ${renderAddToBunch(snapshot)}
+        ${renderAddToBunch(snapshot, state.selected.size)}
       </div>
       <div class="arrange-state ${snapshot.stale ? 'is-stale' : ''}">
         <span><strong>${snapshot.stale ? 'Stale' : 'Current'}</strong>${changed.length ? ` · changed: ${escapeHtml(changed.join(', '))}` : ''}</span>
@@ -413,7 +413,12 @@ function renderUnits(units, snapshot) {
   const notes = new Map((snapshot.notes || []).map(note => [note.track_id, note]));
   return units.map((unit, unitIndex) => {
     const startIndex = trackIndex;
-    const cards = unit.tracks.map(track => renderTrack(track, trackIndex++, notes.get(track.track_id), unit.bunch)).join('');
+    const cards = unit.tracks.map((track, memberIndex) => {
+      const card = renderTrack(track, trackIndex++, notes.get(track.track_id), unit.bunch);
+      const internalTransition = memberIndex < unit.tracks.length - 1
+        ? renderTransition(snapshot, trackIndex - 1) : '';
+      return card + internalTransition;
+    }).join('');
     const transition = trackIndex < snapshot.tracks.length ? renderTransition(snapshot, trackIndex - 1) : '';
     return `<div class="arrange-unit ${unit.bunch ? 'is-bunch' : ''}" role="listitem" tabindex="0" draggable="true" data-unit-key="${escapeHtml(unit.key)}" aria-label="${escapeHtml(unit.label)}, position ${unitIndex + 1} of ${units.length}">
       <div class="unit-head">
@@ -427,7 +432,7 @@ function renderUnits(units, snapshot) {
   }).join('');
 }
 
-function renderAddToBunch(snapshot) {
+function renderAddToBunch(snapshot, selectedCount) {
   // Adding and removing deliberately use DIFFERENT gestures. Driving both
   // from one checkbox set would require every existing member to render
   // pre-selected, so "deselect to remove" and "select to add" would fight
@@ -442,7 +447,7 @@ function renderAddToBunch(snapshot) {
     .join('');
   return `<span class="arrange-add-bunch">
     <select id="arrange-bunch-target" aria-label="Bunch to add the selected tracks to">${options}</select>
-    <button id="arrange-bunch-add" type="button" ${state.selected.size < 1 ? 'disabled' : ''}>Add to bunch (${state.selected.size})</button>
+    <button id="arrange-bunch-add" type="button" ${selectedCount < 1 ? 'disabled' : ''}>Add to bunch (${selectedCount})</button>
   </span>`;
 }
 

@@ -30,6 +30,86 @@ MODULES = (
 
 
 class PlanFrontendStaticTest(TestCase):
+    @skipUnless(shutil.which("node"), "node is not installed")
+    def test_arrange_refresh_with_saved_bunch_renders_track_controls(self):
+        """Execute page initialization, selection and Refresh without a browser."""
+        script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const elements = new Map();
+function element(id) {
+  if (!elements.has(id)) elements.set(id, {
+    innerHTML: '', textContent: '', listeners: {}, disabled: false,
+    addEventListener(event, callback) { this.listeners[event] = callback; },
+    querySelectorAll() { return []; },
+  });
+  return elements.get(id);
+}
+const checkbox = element('checkbox');
+checkbox.dataset = {selectTrack: 'c'};
+element('arrange-root').querySelectorAll = selector =>
+  selector === 'input[data-select-track]' ? [checkbox] : [];
+const snapshot = {
+  tracks: ['a', 'b', 'c'].map(track_id => ({track_id, title: `Song ${track_id}`})),
+  bunches: [{bunch_id: 'run', label: 'Proven run', enabled: true,
+    span: {start: 0, end: 1}, track_ids: ['a', 'b']}],
+  notes: [], segments: [], rev: 'revision-123', revs: {}, stale: false,
+  artifact: {version: 1},
+};
+let reads = 0;
+const context = vm.createContext({
+  document: {getElementById: element, addEventListener() {}},
+  client: {async refreshPlan(slug) {
+    assert.equal(slug, 'saved-plan'); reads++; return snapshot;
+  }},
+  mountPlanPicker: () => ({
+    refresh: async () => ({slug: 'saved-plan'}), setSnapshotState() {},
+  }),
+  createTransitionEditor: () => ({close() {}}),
+});
+// Substitute dependencies; run the entire unchanged page body and its handlers.
+const source = fs.readFileSync(process.argv[1], 'utf8').replace(/^import .*;\n/gm, '');
+vm.runInContext(source, context);
+setImmediate(async () => {
+  const root = element('arrange-root');
+  assert.match(root.innerHTML, /Song a/);
+  assert.match(root.innerHTML, /Song b/);
+  assert.match(root.innerHTML, /Song c/);
+  assert.match(root.innerHTML, /Move up/);
+  assert.match(root.innerHTML, /Move down/);
+  assert.match(root.innerHTML, /Edit transition/);
+  assert.equal((root.innerHTML.match(/data-transition-index=/g) || []).length, 2,
+    'Transitions inside a saved bunch must remain editable');
+  assert.match(root.innerHTML, /id="arrange-bunch-add"[^>]*disabled/);
+  assert.match(root.innerHTML, /Add to bunch \(0\)/);
+  assert.equal(reads, 1);
+  checkbox.checked = true;
+  checkbox.listeners.change();
+  assert.equal(element('arrange-bunch-add').disabled, false);
+  assert.equal(element('arrange-bunch-add').textContent, 'Add to bunch (1)');
+  checkbox.checked = false;
+  checkbox.listeners.change();
+  assert.equal(element('arrange-bunch-add').disabled, true);
+  checkbox.checked = true;
+  checkbox.listeners.change();
+  await element('arrange-refresh').listeners.click();
+  assert.equal(reads, 2);
+  assert.match(root.innerHTML, /Add to bunch \(0\)/);
+  assert.match(root.innerHTML, /id="arrange-bunch-add"[^>]*disabled/);
+  assert.equal(element('arrange-live').textContent, 'Refreshed 3 tracks from disk.');
+  snapshot.bunches = [];
+  await element('arrange-refresh').listeners.click();
+  assert.match(root.innerHTML, /Song c/);
+  assert.doesNotMatch(root.innerHTML, /id="arrange-bunch-add"/);
+});
+"""
+        result = subprocess.run(
+            [shutil.which("node"), "-e", script, str(WEB / "arrange.js")],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_playlist_integrates_picker_above_workflow_and_arrange_hash_tab(self):
         html = (WEB / "playlist.html").read_text()
         self.assertLess(html.index('id="plan-picker"'), html.index('class="nav"'))
