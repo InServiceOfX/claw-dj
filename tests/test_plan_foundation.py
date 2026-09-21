@@ -182,6 +182,29 @@ class PlanFoundationTest(TestCase):
                 db.execute("SELECT dj_notes FROM tracks").fetchone()[0],
             )
 
+    def test_mandatory_library_skip_cannot_be_overridden_by_plan_notes(self):
+        from brain.build_mix_plan import track_directives
+
+        track_id = "/music/club-mix.mp3"
+        global_note = "mandatory_skip; skip_from_seconds=197; skip_to_seconds=223.7"
+        self._track(track_id, global_note)
+        for index, overlay in enumerate((None, "ride_beats=448", "skip_from_seconds=202; skip_to_seconds=210; ride_beats=448")):
+            with self.subTest(overlay=overlay):
+                meta = self._plan(f"Mandatory skip {index}")
+                path = plan_paths.resolve(meta.slug).notes
+                if overlay is not None:
+                    plan_notes.set_override(meta.slug, track_id, overlay, Author.HUMAN, plan_revision.file_rev(path))
+                before = path.read_bytes()
+                note = plan_notes.get_effective(meta.slug, [track_id])[0].note
+                directives = track_directives({"dj_notes": note})
+                self.assertEqual(directives["skip_from_seconds"], 197)
+                self.assertEqual(directives["skip_to_seconds"], 223.7)
+                self.assertEqual(path.read_bytes(), before)
+                if overlay is not None:
+                    self.assertEqual(directives["ride_beats"], 448)
+        with library_index.connect(self.db) as db:
+            self.assertEqual(db.execute("SELECT dj_notes FROM tracks").fetchone()[0], global_note)
+
     def test_10_transition_overrides_are_pair_keyed_sparse_and_reactivate(self):
         meta = self._plan()
         path = plan_paths.resolve(meta.slug).transitions

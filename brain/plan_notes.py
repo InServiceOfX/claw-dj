@@ -24,7 +24,7 @@ _LIBRARY_SKIP_TOKEN = re.compile(
 def carry_library_skips(global_note: str, plan_note: str) -> str:
     """Keep library skip_from/to on the effective note when the overlay omitted them.
 
-    Explicit skip tokens in the plan overlay still win (last-match parser).
+    Explicit plan tokens win unless the library marks the skip mandatory.
     """
     global_note = (global_note or "").strip()
     plan_note = (plan_note or "").strip()
@@ -32,18 +32,20 @@ def carry_library_skips(global_note: str, plan_note: str) -> str:
         return global_note
     if not global_note:
         return plan_note
+    mandatory = bool(re.search(r"\bmandatory_skip\b", global_note, re.I))
     extras: list[str] = []
-    for token in _LIBRARY_SKIP_TOKEN.findall(global_note):
+    for token in dict.fromkeys(_LIBRARY_SKIP_TOKEN.findall(global_note)):
         key = token.split("=", 1)[0].strip()
-        if not re.search(rf"\b{re.escape(key)}\s*=", plan_note, re.I):
-            match = re.search(
+        if mandatory or not re.search(rf"\b{re.escape(key)}\s*=", plan_note, re.I):
+            matches = re.findall(
                 rf"\b{re.escape(key)}\s*=\s*\d+(?:\.\d+)?", global_note, re.I
             )
-            if match:
-                extras.append(match.group(0))
+            if matches:
+                extras.append(matches[-1])
     if not extras:
         return plan_note
-    return f"{plan_note}; {'; '.join(extras)}"
+    label = "Mandatory library skip: " if mandatory else ""
+    return f"{plan_note}; {label}{'; '.join(extras)}"
 
 
 def _overrides(slug) -> list[dict]:
