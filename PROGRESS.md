@@ -1,12 +1,204 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Native source performance replaces master playback (2026-09-21)
+
+Ernest rejected rendered-master playback and prepared-track live substitutes:
+DJ effects must occur while original music plays. `mix_plan.json.performance`
+now holds the shared musical decisions; 52 compiled events execute nine original
+sources plus instrumental covers through Rust + Mixxx rate/EQ/loops/faders.
+Same run_mix.sh command. Offline export is optional and cannot rewrite live
+execution. See docs/SHARED_PERFORMANCE.md (SHARED_PERFORMANCE.md from docs/).
+This supersedes the rendered-master/current-audio instructions below.
+
+Astra duration 22:41.995 at 91.68 BPM. Ja Rule enters at mix 7:14.177 from source
+0:10; gradual incoming fade reaches full level around source 0:50. DMX's approved
+soft-outro fade remains source 134.212–139.185s. The 50 Cent source ends 91.95s,
+Jadakiss begins 32s, and album/Ja Rule/Club Mix exclusions remain enforced.
+Global Ja Rule/Jadakiss notes now also encode mandatory_start_seconds=10/32.
+The supporting instrumental covers DMX and 50 Cent and fades into Ja Rule.
+
+Verified: synthetic three-deck native playback including loop and source skip;
+39-second muted real-source four-deck run (instrumental, DMX, 50 Cent, Ja Rule),
+maximum observed source-position error 66.3 ms; all decks stopped and master
+volume restored. Numerical source alignment is NOT a human listening verdict.
+A complete 22:42 live listening pass remains pending. No new Mixxx audio-engine
+feature or live vocal extraction was necessary.
+
+Reusable modules: shared/performance.py; brain/performance_cli.py and
+brain/audio_patterns.py; hands/performance_validation.py, performance_runner.py,
+offline_mix.py; core-rust/clawdj/src/performance.rs. Rust is the timed executor;
+Python validates/setup/restores; Mixxx owns live DSP. Generic Build refuses to
+overwrite authored performances. Source hashes and allowed-region loops guard
+original playback; no required prepared audio. Optional export verified on
+synthetic sources without changing its live plan; temporary files removed.
+
+PDD: accepted intent/story and matching builder prompt updated. Read-only intent
+planning was run; no remote/paid architecture generation or sync is claimed.
+Ernest authorized committing the relevant implementation, tests, prompts and
+documentation locally on the feature branch. No push requested.
+
+Cleanup: removed 424,588,521 bytes of obsolete WAV/MP3, recipe/package scripts
+and generated reports. The external current directory retains README.md and
+compact analysis-evidence.json only; no current listening render is required.
+Ctrl-C was exercised during muted playback: Rust exited, all four decks stopped,
+and master volume restored. Rust formatting, warning-free Clippy and 27 tests
+passed; Python runner/plan/constraint/export checks passed. No full-set listening
+acceptance is claimed.
+
+
+
 > For Claude Code, Codex, Grok build, or any other AI agent continuing this
 > work. Deep context lives in `docs/HANDOFF.md` (read it first); control
 > reference in `docs/MIXXX_CONTROL_SURFACE.md`. Keep BOTH this checklist and
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
-## Resume summary (2026-09-20)
+## Resume summary (2026-09-21)
+
+- **NEW JA RULE ENTRY NOTE / DISCUSSION PENDING:** skip source 0:00–0:10,
+  including blend-in/pre-roll; verse starts around 0:50, so 0:10–0:50 is an
+  available long incoming-blend window. Saved to the exact recording's global
+  DJ note and Astra override (`cue_seconds=10; trust_cue_seconds`), preserving
+  the mandatory 209–227s middle skip. The existing 23:13 WAV still starts this
+  source at 0:00 and has NOT been rerendered. Plan is now **stale due to notes**;
+  do not treat the prior master as satisfying this new instruction.
+  Ernest asks to discuss why this artifact only plays a rendered WAV instead
+  of performing live Mixxx transitions. Explain the offline workflow/tradeoffs
+  before selecting the next execution approach. No new audio or playback in
+  this discussion turn. Historical freshness claims below predate this note.
+- **LATEST ASTRA CHANGE — DMX outro:** Ernest observes that DMX — Who Shot Ya
+  (Freestyle), The Early Years (Bootleg), has essentially finished its
+  interesting section by source **2:12**. This is a **soft blend-out suggestion**,
+  not a mandatory cutoff; later audio is allowed. Saved in the exact recording's
+  global DJ note, current plan override, and DJ style guide. The note parser
+  confirms no mandatory end was created.
+- Current render uses an eight-beat DMX → 50 Cent fade starting at source
+  **2:14.212**, finishing **2:19.185**; listen at mix **6:05.326–6:10.562**.
+  Entries from 50 Cent onward move earlier by exactly **32 beats / 20.942s**,
+  preserving the shared pattern and instrumental-loop phase. All other source
+  spans, full-body instrumental support, and mandatory exclusions remain.
+  New duration **23:13.409**. Later entries: Ja Rule **7:35.589**, Jim Jones
+  **11:24.667**, K-Dot **14:10.693**, Jadakiss **16:51.150**, Club Mix **19:22.416**.
+  Both files fully decoded, -16.12 LUFS, WAV/MP3 true peaks -1.98/-1.95 dBTP.
+  Source hashes unchanged; layer PCM reconstruction exact; recipe/master checks
+  pass and plan is fresh. Replaced the same current exports and deleted all
+  temporary render audio. The older timings below are historical.
+
+- **ONE CURRENT LISTENING COPY:** per Ernest's explicit cleanup request, the
+  sole Astra package is now
+  `~/Music/claw-dj/exports/notorious-big-who-shot-ya-variations-gpt-6-astra/current/`.
+  Listen to `index.html` or `Who-Shot-Ya-Astra.mp3`; the WAV is the same mix for
+  master playback. Deleted both obsolete editions and current temporary audio/
+  analysis caches: **3,208,591,058 bytes (~2.99 GiB)** removed; ~411 MiB remains.
+  Audio hashes are unchanged, playback/recipe checks pass, and the named plan
+  is fresh. Future edits overwrite this plan and export in place: no retained
+  version packages or media backups. Older output paths below are historical
+  and no longer exist. Original songs and current reconstruction inputs remain.
+- **CURRENT ASTRA COMPARISON ENTRY:** renewed nine-version mix brief completed;
+  user explicitly adds “follow each track's relevant DJ notes.” Latest output:
+  `~/Music/claw-dj/exports/notorious-big-who-shot-ya-variations-gpt-6-astra/current/`.
+  This supersedes the earlier `astra-pass-1` listening copy. Nine sources in
+  supplied order; **23:34.351 at 91.68 BPM**, offline render/master playback.
+- **DJ-note corrections applied:** DMX starts one shared eight-beat pattern
+  earlier, at3:44.027, so there is no exposed instrumental ride. Jadakiss keeps
+  source32s through the full decoded ending at183.82795s. The Club Mix still
+  starts19:43.359; all source exclusions and matched backbeat phase remain.
+  Full-body instrumental support under DMX and 50 Cent retained; 50 Cent source
+  ends91.95s. Key listening points:3:44,6:26,7:57,19:43.
+- **Final validation:** both exports fully decoded, -16.12 LUFS; true peaks
+  -1.98dBTP WAV/-1.97dBTP MP3. All nine effective notes reviewed, mandatory
+  regions excluded, full-layer reconstruction exact, sources unchanged, and
+  early/late pattern checks beat the one-beat-wrong control in every window.
+  `dj-notes-compliance.json` records how old live ride counters translate to
+  this source-span render. Active Astra artifact is fresh and hashes validate.
+  No new engine change or playback was needed. Human listening feedback pending;
+  request mix timestamp plus backbeat/handoff/balance issue for the next pass.
+
+
+- **Full-mix body support researched and specified:** Ernest wants the VLS
+  instrumental underneath the entire 50 Cent/Tony Yayo body, even though the
+  foreground is a full mix. New independent story:
+  `user_stories/story__when_i_highlight_vocals_in_a_full_mix_i_keep_an_instrumental_underneath.md`.
+  Research/design: `docs/FULL_MIX_INSTRUMENTAL_LAYERING.md` (DJ EQ-blend sources,
+  official Mixxx controls, phase/level checks, and two-/three-deck workflows).
+  Intent recorded in the build prompt, style guide, AGENTS, global 50 Cent note,
+  and Astra note; existing acapella behavior remains separate.
+- **Existing audio confirmed, not rerendered:** the VLS bed covers all of
+  50 Cent's source 0–91.95s / mix 391.504–483.863s. Independent reconstruction of
+  mix 405–475s exactly matches the premaster. Audit script/report saved beside
+  the external exports. The current Astra artifact now records that existing
+  render layer and is fresh; master/recipe hashes are unchanged. This proves
+  coverage, not listening preference. Generic live support remains pending.
+- **Live design gaps:** persistent support plus overlapping foregrounds needs
+  three decks; current allocation/reset/stop paths mostly use decks 1/2. The
+  acapella branch lacks independent full-mix EQ, continuous drift monitoring,
+  and the ordinary branch's snare_align handling. Local fork/API inspection
+  also found raw built-in EQ unity is 1.0 while runner reset/restore uses 0.5
+  (normalized knob center). Correct/test calibration before the new live
+  implementation. Read-only checks found all four decks stopped; no controls
+  or audio changed. Read-only PDD intent planning completed; no model-backed
+  synchronization or new general runtime feature is claimed.
+
+
+- **New mandatory global recording cutoff:** 50 Cent — WHO SHOT YA, 24 Shots
+  (2003), track 06: `mandatory_end_seconds=92`. Exclude all source audio from
+  1:32 onward, including underneath another instrumental; complete the fade
+  before that point. Abrupt change heard by 1:33, possible bad splice. Applies
+  to ALL future mixes/harnesses, this exact recording only. Saved in global
+  library notes, both matching named-plan notes, AGENTS.md, the PDD note/build
+  prompts, and `docs/SOURCE_AUDIO_BOUNDARIES.md` for cross-setup continuity.
+- **Astra corrected after listener feedback:** now **23:34.351**, 91.68 BPM.
+  50 Cent input ends at source **91.95s**, trimmed before resampling. Ja Rule
+  enters at mix 8:01.767; 50 Cent fade ends 8:03.863. All later entries shift
+  by exactly 24 beats, preserving shared-pattern/backbeat alignment. Updated
+  MP3/WAV/player/chapters/recipe in the same external export directory below.
+  Superseded files are labeled audit backups, not listening copies.
+- **Cutoff enforcement:** note overlays cannot extend a global hard end;
+  planner budgets complete fades, preserving bar position. Runner rechecks
+  current global notes before connecting, uses physically bounded lossless
+  copies for direct sources, and rejects noncompliant rendered recipes or
+  mismatched recipe/master hashes. Source files remain unchanged. The idle
+  local editor on 8787 was refreshed so future GUI runs load these checks.
+- **Validation:** 137 focused tests pass, including six new cutoff regressions;
+  WAV/MP3 fully decoded, both -16.13 LUFS, true peaks -1.99/-1.94 dBTP. Astra
+  artifact is current and dry-run passes. Broad suite: 335 tests, three skips,
+  one unrelated collection schema-cache migration failure reproduced on
+  unmodified HEAD 86c0f48. No new live Mixxx playback was started. The original
+  comparison plan is correctly stale after its mandatory note update and must
+  be rebuilt; independent renderers must apply the source rule themselves.
+
+
+- **Astra listening pass (corrected):** 23:34 at 91.68 BPM, current nine-track
+  order preserved (Jadakiss before the closing Club Mix). Full MP3, 24-bit WAV,
+  handoff-jump player, editable performance plan, measurements, and production
+  scripts live outside the checkout, under
+  `~/Music/claw-dj/exports/notorious-big-who-shot-ya-variations-gpt-6-astra/astra-pass-1/`.
+- **Explicitly an offline rendered mix.** Astra `mix_plan.json` now uses
+  `execution_mode=rendered_master_playback`: five supported runner events play
+  the finished WAV in Mixxx. It is current/not stale and dry-run verified;
+  it is not a claim of nine live deck transitions. Generic Build does not
+  reproduce this edition. Read `README.md` in that local export directory before changes.
+- Audio-derived drum-pattern matching, fixed vinyl-rate corrections, restrained
+  handoffs, and a clean instrumental loop under DMX/50 Cent. All requested
+  exclusions are applied to the actual source samples, including Jadakiss's
+  no-pre-roll-before-32s rule. The album's 203.5→224.5s skip is also retained.
+- Both outputs fully decoded; approximately -16.14 LUFS, WAV -1.99 dBTP / MP3
+  -1.94 dBTP. Source/exclusion/order/phase checks passed; all nine matched drum
+  patterns outperform a deliberately wrong one-beat alignment. 53 existing
+  runner tests passed. **Human listening acceptance is still pending.**
+- “Backbeat matching” is now the primary term in the story, matching prompt,
+  and AGENTS.md; `snare_align` / `snare_parity` remain compatible identifiers.
+  No application engine code changed or model-backed PDD regeneration ran.
+- Same feature branch; changes uncommitted. Other models' plans and global
+  library metadata were not changed. Next: Ernest's first listen, then a
+  targeted second pass based on timestamps if needed.
+- **Output separation correction:** moved the 1.5 GB production package and
+  mix-specific write-up out of the repo. Updated playback/recipe references;
+  WAV/MP3 hashes unchanged and plan still current. `git ls-files -- brain/data`
+  is empty; `.gitignore` excludes it. Shared code remains portable; changing
+  the app's currently repo-relative plan-state root is separate future work.
+
+## Earlier resume summary (2026-09-20, before Astra production pass)
 
 - Branch: `fix/skip-ride-end-of-track`. Session fixes committed as `a93e4ad`
   (playback), `629d08b` (Arrange), `2c2d721` (mandatory skips), and `f282775`

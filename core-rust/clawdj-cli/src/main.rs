@@ -24,6 +24,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Execute validated original-source timeline JSON from stdin (normally via run_mix.sh).
+    Perform {
+        #[arg(long, default_value_t = clawdj::control_api::DEFAULT_PORT)]
+        port: u16,
+    },
     Setup,
     Load {
         deck: Deck,
@@ -196,6 +201,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Perform { port } => {
+            let performance = serde_json::from_reader(std::io::stdin())
+                .context("perform expects compiled native timeline JSON on stdin")?;
+            clawdj::performance::run(port, performance)
+        }
         Commands::Setup => run_setup(),
         Commands::Load { deck, track_id } => {
             run_operation(clawdj::Operation::Load { deck, track_id })

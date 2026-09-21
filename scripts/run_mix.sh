@@ -43,11 +43,17 @@ Options (passed through to hands.run_mix_plan):
   --dry-run           do not talk to Mixxx
   --max-events N      execute only the first N events
   --record            start/stop Mixxx recorder around the set
+  --source-map PATH   source identity -> local original audio path (performance plans)
   -h, --help          this help
 
 Build a plan first if none exists:
   • Playlist editor → Create the mix → Build mix plan
   • or: uv run python -m brain.build_mix_plan --help
+
+Explicit performance plans load original songs and execute live rate/EQ/loops/
+fades using Rust + Mixxx; they do not require rendered audio. After editing the
+performance, compile it with: uv run python -m brain.performance_cli --plan PATH
+Optional export: uv run python -m hands.offline_mix --plan PATH --out EXTERNAL_DIR
 EOF
 }
 
@@ -77,7 +83,7 @@ while [ "$#" -gt 0 ]; do
       PLAN="${1#--plan=}"
       shift
       ;;
-    --port|--max-events)
+    --port|--max-events|--source-map)
       if [ "$#" -lt 2 ]; then
         echo "run_mix.sh: $1 requires a value" >&2
         exit 2
@@ -85,7 +91,7 @@ while [ "$#" -gt 0 ]; do
       EXTRA_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --port=*|--max-events=*)
+    --port=*|--max-events=*|--source-map=*)
       EXTRA_ARGS+=("$1")
       shift
       ;;
@@ -145,6 +151,7 @@ profile = s.get('profile') or {}
 dj_format = s.get('dj_format') or {}
 print(f\"  {s['track_count']} tracks, {s['event_count']} events, {s['segment_count']} transitions\")
 print(f\"  profile: {profile.get('name')}   dj_format: {dj_format.get('name', 'none')}\")
+print('  execution: ' + plan.get('execution_mode', 'legacy_live_events'))
 if s.get('format_compliance'):
     print(f\"  format compliance: {s['format_compliance']}\")
 # Warn if plan still points at an unmounted volume (common after collection switch).

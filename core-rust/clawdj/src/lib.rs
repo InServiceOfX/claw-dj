@@ -4,6 +4,7 @@ pub mod control_api;
 pub mod gesture;
 pub mod live;
 pub mod midi;
+pub mod performance;
 pub mod queue;
 pub mod stems;
 pub mod verse;

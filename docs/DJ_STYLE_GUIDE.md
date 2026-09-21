@@ -88,6 +88,30 @@ grammars with hard, machine-enforced rules live separately under
   album version from 0:00, then the VLS instrumental as a helper, not
   a 3-minute chapter. Story:
   `user_stories/story__when_i_mix_the_same_beat_or_sample_lineage_i_use_the_instrumental_as_a_short_bridge.md`.
+- **Support beneath an entire vocal full mix is a separate use of a bed.**
+  Keep the featured record's vocals in front while a compatible instrumental
+  strengthens the backing throughout the selected body. A same-song bed is
+  appropriate for the Who Shot Ya / 50 Cent repair. Preserve backbeats and the
+  source cutoff; balance overlapping bass and mids. The short exposed-bridge
+  limit above does not limit this simultaneous support. This also does not
+  authorize a disruptive new-song transition midway through a verse. See
+  `user_stories/story__when_i_highlight_vocals_in_a_full_mix_i_keep_an_instrumental_underneath.md`
+  and `docs/FULL_MIX_INSTRUMENTAL_LAYERING.md`.
+- **Ja Rule — Who Shot Ya, Shady Records V.S. The World (Vol. 3): entry
+  instruction (Ernest, 2026-09-21).** Skip source 0:00–0:10 entirely, including
+  incoming blends and pre-roll. Start at 0:10 or later. His verse starts around
+  0:50, leaving source 0:10–0:50 available for a long, gradual incoming blend;
+  this is an opportunity, not an exact 40-second overlap requirement. Preserve
+  the separate mandatory middle skip at 3:29–3:47. Global and plan notes use
+  `cue_seconds=10; trust_cue_seconds`; a saved note alone does not update an
+  already rendered master or establish runtime source-start enforcement.
+- **DMX — Who Shot Ya (Freestyle), The Early Years (Bootleg): soft outro
+  observation (Ernest, 2026-09-21).** By source **2:12 (132 seconds)**, the
+  song's interesting section is essentially finished. One can begin blending
+  into the next track around there, slowly if useful. This is advisory musical
+  judgment, not a mandatory cutoff or excluded region; later audio remains
+  allowed. Keep this observation in that recording's global DJ notes and in
+  applicable plan notes. Choose the exact handoff to preserve the backbeat.
 - **Never blend mid-verse.** Respect the start and stop of a rap or sung
   verse. `phrase_body` hunts energy past ~30s, which in hip-hop is usually
   *inside* the first verse (On Fire 41.35 “Running your bitch…”, Gunz

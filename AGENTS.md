@@ -42,21 +42,73 @@ The project contains multiple generations of similar code. Do not assume the new
 
 Trace a symbol and its usages before changing behavior. Validate DJ changes with dry runs, tests, transition previews, and live Mixxx only when appropriate.
 
+Before composing or revising a mix, read every included track's effective DJ
+notes (global library notes plus plan overrides). Honor all relevant cue,
+exclusion, source-end, layering, order, and performance instructions. Mandatory
+recording exclusions take precedence over a general mix brief or older ride
+counts. Keep these notes in the brief supplied to every comparison harness.
+
 For offline multi-plan edits, use `python -m brain.plan_cli`. `note` is
 track-scoped; transition notes and effects use `transition get|set|clear` with
 an explicit `--author`. `mark` writes `wip|ready|archived`; `status` only reads
 artifact staleness. Mutations require `--base-rev` from `show --json` or an
 intentional `--force`.
 
-If a live blend is "on beat but off the snare / off by one count," put
+Use **backbeat matching** as the primary musical term. Accept "match the
+snare" and "beat parity" as user synonyms; preserve existing `snare_align`
+and `snare_parity` machine identifiers.
+If a live blend is "on beat but off the backbeat / off by one count," put
 `snare_align` on the incoming track. The runner jumps one beat after
 Mixxx beatsync. Do not slide the incoming cue one beat later, and do not
 treat outgoing `ride_beats` ±1 as the snare lock. Story:
 `user_stories/story__when_i_blend_i_match_the_snare_not_just_the_beat.md`.
 
+## Continuous instrumental support beneath a full mix
+
+For sustained reinforcement of a vocal **full mix**, read
+`user_stories/story__when_i_highlight_vocals_in_a_full_mix_i_keep_an_instrumental_underneath.md`
+and `docs/FULL_MIX_INSTRUMENTAL_LAYERING.md`. Keep the instrumental under the
+whole chosen body; this is distinct from dry-acapella layering and a short
+exposed instrumental bridge. Preserve full-mix identity and backbeat matching.
+The matching instrumental is appropriate for the 50 Cent / Who Shot Ya repair.
+The current Astra render already has this support; the general live feature
+still needs dedicated deck/EQ/monitoring work. Do not label it implemented merely
+by adding an unrecognized directive or reusing the acapella branch.
+
+## Mandatory recording boundary — every harness and future mix
+
+**50 Cent — WHO SHOT YA, compilation `24 Shots` (2003), track 06:**
+exclude **all source audio at or after 1:32 (92.000 seconds)**. Ernest hears
+an abrupt instrumental change by 1:33, possibly a bad splice. Finish the
+outgoing fade before 1:32; no blend, instrumental overlay, outro, trusted ride,
+or `full_track` instruction may expose that tail. This is source time before
+tempo changes. Identify this exact recording, not every song with this title.
+Store `mandatory_end_seconds=92` in its global library DJ notes and preserve
+it when importing the collection on another machine. Existing rendered audio
+must be cut again; adding a note cannot change an already exported waveform.
+The runner checks current global boundaries and uses bounded audio copies
+for direct source playback. Rendered masters require compliant source recipes
+and matching hashes. Details: `docs/SOURCE_AUDIO_BOUNDARIES.md`.
+
 ## Data and secrets
 
+- Keep generated audio/video, render intermediates, analysis exports, and
+  mix-specific production packages **outside the source checkout**, in an
+  explicitly chosen local output directory. On Ernest's Mac the current export
+  location is `~/Music/claw-dj/exports/`; do not hardcode that machine-specific
+  location into shared application code. Reusable code, prompts, schemas, tests,
+  and synthetic fixtures belong in Git; personal outputs do not.
 - `brain/data/` is intentionally ignored because it contains derived personal-library state.
+- No files under `brain/data/` are currently Git-tracked. Plan state remains
+  there under the current resolver, but human notes and approved plans are
+  durable user data, not disposable build output; preserve the current state.
+- Keep **one current export per mix**, with stable filenames and one clearly
+  identified listening page. Update the existing named plan in place. Ernest
+  explicitly requests no retained output versions: after successful verification,
+  delete superseded renders, per-pass packages, temporary audio, and analysis
+  caches instead of archiving them. Keep original songs, current deliverables,
+  current plan/notes, and small reconstruction scripts and evidence. WAV and MP3
+  may represent the same current mix; do not present them as separate versions.
 - Music, recordings, generated videos, OAuth credentials, API tokens, browser cookies, Mixxx databases, and Hermes state databases must not be committed.
 - Regenerate or transfer library state using `docs/SETUP_NEW_MACHINE.md`.
 - Reauthorize model providers and external services separately on each machine.
@@ -116,3 +168,13 @@ A task is complete only when:
 - no unrelated user work was overwritten;
 - `PROGRESS.md` and `docs/HANDOFF.md` are updated when project state or operational knowledge changed;
 - the final report names exact files, commands, and any remaining blocker without invented results.
+
+## Live source performances
+
+Ernest explicitly rejects replacing a DJ plan with finished-master playback or
+requiring prepared audio copies for live effects. Authored `performance` plans
+load original recordings and use Rust-timed native Mixxx rate/EQ/loops/faders.
+Offline exports are optional consumers of the same musical decisions and MUST
+NOT overwrite live events or originals. Preserve the explicit performance when
+working on generic builders. See docs/SHARED_PERFORMANCE.md. Keep backbeat
+alignment and every source exclusion through loops, skips, fades and pre-roll.

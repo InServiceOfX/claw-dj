@@ -33,6 +33,11 @@ def mix_plan_path(slug: str):
 
 def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **opts) -> dict:
     paths = plan_paths.resolve(slug)
+    if paths.mix_plan.exists() and json.loads(paths.mix_plan.read_text()).get("performance"):
+        raise ValueError(
+            "This plan has an explicit musical performance. Generic Build cannot replace it. "
+            "Edit its performance and compile with: python -m brain.performance_cli --plan " + slug
+        )
     rows = json.loads(paths.playlist.read_text())
     track_ids = [row["track_id"] for row in rows]
     if len(track_ids) != len(set(track_ids)):

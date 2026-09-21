@@ -34,6 +34,11 @@ def carry_library_skips(global_note: str, plan_note: str) -> str:
         return plan_note
     mandatory = bool(re.search(r"\bmandatory_skip\b", global_note, re.I))
     extras: list[str] = []
+    # A hard end is always mandatory, including over a conflicting overlay.
+    # Parsers use the last occurrence; reads must not mutate either note.
+    ends = re.findall(r"\bmandatory_end_seconds\s*=\s*\d+(?:\.\d+)?", global_note, re.I)
+    if ends:
+        extras.append(ends[-1])
     for token in dict.fromkeys(_LIBRARY_SKIP_TOKEN.findall(global_note)):
         key = token.split("=", 1)[0].strip()
         if mandatory or not re.search(rf"\b{re.escape(key)}\s*=", plan_note, re.I):

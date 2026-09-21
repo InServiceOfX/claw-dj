@@ -1323,8 +1323,21 @@ def stop_recording(mixxx: MixxxControl, *, timeout_s: float = 5.0) -> None:
 
 
 def run_plan(
-    plan: dict, *, port: int, dry_run: bool, max_events: int | None, record: bool = False
+    plan: dict, *, port: int, dry_run: bool, max_events: int | None, record: bool = False,
+    source_map: dict | None = None,
 ) -> None:
+    if plan.get("execution_mode") == "live_source_tracks":
+        from hands.performance_runner import run_performance
+
+        run_performance(plan, port=port, dry_run=dry_run, max_events=max_events, record=record, source_map=source_map)
+        return
+    if plan.get('performance'):
+        raise ValueError('Explicit performances require execution_mode=live_source_tracks; compile the plan again')
+    if source_map is not None:
+        raise ValueError('--source-map requires an explicit source performance plan')
+    from hands.source_cutoffs import prepare_plan
+
+    plan = prepare_plan(plan, dry_run=dry_run)
     events = plan["events"]
     if max_events:
         events = events[:max_events]
@@ -1629,6 +1642,7 @@ def main() -> None:
         help="explicit override; otherwise use plan metadata, then validated discovery",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--source-map", help="JSON mapping source identities to original audio paths on this machine")
     parser.add_argument("--max-events", type=int, default=None, help="execute only the first N events")
     parser.add_argument(
         "--record", action="store_true",
@@ -1651,7 +1665,10 @@ def main() -> None:
             explicit=args.port,
         )
     print(f"using plan artifact: {plan_path}")
-    run_plan(plan, port=port, dry_run=args.dry_run, max_events=args.max_events, record=args.record)
+    options = {}
+    if args.source_map:
+        options['source_map'] = json.loads(Path(args.source_map).read_text())
+    run_plan(plan, port=port, dry_run=args.dry_run, max_events=args.max_events, record=args.record, **options)
 
 
 if __name__ == "__main__":

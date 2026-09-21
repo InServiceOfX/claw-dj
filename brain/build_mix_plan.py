@@ -276,6 +276,7 @@ def track_directives(track: dict) -> dict:
         # Skip a middle region (e.g. a guest verse) while the deck keeps playing.
         "skip_from_seconds": number("skip_from_seconds"),
         "skip_to_seconds": number("skip_to_seconds"),
+        "mandatory_end_seconds": number("mandatory_end_seconds"),
     }
 
 
@@ -484,7 +485,16 @@ def build_plan(
             f"DJ format {dj_format.name!r} names unsupported planner "
             f"{dj_format.planner!r}"
         )
-    selected = tracks[:count]
+    selected = [dict(track) for track in tracks[:count]]
+    for track in selected:
+        end = track_directives(track)["mandatory_end_seconds"]
+        if end is not None:
+            if end <= 0:
+                raise ValueError("mandatory_end_seconds must be positive")
+            track["duration_seconds"] = min(float(track.get("duration_seconds") or end), end)
+            cue = track_directives(track)["cue_seconds"]
+            if cue is not None and cue >= end:
+                raise ValueError(f"{track['track_id']}: cue reaches mandatory_end_seconds={end}")
     if len(selected) < 2:
         raise SystemExit("need at least 2 tracks in the filtered playlist")
 
@@ -2057,6 +2067,24 @@ def build_plan(
                     f"{incoming['artist']} — {incoming['title']}: snare-align after sync"
                 )
 
+        # A library source boundary outranks full_track/trusted ride counts.
+        # Keep the planned backbeat/bar position by removing whole bars only.
+        end = directive["mandatory_end_seconds"]
+        if end is not None:
+            import math
+            cue = float(cue_fields(outgoing, 0.1, index).get("cue_seconds") or 0.0)
+            skipped = max(0.0, float(directive["skip_to_seconds"] or 0) -
+                          max(cue, float(directive["skip_from_seconds"] or 0)))
+            native_bpm = float(outgoing.get("bpm") or 0)
+            if native_bpm <= 0:
+                raise ValueError("mandatory_end_seconds needs source BPM for transition planning")
+            budget = math.floor((end - cue - skipped) * native_bpm / 60) - int(previous_fade_beats) - int(tech["transition_beats"]) - 4
+            bounded = ride_beats - max(0, math.ceil((ride_beats - budget) / 4)) * 4
+            if bounded < 0 or (bounded != ride_beats and tech.get("format_compliance") == "expert_recipe"):
+                raise ValueError(f"{outgoing['track_id']}: transition conflicts with mandatory_end_seconds={end}")
+            ride_beats = bounded
+            play_s = ride_beats * 60 / native_bpm
+
         # Play body of outgoing track
         body_event = {
                 "op": "play_body",
@@ -2228,6 +2256,15 @@ def build_plan(
         finale["beats"] = max(16, phrase_beats - previous_fade_beats)
     events.append(finale)
     events.append({"op": "stop_all"})
+
+    # Check resolved cues too: beat snapping/format intros may have moved a
+    # previously legal explicit cue. Never emit a load in the forbidden tail.
+    for event in events:
+        track = selected_by_id.get(event.get("track_id"))
+        if track is not None:
+            end = track_directives(track)["mandatory_end_seconds"]
+            if end is not None and float(event.get("cue_seconds") or 0) >= end:
+                raise ValueError(f"{track['track_id']}: resolved cue reaches mandatory_end_seconds={end}")
 
     return {
         "version": 2,
