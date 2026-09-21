@@ -9,6 +9,9 @@ Build and operate `claw-dj`: an autonomous or semi-autonomous DJ that plays Mixx
 1. Run `git status --short --branch` and confirm work is not happening on `master`.
 2. Read `PROGRESS.md` for current commands and priorities.
 3. Read `docs/HANDOFF.md` for architecture, implementation history, and known gaps.
+   Start with the latest resume summary in `PROGRESS.md`; newer dated song
+   requirements supersede older timings in historical sections. Recheck live
+   active-plan identity and staleness instead of assuming the summary is current.
 4. Read the specific docs for the task. In particular:
    - `docs/ARCHITECTURE.md` — brain/hands split.
    - `docs/MIXXX_CONTROL_SURFACE.md` — reachable Mixxx controls.

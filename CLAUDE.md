@@ -32,7 +32,8 @@ live.
 ## Data
 
 `brain/data/` (scanned crate, demo subsets, `.m3u` files) is gitignored on
-purpose — it's derived from a personal media library, not project code.
-Regenerate it locally via `brain/scan_library.py` /
-`brain/build_demo_subset.py` rather than expecting it to be there after a
-fresh clone.
+purpose. Some files are derived from a personal media library; others contain
+human DJ notes and plan edits that are not recoverable by scanning. A fresh
+clone or worktree does not include them. Follow `docs/SETUP_NEW_MACHINE.md`
+for data transfer/reconstruction, preserve existing annotations, and read the
+latest `PROGRESS.md` summary for required song timings.

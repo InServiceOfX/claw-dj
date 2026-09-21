@@ -6,6 +6,36 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
+## Resume summary (2026-09-20)
+
+- Branch: `fix/skip-ride-end-of-track`. Session fixes committed as `a93e4ad`
+  (playback), `629d08b` (Arrange), `2c2d721` (mandatory skips), and `f282775`
+  (handoff/song timings). No push was performed in this session.
+- Last verified active plan: `notorious-big-who-shot-ya-variations-gpt-6-astra`,
+  9 tracks. The original `notorious-big-who-shot-ya-variations` also exists.
+  Both have the corrected song notes; do not confuse the two plans.
+- Current song requirements: Jadakiss starts/blends at 32s or later, without
+  earlier pre-roll; Promo VLS Club Mix skips 197→223.7s; Ja Rule skips
+  209→227s. Shots are allowed. Club Mix may end at/after 216s, without
+  weakening its skip. These supersede older timing notes below.
+- Editor on `127.0.0.1:8787` was restarted with mandatory-skip enforcement.
+  The active built artifact was still stale at handoff. No rebuild or live
+  audition was performed for these note changes. Before playback, inspect
+  current revisions, preserve approved order/transitions/snare locks, rebuild
+  the intended plan, and verify the generated cues/skips plus audible results.
+- Validation: 155 tests passed across plan foundation/integration, mix plan,
+  mix runner, plan/collection frontend, and track preview. Arrange was also
+  checked in a live browser. PDD prompts were updated, but no model-backed
+  PDD regeneration/certification was run.
+- Same checkout retains library SQLite and plan JSON under ignored
+  `brain/data/`. A new worktree/clone or another machine does not receive
+  those files through Git. Human notes cannot be recovered by rescanning music.
+- `AGENTS.md` and `CLAUDE.md` point here and to `docs/HANDOFF.md`. At this
+  handoff, `grok inspect --json` reported `projectTrusted: false` and no
+  `projectInstructions`; do not assume Grok automatically loaded these files.
+  Explicit startup prompt: "Read AGENTS.md, PROGRESS.md, and docs/HANDOFF.md
+  in this checkout before working; summarize the current plan and pending work."
+
 ## Active cross-machine priorities (updated 2026-09-20)
 
 - [x] **Club Mix mandatory skit skip corrected.** Exact

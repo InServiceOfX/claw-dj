@@ -1,5 +1,11 @@
 # Handoff / continuation notes
 
+**Resume from the latest dated summary at the top of `../PROGRESS.md`.**
+This file includes historical decisions. The September 20 song requirements
+below supersede earlier timing values, and the live active-plan state must be
+checked before editing or rebuilding. New sessions use these saved documents;
+they do not need this chat transcript or another harness's private memory.
+
 Written 2026-07-11 mid-hackathon so work can resume on a different machine
 (Linux desktop) with full context. See also [HACKATHON.md](HACKATHON.md)
 (event rules/links) and [ARCHITECTURE.md](ARCHITECTURE.md) (system design).
@@ -75,7 +81,8 @@ also in global `dj_notes` for every mix), and blends out on the
 chorus. VLS instrumental is not a solo song (`ride_beats=0`) — a
 32-beat gentle blend into DMX so beat and vocal play together. Club
 Mix sits after the interpolators, not after the album, and skips the
-same gun-in-mouth skit (`skip_from_seconds=202.0; skip_to_seconds=223.7`).
+same gun-in-mouth skit (historically 202.0→223.7s; superseded on September 20
+by the mandatory 197.0→223.7s skip above).
 Ear 2026-09-05: album → instrumental was off by one count (`snare_align`
 on the incoming instrumental only — do not full-rebuild this plan on
 `feat/snare-align-blends`, auto-align would jump already-good blends).
