@@ -14,6 +14,57 @@ Written 2026-07-11 mid-hackathon so work can resume on a different machine
 
 Both goals point at the same architecture, so there's one codebase.
 
+## Arrange saved bunches (2026-09-20)
+
+Fixed `brain/web/arrange.js`: a module-level toolbar helper referenced the
+initializer's private `state`, crashing all Arrange rendering when a bunch
+was enabled. It now receives the selection count explicitly. Transitions
+inside bunches also render, preserving the group as one movable unit. Use
+Leave bunch or Un-bunch before independently reordering grouped tracks.
+Reload the page to pick up the served JS; no mix rebuild or server restart.
+
+The Node runtime regression in `tests/test_plan_frontend.py` reproduces both
+pre-fix failures and covers selection/reset, grouped/ungrouped rendering, and
+transition visibility. All 24 focused frontend/collection/integration/preview
+tests pass with localhost access. Live isolated headless Chrome renders the
+active plan's 9 tracks and 8 transitions. Prompt source updated alongside
+the repair. PDD CLI help inspected (0.0.310.dev0); model-backed bug/fix/sync
+was not run because no remote model call was authorized. This was a local
+tested repair, not a claim of PDD regeneration/certification.
+
+## Mandatory Club Mix skip correction (2026-09-20)
+
+Ernest moved the Promo VLS `Who_Shot_Ya (Club Mix)` / `The_Notorious_BIG`
+skip start to the empty beat at 3:17 (197s), before the skit around 3:18–3:19.
+The existing landing remains 223.7s. Library note and both variation-plan
+overlays updated with human attribution. Ending at/after 3:36 is acceptable;
+shots are allowed. This is permission, not a forced end or changed skip landing.
+Other Club Mix recordings were not changed.
+
+`brain/plan_notes.py` now recognizes `mandatory_skip` in library notes and
+appends the latest library skip bounds after conflicting plan tokens so the
+planner's last-match parser enforces them. Ordinary optional skips retain
+plan precedence. Effective-note reads do not rewrite stored overlays or global
+notes. Prompt source updated; new regression fails before the repair and
+passes after. 142 foundation/integration/mix-plan/runner tests passed.
+This was a local tested repair; no model-backed PDD regeneration was run.
+The idle editor was restarted and its live Arrange response confirmed the
+mandatory bounds. Existing artifacts are stale and need a rebuild; no live
+audio audition or artifact rebuild was performed.
+
+Related human song-note requirements saved on the same date:
+
+- Jadakiss, *Who Shot Ya* (The Champ Is Here Pt. 3): start and blend in at
+  0:32 or later, after the DJ rewind, with no earlier pre-roll. Library and
+  both variation-plan notes use `cue_seconds=32; trust_cue_seconds`.
+- Ja Rule, *Who Shot Ya* (Shady Records V.S. The World Vol. 3): mandatory
+  skip 209→227s (3:29→3:47); shots from 3:47 onward are allowed. Library
+  and both variation-plan notes use `mandatory_skip` and those skip bounds.
+
+Actual library SQLite and plan-note JSON remain ignored local data, outside
+Git. These timing requirements are recorded here for cross-machine continuity;
+checking out this commit alone does not install the local note data.
+
 ## Who Shot Ya variations (2026-08-31)
 
 Active named plan: `notorious-big-who-shot-ya-variations`. Editorial
@@ -69,10 +120,13 @@ coverage, not a substitute for that prompt.
 anchor: after N `play_body` beat events, `perform_transition` waits for the next
 beat, so the anchor is N+1. `hands/run_mix_plan.py` treats remaining audio as a
 hard runtime constraint: a body ride reserves the next anchor, the complete
-outgoing transition, and four safety beats using live Mixxx duration and
-playposition. A clamp preserves the requested mod-4 count. If a stale artifact
-still reaches a stopped outgoing deck, transition execution starts the cued
-incoming deck and moves the crossfader instead of aborting the whole set.
+outgoing transition, any in-play skip jump, and four safety beats using live
+Mixxx duration and playposition. A clamp preserves the requested mod-4 count.
+After a skip, remaining wait is re-clamped against live playposition. If a
+ride still hits end-of-track, `wait_for_beats` warns and returns instead of
+aborting the set. If a stale artifact still reaches a stopped outgoing deck,
+transition execution starts the cued incoming deck and moves the crossfader
+instead of aborting the whole set.
 
 Listener-locked `trust_ride_beats` values block planner auto-nudges of ride
 length, but the trusted count still defines a planned `phase_anchor` so runtime

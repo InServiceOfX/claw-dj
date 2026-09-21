@@ -6,6 +6,32 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
+## Active cross-machine priorities (updated 2026-09-20)
+
+- [x] **Club Mix mandatory skit skip corrected.** Exact
+      `Who_Shot_Ya (Club Mix)` / `The_Notorious_BIG` library note and both
+      variation-plan overlays now skip 197.0→223.7 seconds. `mandatory_skip`
+      in a library note overrides conflicting plan skip tokens when resolving
+      effective notes; ordinary skips retain prior override semantics. Ending
+      at/after 216s is permitted, shots are allowed, and the skip landing stays
+      unchanged. 142 focused tests pass; idle editor restarted and live note
+      enforcement verified. Existing mix artifacts remain stale until rebuilt.
+
+- [x] **Arrange saved-bunch crash and hidden transitions.** Pass the page's
+      selection count into the Add to bunch renderer; render internal bunch
+      transitions as editable controls. Existing saved plan needs only a page
+      reload. Regression reproduced both failures before fixes; 24 focused
+      frontend/integration/preview tests pass. Live headless Chrome confirms
+      all 9 active-plan tracks and 8 transitions render.
+
+- [x] **Skip ride must not die at end-of-track (2026-09-20).** Who Shot Ya
+      Club Mix shortened 448→416 for the next 24-beat blend, then skipped
+      the gun-in-mouth skit (32 beats, 202.0→223.7s). The skip consumes
+      extra audio the live wait does not count, so Channel2 hit EOT at
+      119/121 remaining beats and aborted the set. Runtime now reserves
+      `skip_beats` in `_safe_body_beats`, re-clamps after the jump, and
+      `wait_for_beats` warns+continues on EOT instead of raising.
+
 ## Active cross-machine priorities (updated 2026-08-31)
 
 - [x] **Who Shot Ya album: skip the gun-in-mouth skit, every mix
