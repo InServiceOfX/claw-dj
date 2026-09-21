@@ -564,12 +564,14 @@ def _safe_body_beats(
     *,
     next_transition_beats: int,
     safety_beats: int = 4,
+    skip_beats: int = 0,
 ) -> int:
     """Clamp a body ride so the file cannot end before its transition.
 
     Live playposition already includes the incoming overlap consumed before
-    this body. Reserve the next anchor, the complete outgoing transition, and
-    a small margin. Preserve mod-4 count when shortening.
+    this body. Reserve the next anchor, the complete outgoing transition, any
+    in-play skip jump (those beats consume audio without counting as live
+    wait), and a small margin. Preserve mod-4 count when shortening.
     """
     requested = max(0, int(requested_beats))
     group = deck_group(deck)
@@ -580,7 +582,12 @@ def _safe_body_beats(
         return requested
     remaining_seconds = max(0.0, duration * (1.0 - position))
     available_beats = int(remaining_seconds * bpm / 60.0)
-    reserved = max(0, int(next_transition_beats)) + 1 + max(0, int(safety_beats))
+    reserved = (
+        max(0, int(next_transition_beats))
+        + 1
+        + max(0, int(safety_beats))
+        + max(0, int(skip_beats))
+    )
     max_body = max(0, available_beats - reserved)
     if requested <= max_body:
         return requested
@@ -1408,17 +1415,24 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                         next_transition_beats = int(future.get("transition_beats", 16))
                         break
                 requested_beats = int(beats)
+                skip_beats = int(event.get("skip_beats") or 0)
                 beats = _safe_body_beats(
                     mixxx,
                     int(event["deck"]),
                     requested_beats,
                     next_transition_beats=next_transition_beats,
+                    skip_beats=skip_beats,
                 )
                 if beats < requested_beats:
+                    extra = (
+                        f" and a {skip_beats}-beat skip"
+                        if skip_beats > 0
+                        else ""
+                    )
                     print(
                         f"  WARNING: shortening body {requested_beats} -> {beats} beats "
-                        f"to reserve the next {next_transition_beats}-beat transition "
-                        "before end-of-track"
+                        f"to reserve the next {next_transition_beats}-beat transition"
+                        f"{extra} before end-of-track"
                     )
                 print(f"  riding {event.get('track')} for {beats} live beats")
             else:
@@ -1465,13 +1479,31 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                             f"({event.get('skip_from_seconds')}s -> "
                             f"{event.get('skip_to_seconds')}s)"
                         )
-                        wait_for_beats(
-                            port,
-                            group,
-                            steady_beats - skip_after,
-                            timeout_s=max(90.0, (steady_beats - skip_after) * 1.5),
-                            trust_ride_beats=bool(event.get("trust_ride_beats")),
+                        remaining = steady_beats - skip_after
+                        # The jump already consumed skip_beats of audio. Re-read
+                        # live remaining so a tight file cannot ride off the end.
+                        remaining = _safe_body_beats(
+                            mixxx,
+                            int(event["deck"]),
+                            remaining,
+                            next_transition_beats=next_transition_beats,
                         )
+                        planned_remaining = steady_beats - skip_after
+                        if remaining < planned_remaining:
+                            print(
+                                f"  WARNING: shortening remaining ride after skip "
+                                f"{planned_remaining} -> {remaining} beats "
+                                f"to reserve the next {next_transition_beats}-beat "
+                                "transition before end-of-track"
+                            )
+                        if remaining:
+                            wait_for_beats(
+                                port,
+                                group,
+                                remaining,
+                                timeout_s=max(90.0, remaining * 1.5),
+                                trust_ride_beats=bool(event.get("trust_ride_beats")),
+                            )
                     else:
                         wait_for_beats(
                             port,

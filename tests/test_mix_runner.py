@@ -186,6 +186,23 @@ class MixRunnerTests(TestCase):
             40,
         )
 
+    def test_safe_body_beats_reserves_an_in_play_skip_jump(self) -> None:
+        # Live Who Shot Ya Club Mix: skip 32 extra audio beats that the live
+        # wait does not count. 30s remain = 60 beats. Reserve 16 transition,
+        # one anchor, four safety, and the 32-beat skip → 7 body beats, which
+        # clamps 40 to 4 so the file cannot end during the remaining ride.
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "duration")] = 60.0
+        mixxx.values[("[Channel1]", "playposition")] = 0.5
+        mixxx.values[("[Channel1]", "bpm")] = 120.0
+
+        self.assertEqual(
+            _safe_body_beats(
+                mixxx, 1, 40, next_transition_beats=16, skip_beats=32
+            ),
+            4,
+        )
+
     @patch("hands.run_mix_plan.wait_for_beats")
     def test_play_body_forwards_the_planned_phase_anchor(self, wait) -> None:
         mixxx = FakeMixxx()
@@ -813,6 +830,76 @@ class SkipVerseTests(TestCase):
         waited = [call.args[2] for call in wait.call_args_list]
         self.assertEqual(waited, [200])
 
+    @patch("hands.run_mix_plan.wait_for_beats")
+    def test_play_body_reserves_skip_jump_when_clamping_to_end_of_track(
+        self, wait
+    ) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel2]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "bpm")] = 120.0
+        mixxx.values[("[Channel2]", "duration")] = 60.0
+        mixxx.values[("[Channel2]", "playposition")] = 0.5
+        _run_events(
+            mixxx,
+            [
+                {
+                    "op": "play_body",
+                    "deck": 2,
+                    "beats": 40,
+                    "track": "The_Notorious_BIG — Who_Shot_Ya (Club Mix)",
+                    "skip_after_beats": 0,
+                    "skip_beats": 32,
+                    "skip_from_seconds": 202.0,
+                    "skip_to_seconds": 223.7,
+                    "trust_ride_beats": True,
+                }
+            ],
+            {},
+            port=9995,
+        )
+        waited = [call.args[2] for call in wait.call_args_list]
+        # 30s remain = 60 beats. Reserve 1+4+32 skip = 37, so 40 clamps to 20.
+        # skip_after is 0, so one wait of the clamped remaining ride.
+        self.assertEqual(waited, [20])
+
+    @patch("hands.run_mix_plan.wait_for_beats")
+    def test_play_body_shortens_remaining_ride_after_skip_near_end(
+        self, wait
+    ) -> None:
+        class JumpNearEndMixxx(FakeMixxx):
+            def set(self, group: str, key: str, value: float) -> None:
+                super().set(group, key, value)
+                if key == "beatjump_forward" and value:
+                    self.values[(group, "playposition")] = 0.95
+
+        mixxx = JumpNearEndMixxx()
+        mixxx.values[("[Channel2]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "bpm")] = 120.0
+        mixxx.values[("[Channel2]", "duration")] = 60.0
+        mixxx.values[("[Channel2]", "playposition")] = 0.5
+        _run_events(
+            mixxx,
+            [
+                {
+                    "op": "play_body",
+                    "deck": 2,
+                    "beats": 80,
+                    "track": "The_Notorious_BIG — Who_Shot_Ya (Club Mix)",
+                    "skip_after_beats": 4,
+                    "skip_beats": 32,
+                    "skip_from_seconds": 202.0,
+                    "skip_to_seconds": 223.7,
+                    "trust_ride_beats": True,
+                }
+            ],
+            {},
+            port=9995,
+        )
+        waited = [call.args[2] for call in wait.call_args_list]
+        # After the jump Mixxx is at 0.95, so the remaining wait is dropped
+        # instead of riding off the end.
+        self.assertEqual(waited, [4])
+
 
 class VocalOverBedTests(TestCase):
     @patch("hands.run_mix_plan.wait_for_next_beat")
@@ -1136,6 +1223,48 @@ class WaitForBeatsResubscribeTests(TestCase):
         with patch("hands.transition.MixxxControl", AliveThenDead):
             with self.assertRaisesRegex(TimeoutError, "stopped during ride"):
                 wait_for_beats(9995, "[Channel1]", beats=8, timeout_s=10.0)
+
+    @patch("hands.transition.time.sleep")
+    def test_end_of_track_during_ride_does_not_abort_the_set(self, _sleep) -> None:
+        from hands.transition import wait_for_beats
+
+        class AliveThenEndOfTrack:
+            calls = 0
+
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, group: str, key: str) -> float:
+                if key == "bpm":
+                    return 120.0
+                if key == "duration":
+                    return 180.0
+                if key == "playposition":
+                    return 0.995
+                if key == "play":
+                    type(self).calls += 1
+                    return 1.0 if type(self).calls == 1 else 0.0
+                return 0.0
+
+            def set(self, *args) -> None:
+                return None
+
+            def subscribe(self, *args) -> None:
+                return None
+
+            def events(self):
+                yield {"value": 1.0}
+                raise TimeoutError("stream quiet")
+
+        AliveThenEndOfTrack.calls = 0
+        with patch("hands.transition.MixxxControl", AliveThenEndOfTrack):
+            wait_for_beats(9995, "[Channel1]", beats=121, timeout_s=10.0)
 
 class SettleBpmTests(TestCase):
     """A track can be entered sped up and then ridden somewhere in between."""

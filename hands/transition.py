@@ -120,6 +120,15 @@ def _current_grid_beat_index(port: int, group: str, phase_anchor: dict) -> int:
     return max(0, round((source_seconds - first_beat_seconds) / period))
 
 
+def _remaining_audio_beats(mixxx: MixxxControl, group: str, bpm: float) -> float | None:
+    """Beats of file still ahead of playposition, or None if Mixxx has no clock."""
+    duration = float(mixxx.get(group, "duration"))
+    position = float(mixxx.get(group, "playposition"))
+    if duration <= 0 or bpm <= 0 or not 0.0 <= position <= 1.0:
+        return None
+    return duration * (1.0 - position) * bpm / 60.0
+
+
 def wait_for_beats(
     port: int,
     group: str,
@@ -214,10 +223,24 @@ def wait_for_beats(
                 period = 60.0 / bpm
                 event_timeout_s = min(timeout_s, max(2.0, 4.0 * period))
             if not playing_now:
+                remaining_audio = _remaining_audio_beats(mixxx, group, bpm)
+                if remaining_audio is not None and remaining_audio < 2.0:
+                    print(
+                        f"  WARNING: {group} reached end-of-track during ride after "
+                        f"{count}/{beats} beats — continuing"
+                    )
+                    return
                 mixxx.set(group, "play", 1)
                 time.sleep(0.05)
                 playing_now = mixxx.get(group, "play") >= 0.5
             if not playing_now:
+                remaining_audio = _remaining_audio_beats(mixxx, group, bpm)
+                if remaining_audio is not None and remaining_audio < 2.0:
+                    print(
+                        f"  WARNING: {group} reached end-of-track during ride after "
+                        f"{count}/{beats} beats — continuing"
+                    )
+                    return
                 raise TimeoutError(
                     f"{group} stopped during ride after {count}/{beats} beats"
                 )
