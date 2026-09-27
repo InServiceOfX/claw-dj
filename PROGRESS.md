@@ -1,5 +1,30 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Same-beat measurement tools and EQ controls (Opus 5.5, 2026-09-27)
+
+Any harness can now measure, author and verify a one-beat continuous mix from
+the repo: `brain/performance_measure.py` (fit, pitch, lags, vocals, hooks,
+align, verify; evidence refused inside the checkout), `brain/performance_author.py`
+(`Grid`: pattern points, aligned starts, clips, loop, bed), guide
+`docs/SAME_BEAT_CONTINUOUS_MIX.md`. The reference tempo is found independently
+(sharpest pattern fold), and pattern zeros are sub-bin interpolated. On the nine
+Who Shot Ya sources the repo tools reproduce the Opus 5.5 findings (all within
+±2 cents after rate, lag 0 beats beats ±1 for all eight vocal records, album and
+Club Mix the same vocal take at 0 ms, Ja Rule's hook not). Re-verifying the
+recorded Opus pass 2 render: every clip locks at 0 beats, all within a 4.4 ms spread.
+
+Format additions, all optional and backward compatible (Python validator,
+Rust executor and offline export share one EQ curve, `shared.performance.clip_eq`):
+per-clip `eq_automation` ({at, scale:[low, mid, high]}, eased), bed `support.mid_gain`,
+and pulses as `{at, gain, width_seconds}`. Offline export now applies a 3-band
+EQ (246 Hz / 2484 Hz) from that curve instead of the old 145 Hz low subtraction,
+and a support bed switches to its loop at takeover like the live runner.
+Release executor rebuilt. Tests: 24 performance, 7 new measure/author, 34 Rust;
+full Python suite 366 with one pre-existing failure (`test_collection`
+`test_index_predating_data_dir_migrates_and_re_registers`, fails on clean HEAD too).
+Not changed: live deck-to-deck timing (start-only correction, 80 ms stop); a
+drift-correcting runner needs a live Mixxx test.
+
 ## Grok 4.7 Who Shot Ya pass 2 (2026-09-21)
 
 Ernest liked pass 1: the backbeats lined up. Pass 2 keeps every clip through

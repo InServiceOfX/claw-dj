@@ -72,6 +72,16 @@ deck. Ctrl-C terminates and joins the Rust child before final mixer cleanup.
 explicit short test performance. Mixxx recording remains available with
 `--record` and an existing recording is never stopped by this runner.
 
+## EQ controls
+
+Each clip's live EQ is `shared.performance.clip_eq`, mirrored exactly in Rust:
+`live_eq` as the base; a support bed eases after takeover to
+`[low_gain, mid_gain + pulses, high_gain + pulses]` (`mid_gain` defaults to
+`high_gain`; a pulse is a mix time or `{at, gain, width_seconds}`); then optional
+`eq_automation` points `{at, scale:[low, mid, high]}` (clip-local seconds, eased,
+held outside) scale each band. Values clamp to Mixxx's 0–4. Authoring workflow
+and measurement tools: [SAME_BEAT_CONTINUOUS_MIX.md](SAME_BEAT_CONTINUOUS_MIX.md).
+
 ## Optional export and analysis
 
 `hands/offline_mix.py` renders the same source spans, musical placements, loops
