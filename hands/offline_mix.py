@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 from scipy import signal
-from shared.performance import duration, fingerprint, validate
+from shared.performance import clip_eq, duration, fingerprint, validate
 from hands.performance_validation import sha, check_sources, validate_current
 
 
@@ -30,6 +30,22 @@ def clip_envelope(c, sample_rate):
     if c['fade_in']: env*=_smooth(t/c['fade_in']).astype('float32')
     if c['fade_out']: env*=_smooth((c['length']-t)/c['fade_out']).astype('float32')
     return env
+
+
+# Mixxx's default 3-band equalizer crossovers (Preferences > Equalizers).
+EQ_LOW_HZ,EQ_HIGH_HZ=246.0,2484.0
+
+
+def apply_live_eq(x, gains, sample_rate):
+    """Approximate the live low/mid/high EQ: zero-phase 3-band split that sums
+    back to the input exactly, each band scaled by its time-varying gain.
+    ``gains`` is (3, n) from ``shared.performance.clip_eq``."""
+    gains=np.asarray(gains,dtype='float32')
+    if np.allclose(gains,1,atol=1e-4):return x
+    lo=signal.sosfiltfilt(signal.butter(2,EQ_LOW_HZ,btype='lowpass',fs=sample_rate,output='sos'),x,axis=0)
+    hi=signal.sosfiltfilt(signal.butter(2,EQ_HIGH_HZ,btype='highpass',fs=sample_rate,output='sos'),x,axis=0)
+    mid=x-lo-hi
+    return (lo*gains[0][:,None]+mid*gains[1][:,None]+hi*gains[2][:,None]).astype('float32')
 
 
 def prepare_clips(p, work: Path, source_map=None):
@@ -72,8 +88,6 @@ def prepare_clips(p, work: Path, source_map=None):
     def bed(start,n):
         if loop is None:raise ValueError('No instrumental loop')
         return loop[(np.arange(n)+round((start-p['global_pattern_zero_seconds'])*sr))%len(loop)]
-    def low(x):
-        return signal.sosfilt(signal.butter(4,145,btype='lowpass',fs=sr,output='sos'),x,axis=0).astype('float32')
     result={}
     for c in p['clips']:
         n=round(c['length']*sr);part=np.zeros((n,2),dtype='float32')
@@ -82,15 +96,12 @@ def prepare_clips(p, work: Path, source_map=None):
             at=round(s['local_start']*sr);size=min(len(x),n-at)
             part[at:at+size]+=x[:size]
         t=np.arange(n)/sr
-        if c.get('low_subtract'):part-=c['low_subtract']*low(part)
         if c.get('support'):
-            s=c['support'];looped=bed(c['start'],n);bass=low(looped)
-            high=np.full(n,s['high_gain'],dtype='float32')
-            for anchor in s['pulse_times']:
-                high+=s['pulse_gain']*np.maximum(0,1-np.abs((t+c['start']-anchor)/s['pulse_width_seconds'])).astype('float32')
-            supported=bass*s['low_gain']+(looped-bass)*high[:,None]
-            transition=_smooth((t-s['takeover_seconds'])/s['transition_seconds']).astype('float32')
-            part=part*(1-transition[:,None])+supported*transition[:,None]
+            # Same source rule as the live executor: the loop replaces the
+            # straight segment at takeover; the EQ curve does the easing.
+            take=min(n,max(0,round(c['support']['takeover_seconds']*sr)))
+            part[take:]=bed(c['start'],n)[take:]
+        part=apply_live_eq(part,clip_eq(c,t),sr)
         for gap in c.get('skip_fills',[]):
             edge=2*beat
             cover=(_smooth((t-(gap['start']-edge))/edge)*_smooth(((gap['end']+edge)-t)/edge)).astype('float32')

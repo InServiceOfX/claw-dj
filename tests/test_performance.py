@@ -163,6 +163,50 @@ class PerformanceTests(unittest.TestCase):
                 self.assertEqual(len(list(Path(work).iterdir())),1)
             self.assertFalse(Path(work).exists())
 
+class EqControlTests(unittest.TestCase):
+    """Timed EQ, separate bed mids and shaped pulses. Rust mirrors these numbers."""
+    def test_eq_automation_eases_between_points_and_holds_outside(self):
+        from shared.performance import clip_eq
+        c={'start':0.,'length':8.,'live_eq':[.5,1,1],'eq_automation':[{'at':2.,'scale':[1,1,1]},{'at':4.,'scale':[2,.5,1]}]}
+        for local,want in [(0,[.5,1,1]),(3,[.75,.75,1]),(7,[1,.5,1])]:
+            self.assertEqual([round(v,9) for v in clip_eq(c,local)],want)
+
+    def test_support_mid_differs_from_treble_and_pulses_have_their_own_shape(self):
+        from shared.performance import clip_eq
+        c={'start':0.,'length':8.,'live_eq':[1,1,1],'support':{'takeover_seconds':0.,'transition_seconds':1.,'low_gain':1.,
+           'high_gain':.3,'mid_gain':.6,'pulse_gain':.5,'pulse_width_seconds':2.,'pulse_times':[5.,{'at':7.,'gain':.2,'width_seconds':1.}]}}
+        for local,want in [(2,[1,.6,.3]),(5,[1,1.1,.8]),(7,[1,.8,.5])]:
+            self.assertEqual([round(v,9) for v in clip_eq(c,local)],want)
+
+    def test_plans_without_new_fields_keep_their_eq(self):
+        from shared.performance import clip_eq
+        p=fixture()
+        self.assertEqual([round(v,9) for v in clip_eq(p['clips'][0],3)],[.4,1,1])
+        self.assertEqual([round(v,9) for v in clip_eq({'low_subtract':.6},3)],[.4,1,1])
+
+    def test_invalid_eq_automation_and_pulses_are_rejected(self):
+        for mutate in (lambda c:c.update(eq_automation=[{'at':4.,'scale':[1,1,1]},{'at':2.,'scale':[1,1,1]}]),
+                       lambda c:c.update(eq_automation=[{'at':9.,'scale':[1,1,1]}]),
+                       lambda c:c.update(eq_automation=[{'at':1.,'scale':[5,1,1]}]),
+                       lambda c:c.update(eq_automation=[{'at':1.,'scale':[1,1]}])):
+            p=fixture();mutate(p['clips'][0])
+            with self.assertRaises(ValueError):validate(p)
+        p=fixture();p['clips'][0].update(eq_automation=[{'at':1.,'scale':[.5,1,1]},{'at':6.,'scale':[1,1,1]}]);validate(p)
+
+    def test_offline_eq_split_is_transparent_at_center_and_cuts_only_its_band(self):
+        import numpy as np
+        from hands.offline_mix import apply_live_eq
+        sr=44100;t=np.arange(sr)/sr
+        bass=np.sin(2*np.pi*60*t);treble=np.sin(2*np.pi*6000*t)
+        x=np.stack([bass+treble]*2,axis=1).astype('float32')
+        self.assertIs(apply_live_eq(x,np.ones((3,sr)),sr),x)
+        cut=apply_live_eq(x,np.array([[0.]*sr,[1.]*sr,[1.]*sr]),sr)[sr//4:-sr//4,0]
+        core=slice(sr//4,-sr//4)
+        spectrum=lambda y,f:abs(np.dot(y,np.exp(-2j*np.pi*f*t[core])))/len(y)
+        self.assertLess(spectrum(cut,60),.05*spectrum(x[core,0],60))
+        self.assertGreater(spectrum(cut,6000),.9*spectrum(x[core,0],6000))
+
+
 class PatternAnalysisTests(unittest.TestCase):
     def test_shared_pattern_finds_backbeat_without_one_beat_alias(self):
         import numpy as np

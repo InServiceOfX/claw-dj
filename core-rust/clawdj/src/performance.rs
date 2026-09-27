@@ -20,15 +20,51 @@ pub struct Gap {
     pub start: f64,
     pub end: f64,
 }
+/// A support pulse: a bare mix time uses the support's default gain/width.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Pulse {
+    At(f64),
+    Shaped {
+        at: f64,
+        gain: Option<f64>,
+        width_seconds: Option<f64>,
+    },
+}
 #[derive(Clone, Debug, Deserialize)]
 pub struct Support {
     pub takeover_seconds: f64,
     pub transition_seconds: f64,
     pub low_gain: f64,
     pub high_gain: f64,
+    /// Settled mid gain; defaults to `high_gain` (the original mid = treble bed).
+    #[serde(default)]
+    pub mid_gain: Option<f64>,
     pub pulse_gain: f64,
     pub pulse_width_seconds: f64,
-    pub pulse_times: Vec<f64>,
+    pub pulse_times: Vec<Pulse>,
+}
+impl Support {
+    fn pulse(&self, p: &Pulse) -> (f64, f64, f64) {
+        match p {
+            Pulse::At(at) => (*at, self.pulse_gain, self.pulse_width_seconds),
+            Pulse::Shaped {
+                at,
+                gain,
+                width_seconds,
+            } => (
+                *at,
+                gain.unwrap_or(self.pulse_gain),
+                width_seconds.unwrap_or(self.pulse_width_seconds),
+            ),
+        }
+    }
+}
+/// Timed per-band scale on a clip's EQ, eased between points, held outside.
+#[derive(Clone, Debug, Deserialize)]
+pub struct EqPoint {
+    pub at: f64,
+    pub scale: [f64; 3],
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct Clip {
@@ -47,6 +83,8 @@ pub struct Clip {
     pub skip_fills: Vec<Gap>,
     pub live_eq: [f64; 3],
     pub support: Option<Support>,
+    #[serde(default)]
+    pub eq_automation: Vec<EqPoint>,
     #[serde(default)]
     pub artist: String,
     #[serde(default)]
@@ -104,6 +142,14 @@ impl Performance {
                 c.live_eq.iter().all(|x| (0. ..=4.).contains(x)),
                 "Invalid EQ gain"
             );
+            for (i, q) in c.eq_automation.iter().enumerate() {
+                ensure!(
+                    (0. ..=c.length).contains(&q.at)
+                        && q.scale.iter().all(|x| (0. ..=4.).contains(x))
+                        && (i == 0 || q.at >= c.eq_automation[i - 1].at),
+                    "Invalid EQ automation"
+                );
+            }
             ensure!(
                 c.fade_in >= 0.
                     && c.fade_out >= 0.
@@ -125,7 +171,12 @@ impl Performance {
                 ensure!(
                     s.transition_seconds > 0.
                         && s.pulse_width_seconds > 0.
-                        && s.takeover_seconds >= 0.,
+                        && s.takeover_seconds >= 0.
+                        && s.mid_gain.is_none_or(|m| (0. ..=4.).contains(&m))
+                        && s.pulse_times.iter().all(|p| {
+                            let (at, gain, width) = s.pulse(p);
+                            at.is_finite() && gain.is_finite() && width > 0.
+                        }),
                     "Invalid support envelope"
                 );
                 let l = self
@@ -197,22 +248,52 @@ impl Performance {
         }
         v
     }
+    /// Mirrors `shared.performance.clip_eq`: base EQ, support easing to
+    /// [low, mid+pulses, high+pulses], then eased `eq_automation` scales.
     fn eq(&self, c: &Clip, local: f64) -> [f64; 3] {
-        let Some(s) = &c.support else {
-            return c.live_eq;
-        };
-        let alpha = smooth((local - s.takeover_seconds) / s.transition_seconds);
-        let upper = s.high_gain
-            + s.pulse_times
+        let mut eq = c.live_eq;
+        if let Some(s) = &c.support {
+            let alpha = smooth((local - s.takeover_seconds) / s.transition_seconds);
+            let pulses = s
+                .pulse_times
                 .iter()
-                .map(|t| {
-                    s.pulse_gain
-                        * (1. - (c.start + local - t).abs() / s.pulse_width_seconds).max(0.)
+                .map(|p| {
+                    let (at, gain, width) = s.pulse(p);
+                    gain * (1. - (c.start + local - at).abs() / width).max(0.)
                 })
                 .sum::<f64>();
-        let target = [s.low_gain, upper, upper];
-        std::array::from_fn(|i| c.live_eq[i] + (target[i] - c.live_eq[i]) * alpha)
+            let target = [
+                s.low_gain,
+                s.mid_gain.unwrap_or(s.high_gain) + pulses,
+                s.high_gain + pulses,
+            ];
+            eq = std::array::from_fn(|i| c.live_eq[i] + (target[i] - c.live_eq[i]) * alpha);
+        }
+        let scale = automation_scale(&c.eq_automation, local);
+        std::array::from_fn(|i| (eq[i] * scale[i]).clamp(0., 4.))
     }
+}
+
+fn automation_scale(points: &[EqPoint], local: f64) -> [f64; 3] {
+    let (Some(first), Some(last)) = (points.first(), points.last()) else {
+        return [1.; 3];
+    };
+    if local <= first.at {
+        return first.scale;
+    }
+    if local >= last.at {
+        return last.scale;
+    }
+    let k = points
+        .partition_point(|q| q.at <= local)
+        .clamp(1, points.len() - 1);
+    let (a, b) = (&points[k - 1], &points[k]);
+    let x = if b.at > a.at {
+        smooth((local - a.at) / (b.at - a.at))
+    } else {
+        1.
+    };
+    std::array::from_fn(|i| a.scale[i] + (b.scale[i] - a.scale[i]) * x)
 }
 
 fn emit(line: impl AsRef<str>) {
@@ -308,7 +389,7 @@ fn announce_bed(c: &Clip, elapsed: f64) {
     ));
     emit(format!(
         "         {}",
-        eq_phrase([s.low_gain, s.high_gain, s.high_gain])
+        eq_phrase([s.low_gain, s.mid_gain.unwrap_or(s.high_gain), s.high_gain])
     ));
     emit("         this deck now carries the bass; vocal decks keep the voice and treble");
 }
@@ -782,6 +863,7 @@ mod tests {
             transition_seconds: 1.,
             low_gain: 1.,
             high_gain: 1.,
+            mid_gain: None,
             pulse_gain: 0.,
             pulse_width_seconds: 1.,
             pulse_times: vec![],
@@ -847,11 +929,56 @@ mod tests {
             transition_seconds: 1.,
             low_gain: 0.8,
             high_gain: 0.1,
+            mid_gain: None,
             pulse_gain: 0.,
             pulse_width_seconds: 1.,
             pulse_times: vec![],
         });
         assert_eq!(p.source(&p.clips[0], 5.5).unwrap().position, 11.5);
         assert!((p.eq(&p.clips[0], 2.)[0] - 0.8).abs() < 1e-12);
+    }
+    fn close(a: [f64; 3], b: [f64; 3]) -> bool {
+        a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9)
+    }
+    #[test]
+    fn eq_automation_scales_a_foreground_between_points_and_holds_outside() {
+        let mut p = fixture();
+        p.clips[0].live_eq = [0.5, 1., 1.];
+        p.clips[0].eq_automation = serde_json::from_value(serde_json::json!(
+            [{"at":2.,"scale":[1.,1.,1.]},{"at":4.,"scale":[2.,0.5,1.]}]
+        ))
+        .unwrap();
+        p.validate().unwrap();
+        // Same numbers as tests/test_performance.py: held, eased midpoint, held.
+        assert!(close(p.eq(&p.clips[0], 0.), [0.5, 1., 1.]));
+        assert!(close(p.eq(&p.clips[0], 3.), [0.75, 0.75, 1.]));
+        assert!(close(p.eq(&p.clips[0], 7.), [1., 0.5, 1.]));
+        p.clips[0].eq_automation[1].at = 1.;
+        assert!(
+            p.validate().is_err(),
+            "points out of order must be rejected"
+        );
+    }
+    #[test]
+    fn support_mid_can_differ_from_treble_and_pulses_carry_their_own_shape() {
+        let mut p = fixture();
+        p.clips[0].live_eq = [1., 1., 1.];
+        p.clips[0].skip_fills.clear();
+        p.clips[0].support = Some(
+            serde_json::from_value(serde_json::json!({
+                "takeover_seconds":0.,"transition_seconds":1.,"low_gain":1.,"high_gain":0.3,
+                "mid_gain":0.6,"pulse_gain":0.5,"pulse_width_seconds":2.,
+                "pulse_times":[5.,{"at":7.,"gain":0.2,"width_seconds":1.}]
+            }))
+            .unwrap(),
+        );
+        assert!(close(p.eq(&p.clips[0], 2.), [1., 0.6, 0.3]));
+        assert!(close(p.eq(&p.clips[0], 5.), [1., 1.1, 0.8]));
+        assert!(close(p.eq(&p.clips[0], 7.), [1., 0.8, 0.5]));
+    }
+    #[test]
+    fn plans_without_the_new_fields_keep_their_old_eq() {
+        let p = fixture();
+        assert!(close(p.eq(&p.clips[0], 3.), [0.4, 1., 1.]));
     }
 }

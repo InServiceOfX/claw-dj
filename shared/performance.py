@@ -105,7 +105,16 @@ def validate(performance: dict, limits: dict | None = None) -> None:
                 raise ValueError('Invalid support envelope')
             if support['takeover_seconds']+support['transition_seconds'] > end_at+1e-5:
                 raise ValueError('Instrumental source runs out before loop takeover')
-            for anchor in support['pulse_times']: _number(anchor, 'support anchor')
+            if 'mid_gain' in support: _number(support['mid_gain'], 'mid_gain', 0, 4)
+            for pulse in support['pulse_times']:
+                at,gain,width=_pulse(support,pulse)
+                _number(at,'support anchor',-86400,86400);_number(gain,'pulse gain',-4,4);_number(width,'pulse width',1e-6)
+        points=c.get('eq_automation',[])
+        for i,point in enumerate(points):
+            _number(point['at'],'EQ automation time',0,c['length'])
+            if len(point['scale'])!=3: raise ValueError('EQ automation needs low/mid/high scales')
+            for v in point['scale']: _number(v,'EQ automation scale',0,4)
+            if i and point['at']<points[i-1]['at']: raise ValueError('EQ automation points must be in time order')
     loop=performance.get('loop')
     if any(c.get('support') or c.get('skip_fills') for c in clips) and not loop:
         raise ValueError('Missing instrumental loop for support/fills')
@@ -200,6 +209,47 @@ def source_state(p,c,local):
         if s['local_start']<=local<s['local_start']+length:
             return s['source_start']+(local-s['local_start'])*c['rate'],s['source_start'],s['source_end'],str(i)
     return None
+
+
+def _pulse(support,pulse):
+    """A pulse is a mix time (uses the support defaults) or {at, gain?, width_seconds?}."""
+    if isinstance(pulse,dict):
+        return pulse['at'],pulse.get('gain',support['pulse_gain']),pulse.get('width_seconds',support['pulse_width_seconds'])
+    return pulse,support['pulse_gain'],support['pulse_width_seconds']
+
+
+def clip_eq(c,local):
+    """Live low/mid/high EQ gains for a clip at clip-local seconds (scalar or array).
+
+    The Rust executor mirrors this exactly: the base is ``live_eq``; a support bed
+    eases from it to [low, mid+pulses, high+pulses] after takeover; then optional
+    ``eq_automation`` points scale each band, eased between points and held
+    outside them. Results clamp to Mixxx's 0..4 EQ range.
+    """
+    import numpy as np
+    t=np.asarray(local,dtype=float)
+    base=np.array(c.get('live_eq',[1-c.get('low_subtract',0),1,1]),dtype=float)
+    eq=np.broadcast_to(base[:,None] if t.ndim else base,(3,)+t.shape).astype(float).copy()
+    s=c.get('support')
+    if s:
+        alpha=np.clip((t-s['takeover_seconds'])/s['transition_seconds'],0,1);alpha=alpha*alpha*(3-2*alpha)
+        pulses=np.zeros(t.shape)
+        for pulse in s['pulse_times']:
+            at,gain,width=_pulse(s,pulse)
+            pulses=pulses+gain*np.maximum(0,1-np.abs(c['start']+t-at)/width)
+        target=[s['low_gain']+0*t,s.get('mid_gain',s['high_gain'])+pulses,s['high_gain']+pulses]
+        eq=np.array([eq[i]+(target[i]-eq[i])*alpha for i in range(3)])
+    points=c.get('eq_automation') or []
+    if points:
+        times=np.array([q['at'] for q in points]);scales=np.array([q['scale'] for q in points],dtype=float)
+        k=np.clip(np.searchsorted(times,t,side='right'),1,len(times)-1) if len(times)>1 else np.zeros(t.shape,dtype=int)
+        if len(times)>1:
+            a,b=times[k-1],times[k];x=np.clip((t-a)/np.where(b>a,b-a,1),0,1);x=x*x*(3-2*x)
+            scale=np.array([scales[k-1,i]+(scales[k,i]-scales[k-1,i])*x for i in range(3)])
+        else:
+            scale=scales[0].reshape((3,)+(1,)*t.ndim)
+        eq=eq*scale
+    return np.clip(eq,0,4)
 
 
 def live_envelope(p,c,local):
