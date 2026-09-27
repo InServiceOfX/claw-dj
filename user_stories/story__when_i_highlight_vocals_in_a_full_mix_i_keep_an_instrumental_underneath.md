@@ -1,4 +1,4 @@
-<!-- pdd-story-status: specified-2026-09-20; existing Astra offline example audited; general live implementation pending -->
+<!-- pdd-story-status: specified-2026-09-21; authored performances do this live on Mixxx; generic planner emission is still separate -->
 <!-- pdd-story-areas: build_mix_plan, plan_mix_build, mix_directives, playback, mix_preview -->
 <!-- pdd-story-prompts: plan_mix_build_Python.prompt -->
 <!-- pdd-story-dev-units: plan_mix_build_Python.prompt -->
@@ -15,6 +15,16 @@ and clear words, with one continuous groove and matched backbeats.
 The foreground need not be vocals-only. I should not have to find an acapella
 or extract stems. The system keeps the foreground classified as a full mix,
 then balances its existing backing against the support instrumental.
+
+Ernest, 2026-09-21: blending one deck into the next is a separate use of the
+decks. This story is the other use: two decks playing at the same time. It
+is not only the vocals-only record layered with an instrumental-only record.
+The foreground is a full song. On that deck, emphasize the vocals and the
+high frequencies. The other deck plays the beat, or another beat, in order
+to strengthen the bass and the bass notes. Do it live in Mixxx, on the
+original recordings, with that deck's channel fader and its low, mid, and
+high EQ. While it plays, the running log names each deck's song and which
+of those jobs the deck is doing.
 
 ## Canonical example
 
@@ -41,11 +51,17 @@ Covering the bad tail with the good instrumental does not satisfy this rule.
    musical phrase. Check drift across the body and each loop wrap. Equal BPM
    labels, aligned generic beat ticks, or an unchecked sync flag are insufficient.
    “Match the snare” remains an accepted user synonym for backbeat matching.
-4. **Clear foreground with complementary backing.** Balance channel levels,
-   EQ, and optional verified filters so voices remain intelligible and the bed
-   supplies useful weight. Check doubled drums, phase cancellation, and mono
-   compatibility. EQ is not represented as perfect vocal isolation. The system
-   must not simply sum two complete recordings at full gain.
+4. **Voice and treble on the full song; bass on the other deck.** The
+   foreground stays a full mix. Its live Mixxx EQ keeps the vocals and the
+   high frequencies forward and turns that deck's bass down, so the two low
+   ends do not stack at full strength. The support deck plays the beat, or
+   another chosen beat, and is the deck that strengthens the bass and the
+   bass notes. Its mid and treble stay held back far enough that they do not
+   cover the words. Emphasizing the voice and treble means those bands remain
+   the forward part of the full song. It does not require the treble knob to
+   be pushed past center, and it does not mean the vocal was extracted. The
+   system must not simply sum two complete recordings at full gain. Check
+   doubled drums, phase cancellation, and mono compatibility.
 5. **The same instrumental is appropriate when reinforcing that beat.** Do not
    reject this matching bed because the acapella story sometimes prefers a
    different song. Other musically compatible beds remain possible when the
@@ -68,6 +84,15 @@ Covering the bad tail with the good instrumental does not satisfy this rule.
     support, with source spans and handoff behavior. Save durable intent in
     notes/prompts, and store generated media and audition evidence outside the
     repo. Numerical measurements do not replace a listening comparison.
+11. **The live log shows the decks.** During live Mixxx playback, each deck
+    start reports the song, whether the channel fader is opening or already
+    full, the low/mid/high EQ being written to that deck, and the other decks
+    already playing. When a support deck settles into the bass role, the log
+    says so. Two decks together is a blend, or the full song over the beat.
+    Three means both vocals and the bed are up. The log names these live
+    fader, EQ, rate, and seek actions. It does not report a beat-sync, a
+    one-beat backbeat jump, or a filter sweep unless that player actually
+    performs it.
 
 ## Relationship to existing stories
 
@@ -85,13 +110,17 @@ Covering the bad tail with the good instrumental does not satisfy this rule.
 
 ## Current evidence and remaining implementation
 
-The Astra offline render already has matching instrumental support throughout
-source 0–91.95s of 50 Cent. Independent reconstruction exactly matched its
-saved premaster over a 70-second interior window. This demonstrates existing
-layer coverage, not listening acceptance or a general live-deck implementation.
+An authored `live_source_tracks` performance does this on Mixxx while the
+original files play. The channel fader is the blend. The deck EQ is low, mid,
+and high. On the Who Shot Ya plans the full-song deck turns its bass down and
+leaves the voice and high frequencies up; the instrumental deck keeps the bass
+and turns its own mid and treble down. The running deck log names the song,
+the fader, the EQ, and the other decks that are up. That is the live layer.
+It is not yet a claim that the generic planner emits the layer by itself, and
+it is not a listening acceptance. Ernest still decides whether the balance
+sounds right.
 
-The live runner's existing `vocal_over_bed` routine supplies part of the
-lifecycle, but explicit full-mix pairing, persistent three-deck ownership,
-calibrated foreground/support EQ, backbeat handling in that branch, continuous
-drift monitoring, preview, and cleanup still need implementation and tests.
-See [research and Mixxx design](../docs/FULL_MIX_INSTRUMENTAL_LAYERING.md).
+The Astra offline render remains a measured example of the same pairing
+through source 0–91.95s of 50 Cent. The older `vocal_over_bed` routine is
+still the dry-vocal path, not this full-mix layer. See
+[research and Mixxx design](../docs/FULL_MIX_INSTRUMENTAL_LAYERING.md).

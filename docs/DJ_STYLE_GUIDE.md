@@ -112,6 +112,12 @@ grammars with hard, machine-enforced rules live separately under
   judgment, not a mandatory cutoff or excluded region; later audio remains
   allowed. Keep this observation in that recording's global DJ notes and in
   applicable plan notes. Choose the exact handoff to preserve the backbeat.
+- **The_Notorious_BIG — Who_Shot_Ya (Club Mix), Promo VLS: first-verse
+  observation (Ernest, 2026-09-21).** Biggie's first verse starts at source
+  **0:43 (43 seconds)**. A blend may come in on a later part of the intro,
+  before that verse, rather than from 0:00. This is advisory. Audio before
+  0:43 remains allowed. Preserve `observed_first_verse_start_seconds=43` in
+  the global DJ note. The recording's mandatory skit skip is unchanged.
 - **Never blend mid-verse.** Respect the start and stop of a rap or sung
   verse. `phrase_body` hunts energy past ~30s, which in hip-hop is usually
   *inside* the first verse (On Fire 41.35 “Running your bitch…”, Gunz

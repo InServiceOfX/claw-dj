@@ -57,6 +57,29 @@ intentional `--force`.
 Use **backbeat matching** as the primary musical term. Accept "match the
 snare" and "beat parity" as user synonyms; preserve existing `snare_align`
 and `snare_parity` machine identifiers.
+
+Human-confirmed verse observation: **K-Dot — Who Shot Ya (Freestyle), Training
+Day**, final verse ends at source **2:31 (151s)**. Read its global DJ note
+(`observed_final_verse_end_seconds=151`) even when a plan has an older override.
+Future agents/mixes may begin blending out there without cutting the final
+verse. This is an optional exit opportunity based on a firm fact, not a hard
+cutoff; audio after 151s remains allowed. See the verse-respect user story.
+
+For **Jadakiss — Who Shot Ya, The Champ Is Here Pt. 3**, the final verse ends
+at source **2:29 (149s)** and a DJ rewind/replay occurs around **2:39 (159s)**.
+Read this exact recording's global note even with older plan overrides. Prefer
+starting the outgoing blend around **2:29–2:30**, completing the handoff before
+the rewind when practical. These are observations and an advisory exit choice,
+not a mandatory cutoff or excluded region. The separate hard entry minimum of
+**0:32** remains unchanged. Preserve this guidance in future mix briefs.
+For **The_Notorious_BIG — Who_Shot_Ya (Club Mix), Promo VLS**, Biggie's first
+verse starts at source **0:43 (43 seconds)**. Read
+`observed_first_verse_start_seconds=43` in that recording's global DJ note.
+A blend may enter on a later part of the intro, before this verse, instead of
+at 0:00. This is an observed fact and an available entry choice, not a
+mandatory cue or an excluded opening. Audio before 43s remains allowed. The
+separate mandatory skip inside the recording stays in force.
+
 If a live blend is "on beat but off the backbeat / off by one count," put
 `snare_align` on the incoming track. The runner jumps one beat after
 Mixxx beatsync. Do not slide the incoming cue one beat later, and do not

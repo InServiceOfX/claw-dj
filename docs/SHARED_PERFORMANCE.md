@@ -26,7 +26,11 @@ phase (including skips), source regions, deck occupancy and compiled events.
 Rust then loads the original songs, sets their native playback rates, schedules
 seeks/loops, and changes Mixxx EQ and channel volume while the audio plays.
 Mixxx's audio engine performs the DSP. No FFmpeg decode, prepared-track cache,
-vocal extraction or source rewriting is in this live execution path.
+vocal extraction or source rewriting is in this live execution path. During
+playback the executor prints one block per deck start: the song, whether the
+channel fader is opening, the low/mid/high EQ being written to that Mixxx
+deck, and which other decks are already playing. A later line marks when a
+supporting instrumental settles into its bass-bed EQ.
 
 The source identity can be mapped to another machine's files with
 `--source-map paths.json` on either runner/export command. That file is a JSON
@@ -51,6 +55,14 @@ The executor checks observed source position and stops if drift exceeds 80 ms
 or playback unexpectedly stops. This is a fail-fast controller, not a hard
 real-time or sample-identical guarantee. Initial alignment uses waveform-derived
 pattern anchors rather than trusting an arbitrary beatgrid parity.
+
+Before playback or a new recording, the runner loads every original into stopped
+Mixxx decks for native source preflight. A bad endpoint is reported before the
+set starts. Independently measured EOF positions can differ slightly: at most
+5 ms is accepted, with the actual source guard clamped to Mixxx's EOF. Declared
+source exclusions never move later, and rhythmic loop lengths are never shortened
+under this tolerance. Larger overruns report clip/path, planned span and native
+duration. Stored cue recall settles before source guards are installed.
 
 The runner refuses to take over playing decks. It temporarily disables automatic
 ReplayGain and competing effect routing, centers deck crossfader assignment,

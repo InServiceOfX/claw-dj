@@ -47,6 +47,10 @@ pub struct Clip {
     pub skip_fills: Vec<Gap>,
     pub live_eq: [f64; 3],
     pub support: Option<Support>,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub title: String,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct Loop {
@@ -211,10 +215,177 @@ impl Performance {
     }
 }
 
+fn emit(line: impl AsRef<str>) {
+    println!("{}", line.as_ref());
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+
+fn clock(seconds: f64) -> String {
+    let seconds = seconds.max(0.);
+    let minutes = (seconds / 60.) as u64;
+    format!("{minutes}:{:06.3}", seconds - minutes as f64 * 60.)
+}
+
+fn song_name(c: &Clip) -> String {
+    if !c.title.is_empty() {
+        if c.artist.is_empty() {
+            return c.title.clone();
+        }
+        return format!("{} — {}", c.artist, c.title);
+    }
+    std::path::Path::new(&c.path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(c.id.as_str())
+        .to_string()
+}
+
+fn is_skip_cover(c: &Clip) -> bool {
+    c.id.contains("-fill-") || c.title == "Source-skip cover"
+}
+
+/// Say what this deck's Mixxx EQ is doing. Knobs are low / mid / high gain, 100% = center.
+fn eq_phrase(eq: [f64; 3]) -> String {
+    let (low, mid, high) = (eq[0], eq[1], eq[2]);
+    let knobs = format!(
+        "Mixxx EQ low {:.0}% / mid {:.0}% / high {:.0}%",
+        low * 100.,
+        mid * 100.,
+        high * 100.
+    );
+    if low < 0.75 && mid >= 0.85 {
+        format!("{knobs} — voice and treble stay up, bass turned down")
+    } else if low >= 0.65 && mid < 0.7 && high < 0.7 {
+        format!("{knobs} — bass bed; mid and treble turned down")
+    } else if (low - 1.).abs() < 0.12 && (mid - 1.).abs() < 0.12 && (high - 1.).abs() < 0.12 {
+        format!("{knobs} — full mix, knobs near center")
+    } else if low > 1.12 {
+        format!("{knobs} — full mix, bass raised")
+    } else {
+        knobs
+    }
+}
+
+fn announce_start(p: &Performance, audible: &[bool], index: usize, elapsed: f64) {
+    let c = &p.clips[index];
+    let name = song_name(c);
+    emit(format!("[{}] deck {}  {}", clock(elapsed), c.deck, name));
+    if is_skip_cover(c) {
+        emit("         skip cover: this deck plays the beat while the vocal deck jumps");
+    } else if c.fade_in > 0.05 {
+        emit(format!(
+            "         channel fader opening over {:.1} beats",
+            c.fade_in * p.tempo_bpm / 60.
+        ));
+    } else {
+        emit("         channel fader opens at full");
+    }
+    emit(format!("         {}", eq_phrase(p.eq(c, 0.))));
+    let others: Vec<String> = p
+        .clips
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| *j != index && audible.get(*j).copied().unwrap_or(false))
+        .map(|(_, o)| format!("deck {} {}", o.deck, song_name(o)))
+        .collect();
+    if others.is_empty() {
+        emit("         this deck only");
+    } else {
+        emit(format!("         {} decks together:", others.len() + 1));
+        for other in others {
+            emit(format!("           {other}"));
+        }
+    }
+}
+
+fn announce_bed(c: &Clip, elapsed: f64) {
+    let Some(s) = &c.support else { return };
+    emit(format!(
+        "[{}] deck {}  {} bass bed settled",
+        clock(elapsed),
+        c.deck,
+        song_name(c)
+    ));
+    emit(format!(
+        "         {}",
+        eq_phrase([s.low_gain, s.high_gain, s.high_gain])
+    ));
+    emit("         this deck now carries the bass; vocal decks keep the voice and treble");
+}
+
+fn announce_stop(p: &Performance, audible: &[bool], index: usize, elapsed: f64) {
+    let c = &p.clips[index];
+    emit(format!(
+        "[{}] deck {}  {} finished",
+        clock(elapsed),
+        c.deck,
+        song_name(c)
+    ));
+    let others: Vec<String> = p
+        .clips
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| audible.get(*j).copied().unwrap_or(false))
+        .map(|(_, o)| format!("deck {} {}", o.deck, song_name(o)))
+        .collect();
+    if others.is_empty() {
+        emit("         no decks left playing");
+    } else {
+        emit(format!("         still playing: {}", others.join("; ")));
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Asset {
     duration: f64,
     sample_rate: f64,
+}
+
+impl Asset {
+    fn source_end(&self, c: &Clip, start: f64, end: f64) -> Result<f64> {
+        ensure!(
+            self.duration > 0. && self.sample_rate > 0.,
+            "{}: missing decoded duration/sample rate",
+            c.id
+        );
+        // Independently measured MP3 endpoints can differ by a few milliseconds.
+        // Tolerance accepts metadata; the actual engine guard still stops at EOF.
+        ensure!(
+            start < self.duration && end <= self.duration + 0.005,
+            "{} ({}): source span {:.6}..{:.6}s exceeds Mixxx duration {:.6}s by {:.6}s",
+            c.id,
+            c.path,
+            start,
+            end,
+            self.duration,
+            (end - self.duration).max(0.)
+        );
+        Ok(end.min(self.duration))
+    }
+
+    fn validate(&self, p: &Performance, c: &Clip) -> Result<()> {
+        for s in &c.segments {
+            self.source_end(c, s.source_start, s.source_end)?;
+        }
+        if c.support.is_some() {
+            let l = p.loop_region.as_ref().context("Support requires a loop")?;
+            ensure!(
+                l.source_end <= self.duration,
+                "{} ({}): rhythmic loop ends at {:.6}s beyond Mixxx duration {:.6}s; refusing to shorten its beat period",
+                c.id,
+                c.path,
+                l.source_end,
+                self.duration
+            );
+        }
+        Ok(())
+    }
+
+    fn source(&self, p: &Performance, c: &Clip, local: f64) -> Option<SourceState> {
+        let mut s = p.source(c, local)?;
+        s.end = s.end.min(self.duration);
+        (s.position < s.end).then_some(s)
+    }
 }
 fn set_loop(api: &mut ControlApi, deck: u8, start: f64, end: f64, sr: f64) -> Result<()> {
     // Mixxx engine sample positions are stereo samples, not source frames.
@@ -238,6 +409,9 @@ fn set_loop(api: &mut ControlApi, deck: u8, start: f64, end: f64, sr: f64) -> Re
     Ok(())
 }
 fn load(port: u16, p: &Performance, c: &Clip) -> Result<Asset> {
+    load_inner(port, p, c).with_context(|| format!("Load {} ({}) on deck {}", c.id, c.path, c.deck))
+}
+fn load_inner(port: u16, p: &Performance, c: &Clip) -> Result<Asset> {
     let mut api = ControlApi::connect(port)?;
     let g = deck_group(c.deck);
     let t = Instant::now();
@@ -263,19 +437,7 @@ fn load(port: u16, p: &Performance, c: &Clip) -> Result<Asset> {
         duration: api.get(&g, "duration")?,
         sample_rate: api.get(&g, "track_samplerate")?,
     };
-    ensure!(
-        asset.sample_rate > 0.
-            && c.segments
-                .iter()
-                .all(|s| s.source_end <= asset.duration + 0.001),
-        "Source span exceeds recording"
-    );
-    if c.support.is_some() {
-        ensure!(
-            p.loop_region.as_ref().unwrap().source_end <= asset.duration,
-            "Loop exceeds recording"
-        );
-    }
+    asset.validate(p, c)?;
     for (k, v) in [
         ("sync_enabled", 0.),
         ("keylock", 0.),
@@ -291,14 +453,9 @@ fn load(port: u16, p: &Performance, c: &Clip) -> Result<Asset> {
         (api.get(&g, "rate_ratio")? - c.rate).abs() < 1e-5,
         "Native rate rejected"
     );
-    let source = p.source(c, 0.).context("Missing initial source position")?;
-    set_loop(
-        &mut api,
-        c.deck,
-        source.start,
-        source.end,
-        asset.sample_rate,
-    )?;
+    let source = asset
+        .source(p, c, 0.)
+        .context("Missing initial source position")?;
     api.set(&g, "playposition", source.position / asset.duration)?;
     let mut stable = None;
     while t.elapsed().as_secs_f64() < 25. {
@@ -308,6 +465,16 @@ fn load(port: u16, p: &Performance, c: &Clip) -> Result<Asset> {
         } else if stable.is_none() {
             stable = Some(Instant::now());
         } else if stable.unwrap().elapsed().as_secs_f64() >= 0.5 {
+            // Stored-cue/loop recall can arrive after track_loaded. Set our
+            // guard only after the source cue has settled, so recall cannot
+            // immediately disable or overwrite the newly configured guard.
+            set_loop(
+                &mut api,
+                c.deck,
+                source.start,
+                source.end,
+                asset.sample_rate,
+            )?;
             return Ok(asset);
         }
         thread::sleep(Duration::from_millis(20));
@@ -322,6 +489,45 @@ fn stop(api: &mut ControlApi, p: &Performance) {
             }
         }
     }
+}
+
+/// Validate every original through Mixxx's own decoder before recording/playback.
+/// Repeated uses share metadata, but every segment and support loop is checked.
+pub fn preflight(port: u16, p: Performance) -> Result<()> {
+    p.validate()?;
+    let mut api = ControlApi::connect(port)?;
+    for d in 1..=4 {
+        if p.clips.iter().any(|c| c.deck == d) {
+            ensure!(
+                api.get(&deck_group(d), "play")? < 0.5,
+                "Deck {d} is already playing"
+            );
+        }
+    }
+    let outcome = (|| -> Result<()> {
+        let mut sources: HashMap<String, Asset> = HashMap::new();
+        for c in &p.clips {
+            let asset = match sources.get(&c.path) {
+                Some(asset) => *asset,
+                None => {
+                    let asset = load(port, &p, c)
+                        .with_context(|| format!("Preflight {} on deck {}", c.id, c.deck))?;
+                    println!("preflight {}: Mixxx duration {:.6}s", c.id, asset.duration);
+                    sources.insert(c.path.clone(), asset);
+                    asset
+                }
+            };
+            asset.validate(&p, c)?;
+        }
+        println!(
+            "Preflight passed: {} original sources, {} clips; no playback",
+            sources.len(),
+            p.clips.len()
+        );
+        Ok(())
+    })();
+    stop(&mut api, &p);
+    outcome
 }
 
 /// Run a validated native timeline. The caller owns mixer setup/restoration.
@@ -346,6 +552,7 @@ pub fn run(port: u16, p: Performance) -> Result<()> {
         let mut volumes = vec![-1.; n];
         let mut eqs = vec![[-1.; 3]; n];
         let mut checks = vec![Instant::now(); n];
+        let mut bed_settled = vec![false; n];
         let mut max_error: f64 = 0.;
         // Preload every initial deck before starting the shared monotonic clock.
         for (i, c) in p.clips.iter().enumerate() {
@@ -365,13 +572,24 @@ pub fn run(port: u16, p: Performance) -> Result<()> {
                     api.set(&g, "volume", 0.)?;
                     api.set(&g, "play", 0.)?;
                     finished[i] = true;
-                    println!("stop deck {}: {}", c.deck, c.id);
+                    let audible: Vec<bool> = started
+                        .iter()
+                        .zip(&finished)
+                        .map(|(on, done)| *on && !done)
+                        .collect();
+                    announce_stop(&p, &audible, i, elapsed);
                     continue;
                 }
                 if assets[i].is_none() && !workers.contains_key(&i) && elapsed >= c.load_at {
                     let pc = p.clone();
                     let cc = c.clone();
-                    workers.insert(i, thread::spawn(move || load(port, &pc, &cc)));
+                    workers.insert(
+                        i,
+                        thread::spawn(move || {
+                            load(port, &pc, &cc)
+                                .with_context(|| format!("Preload {} on deck {}", cc.id, cc.deck))
+                        }),
+                    );
                 }
                 if elapsed < c.start {
                     continue;
@@ -397,11 +615,16 @@ pub fn run(port: u16, p: Performance) -> Result<()> {
                         c.id
                     );
                     started[i] = true;
-                    println!("start deck {}: {} (original source)", c.deck, c.id);
+                    let audible: Vec<bool> = started
+                        .iter()
+                        .zip(&finished)
+                        .map(|(on, done)| *on && !done)
+                        .collect();
+                    announce_start(&p, &audible, i, elapsed);
                 }
                 let asset = assets[i].unwrap();
                 let local = origin.elapsed().as_secs_f64() - c.start;
-                let desired = p.source(c, local);
+                let desired = asset.source(&p, c, local);
                 let approaching = desired.is_some_and(|s| {
                     s.section != LOOP
                         && s.section + 1 < c.segments.len()
@@ -422,13 +645,16 @@ pub fn run(port: u16, p: Performance) -> Result<()> {
                     api.set(&g, "play", 0.)?;
                     volumes[i] = -1.;
                     set_loop(&mut api, c.deck, s.start, s.end, asset.sample_rate)?;
-                    let Some(fresh) = p.source(c, origin.elapsed().as_secs_f64() - c.start) else {
+                    let Some(fresh) = asset.source(&p, c, origin.elapsed().as_secs_f64() - c.start)
+                    else {
                         continue;
                     };
                     api.set(&g, "playposition", fresh.position / asset.duration)?;
                     api.set(&g, "play", 1.)?;
                     let actual = api.get(&g, "playposition")? * asset.duration;
-                    if let Some(fresh) = p.source(c, origin.elapsed().as_secs_f64() - c.start) {
+                    if let Some(fresh) =
+                        asset.source(&p, c, origin.elapsed().as_secs_f64() - c.start)
+                    {
                         if (actual - fresh.position).abs() > 0.015 {
                             api.set(&g, "playposition", fresh.position / asset.duration)?;
                         }
@@ -458,6 +684,16 @@ pub fn run(port: u16, p: Performance) -> Result<()> {
                         )?;
                     }
                     eqs[i] = eq;
+                }
+                if !bed_settled[i] {
+                    if let Some(support) = &c.support {
+                        if support.high_gain < 0.7
+                            && local >= support.takeover_seconds + support.transition_seconds
+                        {
+                            bed_settled[i] = true;
+                            announce_bed(c, origin.elapsed().as_secs_f64());
+                        }
+                    }
                 }
                 if checks[i].elapsed().as_secs_f64() > 0.5 {
                     let before = origin.elapsed().as_secs_f64();
@@ -498,6 +734,83 @@ mod tests {
     use super::*;
     fn fixture() -> Performance {
         serde_json::from_value(serde_json::json!({"tempo_bpm":120.,"global_pattern_zero_seconds":0.,"loop":{"source_start":10.,"source_end":14.,"rate":1.},"clips":[{"id":"voice","path":"original.wav","deck":1,"load_at":0.,"start":0.,"length":8.,"rate":1.,"gain_db":0.,"fade_in":1.,"fade_out":1.,"segments":[{"source_start":10.,"source_end":13.,"local_start":0.},{"source_start":16.,"source_end":20.,"local_start":4.}],"skip_fills":[{"start":3.,"end":4.}],"live_eq":[0.4,1.,1.]}]})).unwrap()
+    }
+    #[test]
+    fn song_line_distinguishes_a_bass_cut_vocal_from_a_bass_bed() {
+        let vocal = eq_phrase([0.32, 1., 0.92]);
+        let bed = eq_phrase([0.8, 0.35, 0.35]);
+        let neutral = eq_phrase([1., 1., 1.]);
+        assert!(vocal.contains("bass turned down"), "{vocal}");
+        assert!(bed.contains("bass bed"), "{bed}");
+        assert!(neutral.contains("near center"), "{neutral}");
+        let mut clip = fixture().clips.remove(0);
+        clip.artist = "DMX".into();
+        clip.title = "Who Shot Ya (Freestyle)".into();
+        assert_eq!(song_name(&clip), "DMX — Who Shot Ya (Freestyle)");
+    }
+    #[test]
+    fn decoder_eof_rounding_is_bounded_to_actual_recording() {
+        let p = fixture();
+        let c = &p.clips[0];
+        let asset = Asset {
+            duration: 183.82666666600002,
+            sample_rate: 44100.,
+        };
+        let end = asset.source_end(c, 32., 183.82795156321177).unwrap();
+        assert_eq!(end, asset.duration);
+        // A declared boundary before EOF must never be extended by tolerance.
+        assert_eq!(asset.source_end(c, 32., 92.).unwrap(), 92.);
+    }
+    #[test]
+    fn rounded_endpoint_never_becomes_an_out_of_range_guard_or_seek() {
+        let p = fixture();
+        let c = &p.clips[0];
+        let asset = Asset {
+            duration: 19.9987,
+            sample_rate: 44100.,
+        };
+        asset.validate(&p, c).unwrap();
+        assert_eq!(asset.source(&p, c, 7.99).unwrap().end, asset.duration);
+        assert!(asset.source(&p, c, 7.999).is_none());
+    }
+    #[test]
+    fn eof_tolerance_must_not_shorten_a_rhythmic_loop() {
+        let mut p = fixture();
+        let c = &mut p.clips[0];
+        c.support = Some(Support {
+            takeover_seconds: 0.,
+            transition_seconds: 1.,
+            low_gain: 1.,
+            high_gain: 1.,
+            pulse_gain: 0.,
+            pulse_width_seconds: 1.,
+            pulse_times: vec![],
+        });
+        p.loop_region.as_mut().unwrap().source_end = 20.;
+        let asset = Asset {
+            duration: 19.9987,
+            sample_rate: 44100.,
+        };
+        assert!(
+            asset
+                .validate(&p, &p.clips[0])
+                .unwrap_err()
+                .to_string()
+                .contains("refusing to shorten")
+        );
+    }
+    #[test]
+    fn real_source_overrun_is_rejected_with_identity_and_lengths() {
+        let p = fixture();
+        let c = &p.clips[0];
+        let asset = Asset {
+            duration: 183.82666666600002,
+            sample_rate: 44100.,
+        };
+        let error = asset.source_end(c, 32., 183.9).unwrap_err().to_string();
+        assert!(error.contains("voice (original.wav)"));
+        assert!(error.contains("183.900000") && error.contains("183.826667"));
+        assert!(asset.source_end(c, 184., 185.).is_err());
     }
     #[test]
     fn excluded_regions_never_resolve_to_source() {

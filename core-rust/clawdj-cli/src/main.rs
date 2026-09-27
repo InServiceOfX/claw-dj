@@ -28,6 +28,9 @@ enum Commands {
     Perform {
         #[arg(long, default_value_t = clawdj::control_api::DEFAULT_PORT)]
         port: u16,
+        /// Check every source using Mixxx's decoder without starting playback.
+        #[arg(long)]
+        preflight_only: bool,
     },
     Setup,
     Load {
@@ -201,10 +204,17 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Perform { port } => {
+        Commands::Perform {
+            port,
+            preflight_only,
+        } => {
             let performance = serde_json::from_reader(std::io::stdin())
                 .context("perform expects compiled native timeline JSON on stdin")?;
-            clawdj::performance::run(port, performance)
+            if preflight_only {
+                clawdj::performance::preflight(port, performance)
+            } else {
+                clawdj::performance::run(port, performance)
+            }
         }
         Commands::Setup => run_setup(),
         Commands::Load { deck, track_id } => {

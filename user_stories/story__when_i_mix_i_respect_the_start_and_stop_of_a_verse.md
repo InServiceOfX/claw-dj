@@ -91,6 +91,40 @@ actually runs.
   record — the default must stop landing mid-verse on its own.
 - Do not start Mixxx to prove a cue.
 
+## Human-confirmed source observations
+
+For **K-Dot — Who Shot Ya (Freestyle), Training Day**, Ernest confirms that the
+final verse ends at **source 2:31 (151 seconds)**. Keep
+`observed_final_verse_end_seconds=151` in this exact recording's global DJ notes
+and carry the observation into future mix briefs across AI harnesses.
+
+This is a firm fact about the recording, not a mandatory end or an instruction
+to start a fade exactly there. Beginning a blend at 2:31 or later is an available
+verse-respecting choice; later audio remains allowed. Interpret it in source
+time before any playback-rate conversion. Do not turn an observation into an
+excluded region or shorten every future mix automatically.
+
+For **Jadakiss — Who Shot Ya, The Champ Is Here Pt. 3 [Hosted by DJ Green
+Lantern & DJ Drama]**, Ernest identifies the final verse ending at source
+**2:29 (149s)** and a complete DJ rewind/replay around **2:39 (159s)**, sounding
+like a splice in this recording. Save `observed_final_verse_end_seconds=149`,
+`observed_rewind_seconds=159` and `recommended_blend_out_seconds=150` in the
+exact recording's global notes. Prefer blending out around **2:29–2:30**, after
+the verse, with the handoff complete before the rewind when practical.
+This is a recommendation for all future mixes/harnesses, not a hard cutoff:
+later audio remains allowed. The separate mandatory source entry at **0:32**
+still applies. These source timestamps precede playback-rate conversion.
+
+For **The_Notorious_BIG — Who_Shot_Ya (Club Mix), Promo VLS**, Ernest confirms
+that Biggie's first verse starts at source **0:43 (43 seconds)**. Keep
+`observed_first_verse_start_seconds=43` in this exact recording's global DJ
+notes and carry it into future mix briefs. This is a firm fact, not a
+mandatory cue. Entering on a later part of the intro, before the verse, is an
+available choice. Audio before 43 seconds remains allowed, including during
+an incoming blend. Do not turn the observation into an excluded opening.
+The recording's mandatory internal skip stays separate. These timestamps are
+source time before playback-rate conversion.
+
 ## Source
 
 Ernest, 2026-08-28, after On Fire mixed in at 41s (Banks already rapping)

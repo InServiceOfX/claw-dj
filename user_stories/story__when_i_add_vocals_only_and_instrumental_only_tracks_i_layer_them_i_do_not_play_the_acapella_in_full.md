@@ -7,9 +7,10 @@
 
 Adjacent feature: [highlight a vocal performance in a full mix over a continuous
 instrumental](story__when_i_highlight_vocals_in_a_full_mix_i_keep_an_instrumental_underneath.md).
-That foreground already contains a beat; it remains a full mix. This story's
-dry-vocal rules and its preference for an interesting alternate bed still apply
-to actual acapellas.
+That foreground already contains a beat; it remains a full mix. On that deck
+the voice and high frequencies stay forward, and the other deck strengthens
+the bass. This story's dry-vocal rules and its preference for an interesting
+alternate bed still apply to actual acapellas.
 
 ## Story
 

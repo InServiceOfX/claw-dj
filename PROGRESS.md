@@ -1,5 +1,114 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Grok 4.7 Who Shot Ya pass 2 (2026-09-21)
+
+Ernest liked pass 1: the backbeats lined up. Pass 2 keeps every clip through
+Ja Rule and the Jim Jones entry where it was. Two additions, both after that:
+
+- Jim Jones → K-Dot, mix 13:34.043–13:44.514: the instrumental is a third
+  deck for those 16 beats, bass up, its mid and treble down. Jim and K-Dot
+  stay full-range.
+- Club Mix still begins at mix 18:14.352, now from source **0:35.485** instead
+  of 0:00, so the 8-beat blend finishes about 2.5 seconds before Biggie's
+  first verse at 0:43. The instrumental fades in 8 beats earlier and stays
+  under Jadakiss and then Club Mix through the end (21:23.508), carrying the
+  bass. Club Mix's own bass is at 50%. The skit seek stays, with that bed
+  covering it. Global note: `observed_first_verse_start_seconds=43`.
+
+Duration is now 1283.508s, 63 events. Not listened to yet. Same run command.
+
+## Live deck log names the song and the EQ (2026-09-21)
+
+`live_source_tracks` playback now prints, at each deck start, the song, the
+channel-fader move, the Mixxx low/mid/high EQ, and the other decks already
+up. A bass-bed line prints when a support instrumental finishes moving to
+its low-kept / mid-and-treble-cut EQ. Release binary must be rebuilt after
+this change (`cargo build --release -p clawdj-cli`). The older `[n/N]
+transition` commentary remains only on plans without `execution_mode:
+live_source_tracks`.
+
+## Grok 4.7 Who Shot Ya pass 1 is ready to hear (2026-09-21)
+
+Named plan `notorious-big-who-shot-ya-variations-grok-4-7` is a live original-source
+performance, 22:00.157 / 1320.157s, 59 events. It is not a copy of the Astra timeline.
+Tempo is 91.68 BPM, locked to the album's measured 8-beat pattern. A one-beat
+backbeat flip scored worse on bass and backbeat for every record, so none was applied.
+Order is the crate order. The VLS instrumental is the bass bed under DMX, 50 Cent,
+and all of Ja Rule, including a full-range bar in place of Ja's 3:29–3:47 skit, and
+it leaves as Jim Jones takes the drums. Jim, K-Dot, Jadakiss, and Club Mix then play
+their own recordings. Club Mix low EQ is 1.25. Quick Effects stay off; this runner
+has no filter-sweep path and the notes say no flourish.
+
+Hard boundaries kept: album 203.5→224.5, 50 Cent ends 91.95, Ja 10s entry and
+209→227, Jadakiss entry 32, Club Mix 197→223.7. DMX fade starts at source 134.2
+(the pattern boundary just after 2:12). K-Dot fade starts at source 155.2, after
+the verse at 151. Jadakiss fades source 153.2–158.2, after the verse at 149 and
+before the rewind at 159. Mixxx preflight passed on all nine sources, no playback.
+Listening is still pending. Run:
+
+`./scripts/run_mix.sh --plan brain/data/plans/notorious-big-who-shot-ya-variations-grok-4-7/mix_plan.json`
+
+## Current Astra outros follow verse observations (2026-09-21)
+
+Ernest says the live mix sounded pretty good through K-Dot before the earlier
+Jadakiss load failure and asks for small outro adjustments based on new DJ notes.
+The same named plan now lasts **22:10.582 / 1330.581852s**, with 52 live events.
+Preserve the earlier arrangement: clips 0–5 are unchanged, and K-Dot's entry,
+rate, gain and incoming fade stay unchanged.
+
+- K-Dot source fade: **2:35.231–2:39.764**, after the confirmed last verse ends
+  at 2:31. Jadakiss still enters at source32s, now at mix **16:14.501**.
+- Jadakiss final verse ends at source **2:29**. A rewind/replay around **2:39**
+  sounds like an edit/splice to Ernest. Global/current DJ notes now preserve
+  observed_final_verse_end_seconds=149, observed_rewind_seconds=159 and
+  recommended_blend_out_seconds=150. Prefer beginning around 2:29–2:30 and
+  handing off before the rewind when practical; advisory, no mandatory end.
+- Current Astra chooses the next matching eight-beat pattern after the verse,
+  retaining Club Mix's existing source0 entry: Jadakiss fades **2:33.174–2:38.469**.
+  Club Mix starts at mix **18:19.589**. Its body, mandatory skit skip and ending
+  are unchanged. These plan-specific exits are not new global exclusions.
+
+Both revised handoffs passed short muted original-source Mixxx tests (maximum
+observed source-position errors 65.2ms and 73.8ms); all decks stopped and master
+volume restored. Full plan dry-run, phase/exclusion checks and original hashes
+pass. Named plan is fresh. No audio export or full-set listening approval is
+claimed; the previous loading fix and all-source preflight remain installed.
+Current plan-local full_track/trusted-ride hints for these two outros were
+removed so they cannot contradict the new explicit performance timing.
+
+
+## Jadakiss EOF fix and K-Dot verse observation (2026-09-21)
+
+The Astra run stopped while loading Jadakiss after K-Dot. Reproduced the exact
+mismatch: planned endpoint 183.827951563s versus Mixxx 183.826666666s; 1.285 ms
+exceeded the old 1 ms check. Rust accepts at most 5 ms of endpoint rounding while
+clamping the actual source guard to decoded EOF. It never extends a declared
+cutoff, accepts a larger overrun, or shortens a rhythmic instrumental loop.
+Errors identify clip/path and both lengths. Guards are installed after cue
+recall settles, fixing a reload timing issue caught in the integration check.
+
+The supervisor runs Rust `perform --preflight-only` on every original before
+playback or a new recording. Every segment/support loop is checked, including
+repeated uses of one source. Performance still revalidates each actual load.
+All nine Astra originals / twelve live clips passed Mixxx preflight. A muted
+16.68-second Jadakiss-tail → Club Mix performance passed at the formerly rejected
+EOF, max observed position error 50.7 ms; all decks stopped and master volume
+restored. Release executor rebuilt; same run_mix.sh command and --record work.
+Full-set replay after this fix remains untested.
+
+K-Dot — Who Shot Ya (Freestyle), Training Day: human-confirmed final verse ends
+at source 2:31 (151s). Saved observed_final_verse_end_seconds=151 in its global DJ
+note and current override, plus AGENTS and verse-respect story. This is a firm
+observation offering an optional blend-out point, not a mandatory cutoff. Later
+audio remains allowed. Musical timing is unchanged; the named plan was recompiled
+and is fresh after the note update. Read global notes even with older overrides.
+
+Regression tests cover the exact discrepancy, larger-overrun rejection, bounded
+guards/seeks, unchanged rhythmic-loop length, preflight failure before recording
+or performance, and observation-versus-cutoff semantics. 136 Python tests passed;
+Rust formatting, Clippy and workspace tests passed.
+
+
 ## Native source performance replaces master playback (2026-09-21)
 
 Ernest rejected rendered-master playback and prepared-track live substitutes:

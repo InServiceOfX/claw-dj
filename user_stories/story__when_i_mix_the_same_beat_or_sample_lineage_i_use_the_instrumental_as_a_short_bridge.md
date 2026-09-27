@@ -36,11 +36,11 @@ Waiting* → *Patiently Waiting (Instrumental)*.
 
 This is a different object from `vocal_over_bed` (an **acapella**
 layered over a bed). Here the neighbors are **full mixes with vocals**;
-the instrumental is a helper or a bed, not the next song. With the
-current two-deck runner, simultaneous means instrumental + one vocal
-(or a two-vocal blend without a third layer). A three-way stack
-(vocal A + vocal B + instrumental) would need a third Mixxx deck;
-that is later, not required for this story.
+the instrumental is a helper or a bed, not the next song. In this
+bridge story, playing together means the instrumental plus one vocal,
+or a two-vocal blend without a third layer. A stack of two full songs
+plus the bed is the full-mix support story and needs a third live Mixxx
+deck. This bridge story does not require that stack.
 
 ## Acceptance criteria (observable)
 

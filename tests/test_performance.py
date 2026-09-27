@@ -105,6 +105,30 @@ class PerformanceTests(unittest.TestCase):
             run_performance(plan,port=9995)
         paths={c['path'] for c in execute.call_args.args[2]['clips']}
         self.assertEqual(paths,{'/original/song.mp3','/original/beat.mp3'})
+        self.assertEqual(execute.call_count,2)
+        self.assertEqual(execute.call_args_list[0].kwargs,{'preflight_only':True})
+
+    def test_preflight_failure_never_starts_recording_or_performance(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        m=MagicMock();m.__enter__.return_value=m
+        m.get.side_effect=lambda g,k: 0. if k=='play' else 1.
+        with patch('hands.performance_validation.current_limits',return_value={}),patch('hands.performance_validation.check_sources',return_value={'voice':Path('/song.mp3'),'bed':Path('/bed.mp3')}),patch('hands.run_mix_plan.clawdj_binary',return_value=Path('/rust')),patch('hands.performance_runner.subprocess.run',return_value=SimpleNamespace(returncode=0)),patch('hands.performance_runner.MixxxControl',return_value=m),patch('hands.performance_runner.execute_rust',side_effect=RuntimeError('preflight invalid source')) as execute,patch('hands.run_mix_plan.start_recording') as record:
+            with self.assertRaisesRegex(RuntimeError,'preflight invalid source'):
+                run_performance(artifact(fixture()),port=9995,record=True)
+        record.assert_not_called()
+        self.assertEqual(execute.call_count,1)
+        self.assertEqual(execute.call_args.kwargs,{'preflight_only':True})
+        m.set.assert_any_call('[Channel1]','play',0)
+        m.set.assert_any_call('[Channel2]','play',0)
+
+    def test_firm_verse_observation_is_not_a_mandatory_end(self):
+        from brain.build_mix_plan import track_directives
+        from hands.performance_validation import current_limits
+        note='observed_final_verse_end_seconds=151; final verse ends at 2:31; blending from there is optional; later audio remains allowed.'
+        self.assertIsNone(track_directives({'dj_notes':note})['mandatory_end_seconds'])
+        with patch('hands.source_cutoffs.library_notes',return_value={'voice':note}):
+            self.assertEqual(current_limits(artifact(fixture()))['voice'],{})
 
     def test_generic_build_never_replaces_authored_performance(self):
         from types import SimpleNamespace

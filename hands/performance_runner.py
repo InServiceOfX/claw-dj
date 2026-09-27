@@ -16,10 +16,12 @@ def native_payload(p, paths):
     return {**p,'clips':clips}
 
 
-def execute_rust(binary, port, payload):
+def execute_rust(binary, port, payload, *, preflight_only=False):
     # The child is owned by this call. Always terminate/join before mixer cleanup,
     # so no detached scheduler can restart a deck after Ctrl-C.
-    child=subprocess.Popen([str(binary),'perform','--port',str(port)],stdin=subprocess.PIPE,text=True)
+    command=[str(binary),'perform','--port',str(port)]
+    if preflight_only:command.append('--preflight-only')
+    child=subprocess.Popen(command,stdin=subprocess.PIPE,text=True)
     try:
         child.communicate(json.dumps(payload,allow_nan=False))
         if child.returncode:
@@ -78,6 +80,9 @@ def run_performance(plan,*,port,dry_run=False,max_events=None,record=False,sourc
                     save_set(m,f'[EqualizerRack1_{g}_Effect1]',f'parameter{i}',1)
                     save_set(m,f'[EqualizerRack1_{g}_Effect1]',f'button_parameter{i}',0,optional=True)
                 for unit in range(1,5):save_set(m,f'[EffectRack1_EffectUnit{unit}]',f'group_{g}_enable',0,optional=True)
+            print('Checking every original source in Mixxx before starting playback/recording...',flush=True)
+            execute_rust(binary,port,payload,preflight_only=True)
+            print('Live Mixxx. Each deck start names the song, the channel fader, and the low/mid/high EQ being written while that original plays. A vocal deck keeps the voice and treble up and turns its bass down. The instrumental deck keeps the bass and turns its own mid and treble down. Two decks is a blend or a vocal over the bed; three means both vocals and the bed are up.',flush=True)
             if record:
                 from hands.run_mix_plan import start_recording
                 started_recording=start_recording(m)
