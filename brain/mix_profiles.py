@@ -38,6 +38,10 @@ class MixProfile:
     # for extreme tempo gaps — downgrades to a smoother, always-blending
     # tempo_gap_blend instead). For "keep the floor dancing" profiles.
     avoid_silence: bool = False
+    # Listening mix: enter each song from its intro and ride most of it,
+    # leaving the end for the outgoing blend, which starts on a chorus /
+    # after a verse / in an instrumental stretch (never mid-verse).
+    ride_most_of_song: bool = False
 
 
 PROFILES: dict[str, MixProfile] = {
@@ -67,8 +71,8 @@ PROFILES: dict[str, MixProfile] = {
     "mix-to-listen": MixProfile(
         name="mix-to-listen",
         description=(
-            "A listening mix, not a performance — play the best parts of each "
-            "song at whatever length earns it, no showcase cuts, no rush."
+            "A listening mix, not a performance — play most of each song from "
+            "the top, blend out on a chorus or instrumental part, never mid-verse."
         ),
         seconds_per_track=85.0,
         # Variable on purpose — some songs' best part is short, some deserve
@@ -80,6 +84,7 @@ PROFILES: dict[str, MixProfile] = {
         transition_scale=1.6,
         flourish_every=0,
         avoid_silence=True,
+        ride_most_of_song=True,
     ),
 }
 

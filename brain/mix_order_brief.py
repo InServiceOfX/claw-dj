@@ -462,13 +462,20 @@ def apply_constraints(
     short_for_path = {row["track_id"]: sid for sid, row in zip(pool_ids, pool_rows)}
     path_for_short = {sid: row["track_id"] for sid, row in zip(pool_ids, pool_rows)}
 
-    graph = build_graph(pool_rows, snare_confidence)
     opener_short = constraints.get("opener_id")
     opener_path = path_for_short.get(opener_short) if opener_short else None
     if opener_path:
         notes.append(f"opener forced: {id_map[opener_short].get('artist')} — {id_map[opener_short].get('title')}")
+    closer_short = constraints.get("closer_id")
+    closer_path = path_for_short.get(closer_short) if closer_short and closer_short != opener_short else None
+    if closer_path:
+        notes.append(f"closer forced: {id_map[closer_short].get('artist')} — {id_map[closer_short].get('title')}")
+    body_rows = [row for row in pool_rows if row["track_id"] != closer_path]
+    graph = build_graph(pool_rows, snare_confidence)
 
-    ordered_paths = optimize_order(graph, opener_id=opener_path)
+    ordered_paths = optimize_order(build_graph(body_rows, snare_confidence), opener_id=opener_path)
+    if closer_path:
+        ordered_paths.append(closer_path)
     order = [short_for_path[path] for path in ordered_paths]
     order, enforce_notes, _ = enforce_constraints(order, {sid: id_map[sid] for sid in pool_ids}, constraints)
     notes.extend(enforce_notes)
@@ -491,6 +498,32 @@ def apply_constraints(
 
 
 RETIRED_ENGINES = {"nemoclaw", "h-agent"}
+
+
+def apply_note_endpoints(rows: list[dict], constraints: dict) -> list[str]:
+    """Honor DJ notes that only work at the ends of a mix.
+
+    `opener_style` (e.g. juggle_intro) only fires on the first song and
+    `full_track` (play to the end) only on the last, so a song carrying one
+    is pinned there. A brief's explicit opener wins over a note.
+    """
+    from brain.build_mix_plan import track_directives
+
+    ids = short_ids(rows)
+    out: list[str] = []
+    openers = [sid for sid, row in ids.items() if track_directives(row)["opener_style"]]
+    closers = [sid for sid, row in ids.items() if track_directives(row)["full_track"]]
+    if openers and not constraints.get("opener_id"):
+        constraints["opener_id"] = openers[0]
+        out.append("DJ note opener_style: pinned as opener")
+        if len(openers) > 1:
+            out.append(f"{len(openers) - 1} other opener_style note(s) cannot also open; first by order kept")
+    if closers:
+        closer = next((c for c in reversed(closers) if c != constraints.get("opener_id")), None)
+        if closer:
+            constraints["closer_id"] = closer
+            out.append("DJ note full_track: pinned as the closing song")
+    return out
 
 
 def order_from_brief(
@@ -535,6 +568,7 @@ def order_from_brief(
         }
     else:
         constraints = parse_constraints(ask(build_order_prompt(rows, text)), set(short_ids(rows)))
+    notes_prefix.extend(apply_note_endpoints(rows, constraints))
     ordered, notes = apply_constraints(rows, constraints)
     if engine != "none":
         from brain.mix_llm_refine import refine_order

@@ -246,6 +246,49 @@ def respect_verse_exit(
     )
 
 
+def song_exit_seconds(
+    segments: Iterable[dict[str, Any] | LyricSegment],
+    *,
+    earliest: float,
+    latest: float,
+    blend_seconds: float,
+    title: str = "",
+    path: str = "",
+) -> tuple[float, str]:
+    """Where a listening mix should start blending OUT of a song.
+
+    Rides most of the song: the latest moment in [earliest, latest] whose
+    blend window [t, t + blend] does not eat a verse, preferring a chorus
+    start, a verse end (hook / instrumental follows) or the instrumental
+    after the last lyric. With no lyric timeline (or an instrumental) the
+    answer is `latest`. Returns (seconds, reason).
+    """
+    latest = max(earliest, latest)
+    items = _segments(segments)
+    if (title or path) and not has_vocal_verses(title, path):
+        return latest, "instrumental: ride to the end"
+    if not items:
+        return latest, "no lyric timeline: ride to the end"
+    if verse_cut_by_window(latest, latest + blend_seconds, items) is None:
+        return latest, "end of song is clear of verses"
+    candidates: list[tuple[float, str]] = []
+    for item in items:
+        if _is_chorus(item.kind):
+            candidates.append((item.start, "chorus start"))
+        if _is_verse(item.kind):
+            candidates.append((item.end, "after the verse"))
+    candidates.append((max(i.end for i in items), "instrumental after the last lyric"))
+    legal = [
+        (t, why) for t, why in candidates
+        if earliest <= t <= latest
+        and verse_cut_by_window(t, t + blend_seconds, items) is None
+    ]
+    if legal:
+        t, why = max(legal)
+        return t, why
+    return latest, "no verse-safe exit in range: ride to the end"
+
+
 @dataclass
 class VerseViolation:
     track: str

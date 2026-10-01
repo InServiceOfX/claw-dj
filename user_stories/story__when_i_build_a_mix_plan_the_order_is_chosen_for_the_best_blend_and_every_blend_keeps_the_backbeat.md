@@ -46,6 +46,15 @@ Start mix) still holds.
 8. **Candidate playback order stays.** The numbered list with artist —
    title, key and BPM remains, now with the per-blend backbeat label.
 
+9. **My DJ notes always win (Ernest, 2026-09-30).** In every Mix feel
+   (DJ showcase, Club set, Mix to listen) and with or without a model, a
+   song's own DJ notes are followed: cue points, ride lengths and locked
+   rides, skips (the ride accounts for the skipped part), entry and exit
+   styles, tempo holds, layering. A song noted with an opener style opens
+   the mix and a song noted `full_track` closes it; neither the optimizer
+   nor a model review may move them. Plan-specific notes override library
+   notes for that plan without erasing library skip tokens.
+
 ## Out of scope
 
 - Proving by numbers alone that a blend sounds right. A live listen confirms;
