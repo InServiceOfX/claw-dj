@@ -211,6 +211,19 @@ acceptance is claimed.
       - CLI: `uv run python -m brain.build_mix_plan --order-engine claude-cli …`
       - Next: Curate's "Ask the DJ brain" still uses NemoClaw/H Company/
         generic engines; move it to `llm_providers` when wanted.
+- [x] **Mix to listen plays most of each song (2026-09-30).** Intro entry,
+      ride to end minus the blend, blend out on chorus / after verse /
+      instrumental (`brain.verse.song_exit_seconds`); final song plays out.
+      R&B set: ~83% of each song, ~3.8 h. DJ notes win in every Mix feel
+      (skip-aware ride, `opener_style` pinned first, `full_track` last).
+- [x] **DJ showcase choreographed by the selected model (2026-09-30).**
+      `brain/showcase_moves.py`: flourish + exit per blend from the runner's
+      catalog, validated (notes, smooth opening, ≤25% dramatic exits, none
+      back to back or on lineage pairs). First live Claude run: 54/55 moves,
+      7 dramatic exits. Needs a live listen.
+- [ ] **3+ deck stack** (vocal A + vocal B over an instrumental bed): needs
+      runner + Mixxx deck 3/4 support. Request:
+      `docs/intents/request__dj_showcase_model_choreography.md`.
 
 ## Resume summary (2026-09-21)
 

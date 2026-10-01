@@ -1,0 +1,37 @@
+<pdd-reason>Ernest, 2026-09-30: DJ showcase should show off as many sophisticated and experimental techniques as claw-dj can play, chosen by the model of choice rather than a fixed rotation. The 3+ deck stack is a later step; this unit only picks among moves the runner already executes.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "choreograph", "signature": "choreograph(transitions: list[dict], *, brief: str, ask: Callable[[str], str], provider: str, smooth_opening: int) -> tuple[dict[int, dict], list[str]]"},
+      {"name": "validate", "signature": "validate(moves: list[dict], transitions: list[dict], *, smooth_opening: int) -> tuple[dict[int, dict], list[str]]"},
+      {"name": "build_prompt", "signature": "build_prompt(transitions: list[dict], brief: str) -> str"}
+    ],
+    "constants": ["FLOURISHES", "EXITS", "MAX_EXIT_SHARE"]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/llm_providers_Python.prompt</pdd-dependency>
+
+% Goal
+
+In the DJ showcase Mix feel with a model provider selected, the model picks one move per transition of the final order: a flourish (bass_swap, stutter_fill, loop_roll, censor_fill, transformer_cut) and an exit (none, echo_out, filter_drop), aiming for variety and well-placed drama. Without a model, or in any other Mix feel, the built-in flourish rotation is unchanged.
+
+% Requirements
+
+1. The prompt gives, per transition: index, from/to labels, BPMs, keys, blend score and reasons, backbeat status, lineage flag, whether a DJ note forbids a flourish or sets the style, and both songs' DJ notes.
+2. Only catalog moves are accepted; unknown moves are dropped.
+
+<contract_rules>
+R1 (MUST): a DJ note wins: `no_flourish` removes the flourish, and a noted exit/entry style keeps the noted style.
+R2 (MUST): the first `smooth_opening_transitions` blends receive no model move.
+R3 (MUST): dramatic exits are never on consecutive transitions, never more than 25% of transitions, and never on a sample-lineage pair.
+R4 (MUST NOT): a model error, timeout or unparsable reply fails the build; the rotation is used and the order notes say so.
+R5 (MUST): model-chosen moves are marked in the plan segments (`showcase_source: model`, with the model's one-line reason) and summarized in the order notes.
+R6 (MUST NOT): change backbeat matching; snare-parity alignment runs after move selection exactly as before.
+</contract_rules>
+
+% Verification
+
+`tests/test_showcase_moves.py`: unknown moves dropped; exit spacing and budget; notes, lineage and opening win; DJ showcase uses model moves (including an echo-out exit); Mix to listen ignores choreography; a DJ-noted exit beats the model; model failure keeps the rotation with a note.

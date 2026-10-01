@@ -723,7 +723,7 @@
         ? segments.map(seg =>
             `<div class="mix-seg"><span>${String(seg.index+1).padStart(2,'0')}</span>` +
             `<span class="title">${esc(seg.from)} → ${esc(seg.to)}</span>` +
-            `<span class="tech">${esc(seg.technique)}${seg.showcase_move ? ' · '+esc(seg.showcase_move) : ''}${seg.format_compliance ? ' · '+esc(seg.format_compliance.replaceAll('_',' ')) : ''}</span>` +
+            `<span class="tech" title="${esc(seg.showcase_why || '')}">${esc(seg.technique)}${seg.showcase_move ? ' · '+esc(seg.showcase_move) + (seg.showcase_source === 'model' ? ' ✦' : '') : ''}${seg.format_compliance ? ' · '+esc(seg.format_compliance.replaceAll('_',' ')) : ''}</span>` +
             `<span class="bpm">${seg.beats}b · ${seg.score}</span></div>`
           ).join('')
         : '<div class="empty">No transitions in this plan.</div>';
@@ -764,7 +764,8 @@
           + (missing.length ? ' To add a model, sign in once in a terminal — ' + missing.join(' · ') + ', or put API keys in .env (see .env.example).' : '');
         return;
       }
-      el('provider-detail').textContent = `${p.label}: ${p.detail}. The optimizer builds the order; the model reviews it and its changes are kept only if they keep the backbeat and blend rules.`;
+      el('provider-detail').textContent = `${p.label}: ${p.detail}. The optimizer builds the order; the model reviews it and its changes are kept only if they keep the backbeat and blend rules.`
+        + (mixState.profile === 'dj-showcase' ? ' In DJ showcase the model also choreographs each blend\'s move (✦ in Transitions).' : '');
     }
     async function loadProviders(refresh) {
       try {
@@ -921,6 +922,7 @@
       if (!button) return;
       mixState.profile = button.dataset.profile;
       el('mix-presets').querySelectorAll('button').forEach(b => b.classList.toggle('active', b === button));
+      if (providerState.loaded) describeProvider();
     });
     el('dj-format').addEventListener('change', event => {
       mixState.djFormat = event.target.value;

@@ -2790,5 +2790,33 @@
         ]
       }
     }
+  },
+  {
+    "reason": "DJ showcase should showcase as many techniques as claw-dj can play, chosen by the selected model (Ernest, 2026-09-30).",
+    "description": "Model-choreographed DJ showcase moves: one flourish and exit per transition from the runner's catalog, validated against DJ notes, smooth opening, dramatic-exit spacing/budget and lineage pairs. Falls back to the built-in rotation on any failure.",
+    "dependencies": [
+      "brain/llm_providers_Python.prompt"
+    ],
+    "priority": 47,
+    "filename": "brain/showcase_moves_Python.prompt",
+    "filepath": "brain/showcase_moves.py",
+    "tags": [
+      "backend",
+      "mix",
+      "llm",
+      "showcase"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "choreograph",
+            "signature": "choreograph(transitions, *, brief, ask, provider, smooth_opening) -> tuple[dict[int, dict], list[str]]"
+          }
+        ]
+      }
+    }
   }
 ]
