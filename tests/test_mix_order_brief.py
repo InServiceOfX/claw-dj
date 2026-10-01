@@ -49,7 +49,7 @@ class MixOrderBriefTest(TestCase):
             order_from_brief(
                 _rows(3),
                 "put the unknown song first",
-                engine="nemoclaw",
+                engine="claude-cli",
                 ask=lambda _prompt: json.dumps({"opener_id": "t999"}),
             )
 
@@ -122,7 +122,7 @@ class MixOrderBriefTest(TestCase):
             plan = compose_mix_plan(
                 playlist=playlist,
                 mix_brief="put an unknown track first",
-                order_engine="nemoclaw",
+                order_engine="claude-cli",
                 tracks=None,
                 out=out,
                 ask=lambda _prompt: json.dumps({"opener_id": "t999"}),
@@ -274,7 +274,7 @@ class MixOrderBriefTest(TestCase):
         ordered, notes, constraints = order_from_brief(
             rows,
             "put Title2 next to Title5 in the first half",
-            engine="nemoclaw",
+            engine="claude-cli",
             ask=fake_ask,
         )
         self.assertEqual(len(ordered), 6)
@@ -319,7 +319,7 @@ class MixOrderBriefTest(TestCase):
                 playlist=playlist,
                 profile_name="dj-showcase",
                 mix_brief="mix Parce Que tu Crois next to What's the difference in the first half",
-                order_engine="nemoclaw",
+                order_engine="claude-cli",
                 tracks=None,
                 out=out,
                 ask=fake_ask,
@@ -331,4 +331,4 @@ class MixOrderBriefTest(TestCase):
             )
             summary = plan_summary(plan)
             self.assertTrue(summary["order_notes"])
-            self.assertEqual(summary["order_engine"], "nemoclaw")
+            self.assertEqual(summary["order_engine"], "claude-cli")

@@ -14,6 +14,43 @@ Written 2026-07-11 mid-hackathon so work can resume on a different machine
 
 Both goals point at the same architecture, so there's one codebase.
 
+## Build mix plan: whole-set optimizer + model providers (2026-09-30)
+
+Ernest's verdict after the Who Shot Ya three-model mix: keep the Curate and
+Create-the-mix GUI (stories added/amended for plan picker, collection
+chooser, New music scan, search/add, Archive first + Clear set, preview,
+Finalize, enrich log, Candidate playback order), but Build mix plan ignored
+backbeat matching in practice and leaned on hard-to-run engines.
+
+What is live now:
+
+- **Ordering** — `brain/mix_order_brief.apply_constraints` calls
+  `brain.mix_optimizer.optimize_order` (replaces `greedy_mix_order` there;
+  `greedy_mix_order` remains for `/api/mix-order` on Curate). Edge weight =
+  `pair_score` + tempo direction − unverified (0.06) / blind (0.10) backbeat
+  penalties. Deterministic by track_id.
+- **Why backbeat "failed"** — not ordering: blends touching a song with snare
+  confidence < 0.15 (`onset_analysis.SNARE_CONFIDENCE_GATE`) silently fell
+  back to bar-count alignment. On the R&B set that was 27–28 of 55 blends.
+  Now labelled per blend (`play_body.backbeat`), surfaced in the GUI, and
+  `enrich_set.remeasure_weak_beat_phase` retries weak reads once on
+  harmonic/percussive-separated windows (`agree_on_parity`: ≥2 windows, same
+  parity, stored confidence = weakest passing window).
+- **Models** — `brain/llm_providers.py`; GUI dropdown fed by
+  `GET /api/providers` (cached 60 s). Order engine values: `none` or a
+  provider name; `nemoclaw`/`h-agent` map to `none` with a note.
+  `brain/mix_llm_refine.py` validates a model's reorder (same songs, opener,
+  pairings/regions, no new blind blend, ≤1 new unverified, objective within
+  3%). In the first live run Claude's reorder was rejected for adding
+  unverified blends — the guardrail working as intended.
+- **Removed** — Shuffle opener button, `/api/mix/shuffle-opener`,
+  `PlaylistApp.reshuffle_opener`.
+- **PDD** — new prompts `llm_providers`, `mix_optimizer`, `mix_llm_refine`
+  (+ `.pddrc`, `architecture.json`); `plan_mix_build_Python.prompt` updated.
+  Code was hand-written against those prompts, not generated. `pdd intent
+  apply` recorded the intent, but its architecture step needs the local
+  llama-server (PDD's configured model) and did not run.
+
 ## Who Shot Ya variations (2026-08-31)
 
 Active named plan: `notorious-big-who-shot-ya-variations`. Editorial

@@ -38,6 +38,9 @@ DEFAULT_MAX_SECONDS = 120.0
 # Below this many measured beats an "alternating pattern" is not a claim
 # worth making; report zero confidence and let the caller fall back.
 MIN_BEATS_FOR_PARITY = 16
+# Below this, a snare-parity read is a coin flip: the planner aligns bar
+# counts only and must not nudge a ride by one beat on it.
+SNARE_CONFIDENCE_GATE = 0.15
 
 
 def load_audio(
@@ -232,6 +235,104 @@ def detect_snare_phase(
         "confidence": round(confidence, 3),
         "slot_energies": [round(e, 4) for e in slot_energies],
     }
+
+
+def detect_snare_phase_percussive(
+    path: str,
+    *,
+    bpm: float,
+    first_beat_seconds: float,
+    offset_seconds: float,
+    window_seconds: float = 45.0,
+    sr: int = DEFAULT_SR,
+) -> dict:
+    """`detect_snare_phase` on the percussive (drum) component of one window.
+
+    Harmonic/percussive separation strips sustained vocals, pads and bass
+    that smear the snare-band envelope on quiet-storm R&B and live-drum
+    records. It is a cheap stand-in for a real drum stem, not a stem model.
+    """
+    y = load_audio(path, sr=sr, max_seconds=window_seconds, offset_seconds=offset_seconds)
+    y = librosa.effects.percussive(y, margin=2.0)
+    envelope, hop_length = snare_band_onset_envelope(y, sr)
+    per_beat = per_beat_energies(
+        envelope, sr=sr, hop_length=hop_length, bpm=bpm,
+        first_beat_seconds=first_beat_seconds, envelope_start_seconds=offset_seconds,
+    )
+    beats = sorted(per_beat)
+    parity, confidence = 0, 0.0
+    if len(beats) >= MIN_BEATS_FOR_PARITY:
+        values = np.array([per_beat[b] for b in beats], dtype=float)
+        values -= values.mean()
+        signs = np.where(np.array(beats) % 2 == 0, 1.0, -1.0)
+        component = float(np.dot(values, signs))
+        spread = float(np.sum(np.abs(values)))
+        if spread > 0:
+            parity = 1 if component < 0 else 0
+            confidence = abs(component) / spread
+    return {"snare_parity": parity, "confidence": round(confidence, 3), "offset_seconds": offset_seconds}
+
+
+def agree_on_parity(windows: list[dict], *, gate: float, min_agreeing: int = 2) -> dict | None:
+    """Combine per-window reads without inflating confidence.
+
+    Accept only when at least `min_agreeing` windows clear `gate` AND every
+    window that clears it names the same parity. The stored confidence is
+    the weakest passing window, never the best one — picking the maximum of
+    several tries would manufacture confidence out of noise. Returns None
+    when the windows disagree or too few pass (the original read stands).
+    """
+    passing = [w for w in windows if float(w.get("confidence") or 0.0) >= gate]
+    if len(passing) < min_agreeing:
+        return None
+    parities = {int(w["snare_parity"]) for w in passing}
+    if len(parities) != 1:
+        return None
+    return {
+        "snare_parity": parities.pop(),
+        "confidence": min(float(w["confidence"]) for w in passing),
+        "windows": len(windows),
+        "agreeing": len(passing),
+    }
+
+
+def remeasure_snare_phase(
+    path: str,
+    *,
+    bpm: float,
+    first_beat_seconds: float,
+    duration_seconds: float | None,
+    gate: float,
+    window_seconds: float = 45.0,
+    windows: int = 4,
+) -> dict | None:
+    """Re-read a weak snare phase from several drum-only windows.
+
+    Windows are spread across the body of the song (skipping the first and
+    last 10%, where intros and outros are often drumless). Snare parity is
+    defined on the global beat index, so any window measures the same
+    quantity the planner needs.
+    """
+    total = float(duration_seconds or 0.0) or (window_seconds * (windows + 1))
+    start = total * 0.10
+    end = max(start + window_seconds, total * 0.90 - window_seconds)
+    step = (end - start) / max(1, windows - 1)
+    reads = []
+    for i in range(windows):
+        offset = start + i * step
+        try:
+            reads.append(
+                detect_snare_phase_percussive(
+                    path, bpm=bpm, first_beat_seconds=first_beat_seconds,
+                    offset_seconds=offset, window_seconds=window_seconds,
+                )
+            )
+        except Exception:
+            continue
+    result = agree_on_parity(reads, gate=gate)
+    if result is not None:
+        result["reads"] = reads
+    return result
 
 
 def phase_shift_beats(

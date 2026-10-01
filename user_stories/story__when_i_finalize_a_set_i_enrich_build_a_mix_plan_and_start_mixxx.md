@@ -1,4 +1,4 @@
-<!-- pdd-story-status: product-flow-observed-2026-08-09 -->
+<!-- pdd-story-status: product-flow-observed-2026-08-09; amended 2026-09-30 -->
 <!-- pdd-story-areas: playlist_editor, enrich_set, build_mix_plan, run_mix_plan, mixxx_control -->
 
 # User Story: Finalize a set, enrich analysis, build a mix plan, start Mixxx
@@ -31,17 +31,25 @@ mix feel and DJ transition format, Build mix plan, then Start mix (or
    - Progress appears in a terminal-style console (dark background, green
      text) and the action button returns from a disabled/lightened state when
      finished.
-   - macOS may still prompt for Mixxx file access on some tracks (see
-     “Permissions” below). Pre-granting claw-dj or scan roots does **not**
-     grant Mixxx Full Disk Access.
+   - The log names each file and what it got: lyrics found / not found,
+     BPM and key read from Mixxx, phrases, backbeat (snare) analysis and any
+     weak snare re-measure result.
+   - **Access is per volume, not per song (corrected 2026-09-30).** Once the
+     collection's volume is accessible to Mixxx, every song under it,
+     recursively, is assumed accessible. Analyze & enrich must not depend on
+     approving a permission prompt for each song. If Mixxx cannot open a
+     file, the log says so for that file and enrichment continues.
 
 4. **Create the mix controls**
    - Mix feel (profile) is selectable and visually highlighted when active.
    - DJ transition format defaults to **no expert format**.
-   - Optional H Company / order-engine controls interpret brief text and
-     whether an external engine reorders (when configured).
-   - **Build mix plan** succeeds only when the finalized set has required
-     analysis for included tracks.
+   - A model chooser (No model, Claude, Codex, Grok, or local llama-server)
+     replaces the NemoClaw / H Company order engines; see
+     `story__when_i_build_a_mix_plan_i_can_use_claude_codex_grok_or_a_local_model.md`.
+   - **Build mix plan** is ready as soon as Analyze & enrich finishes and
+     succeeds only when the finalized set has required analysis for included
+     tracks. Its order and backbeat rules are in
+     `story__when_i_build_a_mix_plan_the_order_is_chosen_for_the_best_blend_and_every_blend_keeps_the_backbeat.md`.
    - After a successful build, **Start mix** is enabled (bright red) and
      drives Mixxx via the control API.
 
@@ -53,6 +61,10 @@ mix feel and DJ transition format, Build mix plan, then Start mix (or
      max-events, and record.
 
 ## Permissions note (Mixxx / macOS)
+
+Superseded in part (2026-09-30): the accepted behavior is per-volume access
+(criterion 3). The note below explains the macOS mechanism; the remedy is a
+one-time grant for the volume, never per-song approval.
 
 Mixxx is a separate process. When Analyze & enrich loads a track into a deck
 for BPM/key, macOS TCC may show “permission is required to access the

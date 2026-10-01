@@ -467,7 +467,7 @@ def build_plan(
 ) -> dict:
     from brain.dj_formats import format_provenance, get_format
     from brain.mix_profiles import PROFILES
-    from brain.onset_analysis import count_shift_beats
+    from brain.onset_analysis import SNARE_CONFIDENCE_GATE, count_shift_beats
 
     profile = profile or PROFILES["dj-showcase"]
     dj_format = dj_format or get_format("none")
@@ -1986,7 +1986,17 @@ def build_plan(
         incoming_phase = beat_phase_lookup.get(incoming["track_id"])
         outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
         incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
-        min_snare_confidence = 0.15
+        min_snare_confidence = SNARE_CONFIDENCE_GATE
+        # Recorded on the body event so the GUI can show, per blend, whether
+        # the snares were actually matched or only the bar count was.
+        if directive["trust_ride_beats"]:
+            backbeat = {"status": "listener_locked", "reason": "trust_ride_beats note"}
+        elif not (outgoing_phase and incoming_phase):
+            backbeat = {"status": "unverified", "reason": "no snare analysis for one side"}
+        elif outgoing_entry_beat is None or incoming_entry_beat is None:
+            backbeat = {"status": "unverified", "reason": "cue not on the beatgrid"}
+        else:
+            backbeat = None
         if (
             not directive["trust_ride_beats"]
             and outgoing_phase and incoming_phase
@@ -2006,6 +2016,11 @@ def build_plan(
                     incoming_cue_beat_index=incoming_entry_beat,
                 )
                 reason = "snare parity + bar count"
+                backbeat = {
+                    "status": "matched",
+                    "reason": reason,
+                    "confidence": [round(out_conf, 3), round(in_conf, 3)],
+                }
             else:
                 bar_shift = (incoming_entry_beat - anchor) % 4
                 shift = bar_shift if bar_shift <= 2 else bar_shift - 4
@@ -2013,6 +2028,11 @@ def build_plan(
                     f"bar count only (weak snare conf "
                     f"{out_conf:.3f}/{in_conf:.3f})"
                 )
+                backbeat = {
+                    "status": "unverified",
+                    "reason": reason,
+                    "confidence": [round(out_conf, 3), round(in_conf, 3)],
+                }
             if shift:
                 print(
                     f"  [beat-phase] {outgoing['artist']} — {outgoing['title']} -> "
@@ -2029,6 +2049,7 @@ def build_plan(
                 "beats": ride_beats,
                 "ride_phrases": ride_phrases,
                 "track": f"{outgoing['artist']} — {outgoing['title']}",
+                "track_id": outgoing["track_id"],
                 "instrument_hints": [
                     "Optional: tweak [ChannelN] filterHighEq mid-phrase",
                     "Optional: beatjump_1_forward to skip to chorus",
@@ -2037,6 +2058,10 @@ def build_plan(
             }
         if directive["trust_ride_beats"]:
             body_event["trust_ride_beats"] = True
+        if backbeat is not None:
+            if backbeat.get("status") == "matched" and shift:
+                backbeat["nudged_beats"] = shift
+            body_event["backbeat"] = backbeat
         skip_from = directive.get("skip_from_seconds")
         skip_to = directive.get("skip_to_seconds")
         if (
@@ -2282,9 +2307,10 @@ def compose_mix_plan(
     "use every analyzed song in the playlist" (the editor and CLI default);
     short demos opt into a smaller set with ``--tracks``.
 
-    `order_engine`: optional NemoClaw/H Company interpretation turns a brief
-    into constraints. Deterministic local mix-quality ordering runs in every
-    mode, including no model and an empty brief.
+    `order_engine`: "none" or a brain.llm_providers provider. The whole-set
+    optimizer (brain.mix_optimizer) orders the set in every mode; a provider
+    additionally interprets the brief and reviews the order under the hard
+    rules (brain.mix_llm_refine).
     """
     from brain.dj_formats import get_format
     from brain.mix_profiles import PROFILES, apply_brief, profile_provenance
@@ -2429,6 +2455,19 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
         source = track.get("cue_source") or "unknown"
         cue_sources[source] = cue_sources.get(source, 0) + 1
     profile = plan.get("profile") or {}
+    # Each play_body carries the backbeat result for the blend OUT of that
+    # track, in playback order.
+    # Match by track_id (or the "Artist — Title" label on older plans):
+    # vocal layers and skips mean bodies are not one-per-track by position.
+    blend_by_track: dict[str, dict | None] = {}
+    backbeat_counts: dict[str, int] = {}
+    for event in events:
+        if event.get("op") != "play_body":
+            continue
+        key = event.get("track_id") or event.get("track")
+        blend_by_track.setdefault(key, event.get("backbeat"))
+        status = (event.get("backbeat") or {}).get("status") or "unknown"
+        backbeat_counts[status] = backbeat_counts.get(status, 0) + 1
     return {
         "plan_path": str(plan_path) if plan_path else None,
         "version": plan.get("version"),
@@ -2444,6 +2483,7 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
         "techniques": techniques,
         "format_compliance": format_compliance,
         "cue_sources": cue_sources,
+        "backbeat": backbeat_counts,
         "tracks": [
             {
                 "track_id": t.get("track_id"),
@@ -2452,6 +2492,8 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
                 "bpm": t.get("bpm"),
                 "key": t.get("key"),
                 "cue_source": t.get("cue_source"),
+                "blend_out": blend_by_track.get(t.get("track_id"))
+                or blend_by_track.get(f"{t.get('artist')} — {t.get('title')}"),
             }
             for t in (plan.get("tracks") or [])
         ],
@@ -2497,7 +2539,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--order-engine",
-        choices=("none", "nemoclaw", "h-agent"),
+        choices=("none", "claude-cli", "codex-cli", "grok-cli", "anthropic-api", "openai-api", "xai-api", "llama-server"),
         default="none",
         help="when the brief asks for pairings/placement/subset, resolve order "
              "via NemoClaw or H-agent (all choices use local mix-quality ordering)",

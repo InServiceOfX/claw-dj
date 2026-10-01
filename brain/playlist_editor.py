@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import threading
+import time
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -402,9 +403,10 @@ class PlaylistApp:
         possible reorder — brain.mix_directives, run in the background since
         the LLM call can take a while. Only builds a preview; nothing is
         written until apply_directives() confirms it."""
+        from brain.llm_providers import PROVIDERS
         from brain.pick_candidates import ENGINES
 
-        if engine not in ENGINES and engine != "h-agent":
+        if engine not in PROVIDERS and engine not in ENGINES and engine != "h-agent":
             raise ValueError(f"unknown engine {engine!r}")
         if not brief.strip():
             raise ValueError("brief is empty — say what you want changed")
@@ -421,7 +423,12 @@ class PlaylistApp:
 
                 tracks = load_playlist(DEFAULT_PLAYLIST_JSON)
                 prompt = build_prompt(tracks, brief, current_index_path())
-                reply = ask_h_agent(prompt) if engine == "h-agent" else ENGINES[engine](prompt)
+                if engine in PROVIDERS:
+                    from brain.llm_providers import ask
+
+                    reply = ask(engine, prompt)
+                else:
+                    reply = ask_h_agent(prompt) if engine == "h-agent" else ENGINES[engine](prompt)
                 notes, reorder = parse_directives(reply, tracks)
                 by_id = {t["track_id"]: t for t in tracks}
                 preview = {
@@ -993,108 +1000,6 @@ class PlaylistApp:
             message += f" Wish Death title now: {many[0].get('title')}."
         return {**result, "updated": len(updated), "missing": missing, "message": message}
 
-    def reshuffle_opener(self, opener_track_id: str | None = None) -> dict:
-        """Re-unfold the mix-graph tour from a new starting track.
-
-        The set is a blend graph (BPM/key/lineage/chroma/lyrics affinities).
-        Picking a different opener (or randomizing it) runs the same greedy
-        nearest-neighbor tour from that node so adjacent pairs stay mixable
-        while the overall narrative shifts. Writes the new order into
-        selection + playlist.json; marks any dry-run plan stale.
-        """
-        import random
-
-        from brain.library import Track
-        from brain.mix_graph import (
-            greedy_mix_order,
-            lineage_pairs,
-            load_chroma_pairs,
-            load_lineage,
-            transition_report,
-        )
-
-        self.reload()
-        if DEFAULT_PLAYLIST_JSON.exists():
-            rows = json.loads(DEFAULT_PLAYLIST_JSON.read_text())
-        else:
-            rows = [
-                track_record(self.by_id[i])
-                for i in self.selection
-                if i in self.by_id
-            ]
-        if len(rows) < 2:
-            raise ValueError("need at least 2 finalized tracks to reshuffle")
-
-        tracks: list[Track] = []
-        for row in rows:
-            tid = row["track_id"]
-            if tid in self.by_id:
-                tracks.append(self.by_id[tid])
-            else:
-                tracks.append(
-                    Track(
-                        track_id=tid,
-                        title=row.get("title") or "",
-                        artist=row.get("artist") or "",
-                        bpm=row.get("bpm"),
-                        key=row.get("key"),
-                        genre=row.get("genre"),
-                    )
-                )
-        by_id = {t.track_id: t for t in tracks}
-        analyzed = [t for t in tracks if t.bpm]
-        pool = analyzed if len(analyzed) >= 2 else tracks
-
-        if opener_track_id:
-            start = by_id.get(opener_track_id)
-            if start is None:
-                raise ValueError(f"opener not in finalized set: {opener_track_id}")
-        else:
-            start = random.choice(pool)
-
-        lineage = lineage_pairs(pool, load_lineage())
-        chroma = load_chroma_pairs()
-        ordered = greedy_mix_order(pool, start=start, lineage=lineage, chroma=chroma)
-        # Append any unanalyzed leftovers at the end so nothing is dropped.
-        ordered_ids = {t.track_id for t in ordered}
-        for track in tracks:
-            if track.track_id not in ordered_ids:
-                ordered.append(track)
-
-        self.selection = [t.track_id for t in ordered]
-        self.selected = set(self.selection)
-        self._save_selection_compatible()
-        if self.tracks:
-            self._export_playlist_compatible()
-        else:
-            export_playlist(ordered, self.selection)
-        self.mix_state["summary"] = None
-
-        report = transition_report(ordered, lineage=lineage, chroma=chroma)
-        mean = sum(row["score"] for row in report) / len(report) if report else 0.0
-        preview = [
-            {"artist": t.artist, "title": t.title, "bpm": t.bpm, "key": t.key, "track_id": t.track_id}
-            for t in ordered[:8]
-        ]
-        return {
-            "opener": {
-                "artist": start.artist,
-                "title": start.title,
-                "track_id": start.track_id,
-                "bpm": start.bpm,
-                "key": start.key,
-            },
-            "count": len(ordered),
-            "mean_score": round(mean, 3),
-            "preview": preview,
-            "message": (
-                f"Graph re-unfolded from opener “{start.artist} — {start.title}” "
-                f"({len(ordered)} tracks, mean transition {mean:.2f}). "
-                "Rebuild the mix plan to bake this order into events."
-            ),
-            "finalized": self.finalized_snapshot(),
-        }
-
     def sync_from_mixxx(self) -> dict:
         """Pull BPM/key Mixxx already wrote into its DB → crate + finalized playlist.
 
@@ -1251,6 +1156,17 @@ class PlaylistApp:
         self.enrich_thread.start()
         return self.mix_status()
 
+    def provider_status(self, *, refresh: bool = False) -> dict:
+        """Model providers for Build mix plan (cached: the CLI checks spawn
+        processes, and the Create-the-mix page polls)."""
+        cached = getattr(self, "_provider_cache", None)
+        if refresh or cached is None or time.time() - cached[0] > 60:
+            from brain.llm_providers import status_all
+
+            cached = (time.time(), status_all())
+            self._provider_cache = cached
+        return {"providers": cached[1], "checked_at": cached[0]}
+
     def mix_status(self) -> dict:
         from brain.dj_formats import visible_formats
         from brain.mix_profiles import PROFILES
@@ -1315,16 +1231,21 @@ class PlaylistApp:
         profile: str,
         mix_brief: str,
         tracks: int | None = None,
-        order_engine: str = "nemoclaw",
+        order_engine: str = "none",
         dj_format: str = "none",
         slug: str | None = None,
     ) -> dict:
         """Build a mix plan in the background (profile + DJ format + brief).
 
         Mirrors `brain.build_mix_plan --profile … --mix-brief … --order-engine …`.
-        When the brief mentions pairings / placement / a short subset and
-        order_engine is nemoclaw or h-agent, the agent shapes the order first.
+        The whole-set optimizer always orders the set. order_engine is
+        "none" or a brain.llm_providers provider: the model interprets the
+        brief and reviews the optimized order (kept only if it passes the
+        hard rules).
         """
+        from brain.llm_providers import PROVIDERS
+        from brain.mix_order_brief import RETIRED_ENGINES
+
         from brain.dj_formats import FORMATS
         from brain.mix_profiles import PROFILES
 
@@ -1334,7 +1255,9 @@ class PlaylistApp:
             raise ValueError(
                 f"unknown DJ format {dj_format!r}; choose from {sorted(FORMATS)}"
             )
-        if order_engine not in ("none", "nemoclaw", "h-agent"):
+        if order_engine in RETIRED_ENGINES:
+            order_engine = "none"
+        if order_engine != "none" and order_engine not in PROVIDERS:
             raise ValueError(f"unknown order engine {order_engine!r}")
         if self.mix_thread and self.mix_thread.is_alive():
             return self.mix_status()
@@ -1346,10 +1269,7 @@ class PlaylistApp:
         if not playlist_path.exists():
             raise ValueError("no finalized playlist yet — click Finalize for Mixxx first")
 
-        # Feel-only briefs don't need a slow agent call.
         engine = order_engine
-        if not (mix_brief or "").strip():
-            engine = "none"
 
         if self.enrich_thread and self.enrich_thread.is_alive():
             raise ValueError("enrichment is still running — wait before building the plan")
@@ -1534,6 +1454,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
     legacy_methods = {
         "/api/meta": ("GET",), "/api/tracks": ("GET",), "/api/ingest": ("GET",),
         "/api/brain": ("GET",), "/api/directives": ("GET",), "/api/mix": ("GET",),
+        "/api/providers": ("GET",),
         "/api/preview": ("GET", "HEAD"),
         "/api/selection": ("POST",), "/api/selection/clear": ("POST",),
         "/api/seed": ("POST",), "/api/mix-order": ("POST",), "/api/export": ("POST",),
@@ -1544,7 +1465,6 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
         "/api/mix/start": ("POST",), "/api/mix/sync": ("POST",),
         "/api/mix/enrich": ("POST",), "/api/mix/control-port": ("POST",),
         "/api/mix/refresh": ("POST",), "/api/mix/rescan-tags": ("POST",),
-        "/api/mix/shuffle-opener": ("POST",),
     }
 
     def legacy_route(*args, **kwargs):
@@ -1680,6 +1600,10 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/mix":
                 self._json(app.mix_status())
                 return
+            if parsed.path == "/api/providers":
+                refresh = parse_qs(parsed.query).get("refresh") == ["1"]
+                self._json(app.provider_status(refresh=refresh))
+                return
             if parsed.path in ("/", "/index.html"):
                 body = (WEB_ROOT / "playlist.html").read_bytes()
                 self.send_response(HTTPStatus.OK)
@@ -1755,7 +1679,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     self._json(
                         app.ask_directives(
                             str(payload.get("brief", "")),
-                            str(payload.get("engine", "nemoclaw")),
+                            str(payload.get("engine", "claude-cli")),
                         ),
                         HTTPStatus.ACCEPTED,
                     )
@@ -1775,7 +1699,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                             str(payload.get("profile", "dj-showcase")),
                             str(payload.get("mix_brief", "")),
                             int(tracks) if tracks is not None else None,
-                            str(payload.get("order_engine", "nemoclaw")),
+                            str(payload.get("order_engine", "none")),
                             str(payload.get("dj_format", "none")),
                             slug=str(payload["plan"]) if payload.get("plan") else None,
                         ),
@@ -1818,15 +1742,6 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     return
                 if self.path == "/api/mix/rescan-tags":
                     self._json(app.rescan_finalized_tags())
-                    return
-                if self.path == "/api/mix/shuffle-opener":
-                    payload = self._body()
-                    opener = payload.get("opener_track_id")
-                    self._json(
-                        app.reshuffle_opener(
-                            str(opener) if opener else None,
-                        )
-                    )
                     return
             except (KeyError, ValueError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)

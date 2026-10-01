@@ -298,21 +298,14 @@
         </div>
         <div class="mix-form" style="grid-template-columns:minmax(200px,1fr) 170px auto auto">
           <input id="mix-brief" type="text" placeholder='e.g. put Parce Que Tu Crois next to What&apos;s The Difference in the first half; smooth, no tricks' aria-label="Free-text mix description">
-          <select id="order-engine" aria-label="Order engine for the brief">
-            <option value="nemoclaw">NemoClaw · order</option>
-            <option value="h-agent">H Company · order</option>
-            <option value="none">Feel only · local order</option>
+          <select id="order-engine" aria-label="Model that reviews the mix order" title="The graph optimizer always orders the whole set for the best blends. A model, if chosen, reads your brief and reviews that order like a DJ; its changes are kept only if they keep the snare/backbeat and blend rules.">
+            <option value="none">No model · graph optimizer</option>
           </select>
-          <button id="shuffle-opener" title="Pick a random opener and re-unfold the blend graph (nearest-neighbor tour). Adjacent pairs stay mixable; narrative shifts.">Shuffle opener</button>
           <button id="build-mix" class="primary">Build mix plan</button>
         </div>
-        <div class="ingest-detail" id="opener-detail" style="margin-top:6px"></div>
+        <div class="ingest-detail" id="provider-detail" style="margin-top:6px"></div>
         <div class="mix-form" style="grid-template-columns:170px auto;margin-top:6px">
-          <select id="directives-engine" aria-label="Engine for DJ-note edits">
-            <option value="nemoclaw">NemoClaw</option>
-            <option value="h-agent">H Company</option>
-            <option value="generic">Generic LLM</option>
-          </select>
+          <select id="directives-engine" aria-label="Model for DJ-note edits"></select>
           <button id="interpret-directives" title="Turn the brief above into specific dj_notes edits (verse landings, cue points, reordering) grounded in each track's real lyrics — always previewed before anything is written">Interpret as DJ notes…</button>
         </div>
         <div class="brain-detail" id="directives-detail"></div>
@@ -705,7 +698,8 @@
         `<span><strong>${summary.segment_count}</strong> transitions</span>` +
         `<span>profile <strong>${esc(profile.name || mixState.profile)}</strong></span>` +
         `<span>DJ format <strong>${esc(djFormat.label || djFormat.name || 'none')}</strong></span>` +
-        `<span>order engine <strong>${esc(engine)}</strong></span>` +
+        `<span>model <strong>${esc(engine === 'none' ? 'graph optimizer only' : engine)}</strong></span>` +
+        `<span>backbeat <strong>${(summary.backbeat || {}).matched || 0} matched · ${(summary.backbeat || {}).unverified || 0} unverified${(summary.backbeat || {}).listener_locked ? ' · ' + summary.backbeat.listener_locked + ' locked' : ''}</strong></span>` +
         `<span>brief tweaks: ${esc(adjustments)}</span>` +
         `<span>${esc(tech)}</span>` +
         (compliance ? `<span>format: ${esc(compliance)}</span>` : '') +
@@ -720,7 +714,7 @@
         ? orderedTracks.map((track, index) =>
             `<div class="mix-seg"><span>${String(index+1).padStart(2,'0')}</span>` +
             `<span class="title">${esc(track.artist)} — ${esc(track.title)}</span>` +
-            `<span class="tech">${esc(track.key || '—')}</span>` +
+            `<span class="tech">${esc(track.key || '—')}${index < orderedTracks.length - 1 ? ' · ' + backbeatBadge(track.blend_out) : ''}</span>` +
             `<span class="bpm">${track.bpm ? Number(track.bpm).toFixed(1)+' BPM' : '—'}</span></div>`
           ).join('')
         : '<div class="empty">No candidate order.</div>';
@@ -734,7 +728,59 @@
           ).join('')
         : '<div class="empty">No transitions in this plan.</div>';
     }
+    const BACKBEAT_LABELS = {
+      matched: ['snare ✓', 'Snares matched (measured backbeat on both songs)'],
+      listener_locked: ['locked', 'Ride locked by a listener-approved DJ note'],
+      unverified: ['bar count only', 'Snare could not be verified on one side — listen to this blend'],
+    };
+    function backbeatBadge(blend) {
+      if (!blend) return '<span title="No backbeat data for this blend">—</span>';
+      const [label, hint] = BACKBEAT_LABELS[blend.status] || [blend.status, ''];
+      const cls = blend.status === 'unverified' ? ' style="color:#b45309;font-weight:600"' : '';
+      return `<span${cls} title="${esc(hint + (blend.reason ? ' · ' + blend.reason : ''))}">${esc(label)}</span>`;
+    }
+    const providerState = { list: [], loaded: false };
+    function fillProviderSelect(select, { includeNone }) {
+      const current = select.value;
+      const options = (includeNone ? ['<option value="none">No model · graph optimizer</option>'] : [])
+        .concat(providerState.list.map(p =>
+          `<option value="${esc(p.name)}"${p.available ? '' : ' disabled'}>${esc(p.label)}${p.available ? '' : ' — ' + esc(p.detail)}</option>`));
+      select.innerHTML = options.join('') || '<option value="" disabled>No model available</option>';
+      const still = providerState.list.find(p => p.name === current && p.available);
+      if (current === 'none' && includeNone) select.value = 'none';
+      else if (still) select.value = current;
+      else if (!includeNone) {
+        const first = providerState.list.find(p => p.available);
+        if (first) select.value = first.name;
+      }
+    }
+    function describeProvider() {
+      const name = el('order-engine').value;
+      const p = providerState.list.find(item => item.name === name);
+      if (!p) {
+        const missing = providerState.list.filter(item => !item.available && item.sign_in)
+          .map(item => `${item.label.replace(' (signed-in CLI)', '')}: run \`${item.sign_in}\``);
+        el('provider-detail').textContent = 'Graph optimizer only: orders the whole set for the best blends, snare-verifiable pairs preferred.'
+          + (missing.length ? ' To add a model, sign in once in a terminal — ' + missing.join(' · ') + ', or put API keys in .env (see .env.example).' : '');
+        return;
+      }
+      el('provider-detail').textContent = `${p.label}: ${p.detail}. The optimizer builds the order; the model reviews it and its changes are kept only if they keep the backbeat and blend rules.`;
+    }
+    async function loadProviders(refresh) {
+      try {
+        const data = await api('/api/providers' + (refresh ? '?refresh=1' : ''));
+        providerState.list = data.providers || [];
+        providerState.loaded = true;
+        fillProviderSelect(el('order-engine'), { includeNone: true });
+        fillProviderSelect(el('directives-engine'), { includeNone: false });
+        describeProvider();
+      } catch (error) {
+        el('provider-detail').textContent = 'Could not check model providers: ' + error.message;
+      }
+    }
+    el('order-engine').addEventListener('change', describeProvider);
     async function pollMix() {
+      if (!providerState.loaded) loadProviders(false);
       const data = await api('/api/mix');
       if (data.profile) mixState.profile = data.profile;
       // Only adopt the server's dj_format while a build is in flight (it
@@ -742,7 +788,7 @@
       // experimental format over the "No expert format" default.
       if (data.building && data.dj_format) mixState.djFormat = data.dj_format;
       else if (!mixState.djFormat) mixState.djFormat = 'none';
-      if (data.order_engine) el('order-engine').value = data.order_engine;
+      if (data.building && data.order_engine) el('order-engine').value = data.order_engine;
       renderPresets(data.profiles);
       renderDjFormats(data.dj_formats);
       renderFinalized(data.finalized, data.enrichment);
@@ -753,7 +799,6 @@
       el('sync-mixxx').disabled = busy;
       el('refresh-finalized').disabled = busy;
       el('rescan-tags').disabled = busy;
-      el('shuffle-opener').disabled = busy || !data.playlist_ready;
       // Start only when plan is ready AND not stale.
       const canStart = Boolean(data.plan_ready) && !data.plan_stale && !busy;
       el('start-mix').disabled = !canStart;
@@ -840,30 +885,6 @@
         el('enrich-detail').textContent = error.message;
       } finally {
         el('rescan-tags').disabled = false;
-      }
-    });
-    el('shuffle-opener').addEventListener('click', async () => {
-      el('shuffle-opener').disabled = true;
-      el('opener-detail').textContent = 'Re-unfolding blend graph from a new random opener…';
-      try {
-        const result = await api('/api/mix/shuffle-opener', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({}),
-        });
-        const o = result.opener || {};
-        el('opener-detail').textContent =
-          (result.message || 'Reshuffled.') +
-          (result.preview && result.preview.length
-            ? ' Next: ' + result.preview.slice(0, 4).map(t => t.title).join(' → ')
-            : '');
-        el('enrich-detail').textContent =
-          `Opener: ${o.artist || ''} — ${o.title || ''} (${o.bpm ? Number(o.bpm).toFixed(1)+' BPM' : 'no bpm'}). Plan is stale until you Build mix plan.`;
-        await pollMix();
-      } catch (error) {
-        el('opener-detail').textContent = error.message;
-      } finally {
-        el('shuffle-opener').disabled = false;
       }
     });
     el('sync-mixxx').addEventListener('click', async () => {

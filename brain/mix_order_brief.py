@@ -7,14 +7,12 @@ Profile knobs (smooth / no tricks / longer blends) still live in
   "only these three: …"
   "start with Regulate, put the Aznavour/Dre pair mid-set"
 
-Engines (same plumbing as Ask the DJ brain):
-  nemoclaw — hermes / Nemotron via OpenAI-compatible API
-  h-agent  — H Company planning-only task
-  none     — skip the agent; run deterministic local mix-quality ordering
+Engines: "none" (graph optimizer only) or any brain.llm_providers provider
+(Claude / Codex / Grok via signed-in CLI or API key, or llama-server).
 
-The agent returns structured constraints (adjacent pairs, regions, optional
-subset). We then reorder deterministically with the mix-graph greedy tour
-plus forced adjacencies — the agent never invents tracks or MIDI.
+The model returns structured constraints (adjacent pairs, regions, optional
+subset). We then order the whole set with brain.mix_optimizer plus forced
+adjacencies — the model never invents tracks or MIDI.
 """
 from __future__ import annotations
 
@@ -354,42 +352,40 @@ def mashup_payoff_pairs(rows: list[dict]) -> list[tuple[str, str]]:
     return pairs
 
 
-def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], list[str]]:
-    """Deterministic reorder: greedy tour, then force adjacency + region windows."""
-    from brain.mix_graph import greedy_mix_order, lineage_pairs, load_chroma_pairs, load_lineage
+def _snare_confidence() -> dict[str, float]:
+    """Cached snare-parity confidence per track; empty when no index exists."""
+    try:
+        from brain.build_mix_plan import load_beat_phase_lookup
 
-    track_ids = [row.get("track_id") for row in rows]
-    if len(track_ids) != len(set(track_ids)):
-        raise ValueError("candidate pool contains duplicate track ids")
-    id_map = short_ids(rows)
-    notes = list(constraints.get("notes") or [])
+        return {tid: float(row.get("confidence") or 0.0) for tid, row in load_beat_phase_lookup().items()}
+    except Exception:
+        return {}
 
-    pool_ids: list[str]
-    if constraints.get("use_only"):
-        pool_ids = [i for i in constraints["use_only"] if i in id_map]
-        if len(pool_ids) < 2:
-            raise ValueError("use_only resolved to fewer than 2 known tracks")
-        notes.append(f"subset mix: {len(pool_ids)} tracks from brief")
-    else:
-        pool_ids = list(id_map.keys())
 
-    pool_rows = [id_map[i] for i in pool_ids]
-    tracks = [row_to_track(row) for row in pool_rows]
-    short_for_path = {row["track_id"]: sid for sid, row in zip(pool_ids, pool_rows)}
-    path_for_short = {sid: row["track_id"] for sid, row in zip(pool_ids, pool_rows)}
+def build_graph(rows: list[dict], snare_confidence: dict[str, float] | None = None):
+    from brain.mix_graph import lineage_pairs, load_chroma_pairs, load_lineage
+    from brain.mix_optimizer import MixGraph
+    from brain.onset_analysis import SNARE_CONFIDENCE_GATE
 
-    lineage = lineage_pairs(tracks, load_lineage())
-    chroma = load_chroma_pairs()
-    opener_short = constraints.get("opener_id")
-    start = None
-    if opener_short and opener_short in path_for_short:
-        start_path = path_for_short[opener_short]
-        start = next(t for t in tracks if t.track_id == start_path)
-        notes.append(f"opener forced: {start.artist} — {start.title}")
+    tracks = [row_to_track(row) for row in rows]
+    return MixGraph(
+        tracks,
+        lineage=lineage_pairs(tracks, load_lineage()),
+        chroma=load_chroma_pairs(),
+        snare_confidence=_snare_confidence() if snare_confidence is None else snare_confidence,
+        gate=SNARE_CONFIDENCE_GATE,
+    )
 
-    ordered_tracks = greedy_mix_order(tracks, start=start, lineage=lineage, chroma=chroma)
-    order = [short_for_path[t.track_id] for t in ordered_tracks]
 
+def enforce_constraints(
+    order: list[str], id_map: dict[str, dict], constraints: dict
+) -> tuple[list[str], list[str], list[list[str]]]:
+    """Apply region windows, adjacency groups and mashup payoffs to an order
+    of short ids. Returns (order, notes, applied adjacency groups)."""
+    from brain.order_constraints import assert_intact, merge_groups
+
+    notes: list[str] = []
+    short_for_path = {row["track_id"]: sid for sid, row in id_map.items()}
     for region in constraints.get("regions") or []:
         ids = [i for i in region.get("ids") or [] if i in order]
         where = region.get("where") or "anywhere"
@@ -400,8 +396,6 @@ def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], 
 
     # Coalesce chained pairs before insertion. Repeated pair insertion can
     # make A-B, then B-C by pulling B out and silently stranding A.
-    from brain.order_constraints import assert_intact, merge_groups
-
     ordered_flag = bool(constraints.get("adjacent_ordered"))
     groups = merge_groups(list(constraints.get("adjacent") or []))
     applied_groups = []
@@ -417,6 +411,7 @@ def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], 
         labels = [f"{id_map[item].get('artist')} — {id_map[item].get('title')}" for item in block]
         notes.append(f"adjacent group: {' ↔ '.join(labels)}")
     claimed = {item for group in applied_groups for item in group}
+    pool_rows = [id_map[i] for i in order]
     for remix_path, original_path in mashup_payoff_pairs(pool_rows):
         remix_s = short_for_path.get(remix_path)
         original_s = short_for_path.get(original_path)
@@ -436,6 +431,53 @@ def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], 
             f"mashup payoff: {remix_title} → {original_title}"
         )
     assert_intact(order, applied_groups)
+    return order, notes, applied_groups
+
+
+def apply_constraints(
+    rows: list[dict],
+    constraints: dict,
+    *,
+    snare_confidence: dict[str, float] | None = None,
+) -> tuple[list[dict], list[str]]:
+    """Deterministic reorder: whole-set optimizer, then force adjacency + region windows."""
+    from brain.mix_optimizer import optimize_order, order_summary
+
+    track_ids = [row.get("track_id") for row in rows]
+    if len(track_ids) != len(set(track_ids)):
+        raise ValueError("candidate pool contains duplicate track ids")
+    id_map = short_ids(rows)
+    notes = list(constraints.get("notes") or [])
+
+    pool_ids: list[str]
+    if constraints.get("use_only"):
+        pool_ids = [i for i in constraints["use_only"] if i in id_map]
+        if len(pool_ids) < 2:
+            raise ValueError("use_only resolved to fewer than 2 known tracks")
+        notes.append(f"subset mix: {len(pool_ids)} tracks from brief")
+    else:
+        pool_ids = list(id_map.keys())
+
+    pool_rows = [id_map[i] for i in pool_ids]
+    short_for_path = {row["track_id"]: sid for sid, row in zip(pool_ids, pool_rows)}
+    path_for_short = {sid: row["track_id"] for sid, row in zip(pool_ids, pool_rows)}
+
+    graph = build_graph(pool_rows, snare_confidence)
+    opener_short = constraints.get("opener_id")
+    opener_path = path_for_short.get(opener_short) if opener_short else None
+    if opener_path:
+        notes.append(f"opener forced: {id_map[opener_short].get('artist')} — {id_map[opener_short].get('title')}")
+
+    ordered_paths = optimize_order(graph, opener_id=opener_path)
+    order = [short_for_path[path] for path in ordered_paths]
+    order, enforce_notes, _ = enforce_constraints(order, {sid: id_map[sid] for sid in pool_ids}, constraints)
+    notes.extend(enforce_notes)
+    summary = order_summary(graph, [path_for_short[i] for i in order])
+    notes.append(
+        f"whole-set optimizer: mean blend {summary['mean_score']:.2f}, "
+        f"{summary['backbeat_verifiable']} snare-verifiable / "
+        f"{summary['backbeat_unverified']} unverified blends"
+    )
 
     result = [id_map[i] for i in order]
     # De-dupe notes while preserving order.
@@ -448,44 +490,55 @@ def apply_constraints(rows: list[dict], constraints: dict) -> tuple[list[dict], 
     return result, uniq_notes
 
 
+RETIRED_ENGINES = {"nemoclaw", "h-agent"}
+
+
 def order_from_brief(
     rows: list[dict],
     brief: str,
     *,
-    engine: str = "nemoclaw",
+    engine: str = "none",
     ask: Callable[[str], str] | None = None,
 ) -> tuple[list[dict], list[str], dict]:
     """Resolve brief → (ordered rows, notes, constraints).
 
-    `ask` is injectable for tests. The model only interprets a non-empty
-    brief; deterministic local ordering runs in every mode.
+    `engine` is "none" or a `brain.llm_providers` provider name. The
+    whole-set optimizer always builds the order. With a provider, the model
+    (1) turns a non-empty brief into constraints and (2) reviews the
+    optimized order like a DJ; its reorder is kept only when it passes the
+    hard rules (see brain.mix_llm_refine). `ask` is injectable for tests.
     """
+    from brain import llm_providers
+
     text = (brief or "").strip()
-    if not text or engine in (None, "", "none", "off", "profile-only"):
+    notes_prefix: list[str] = []
+    if engine in RETIRED_ENGINES:
+        notes_prefix.append(f"order engine {engine!r} is retired; used the graph optimizer")
+        engine = "none"
+    if engine in (None, "", "none", "off", "profile-only"):
+        engine = "none"
+    elif engine not in llm_providers.PROVIDERS:
+        raise ValueError(
+            f"unknown order engine {engine!r}; use none or one of {sorted(llm_providers.PROVIDERS)}"
+        )
+    if engine != "none" and ask is None:
+        ask = lambda prompt: llm_providers.ask(engine, prompt)  # noqa: E731
+
+    if not text or engine == "none":
         constraints = {
             "use_only": None,
             "opener_id": None,
             "adjacent": [],
             "adjacent_ordered": False,
             "regions": [],
-            "notes": ["deterministic local mix-quality ordering"],
+            "notes": ["deterministic whole-set mix-quality ordering"],
         }
-        ordered, notes = apply_constraints(rows, constraints)
-        return ordered, notes, constraints
-
-    allowed = set(short_ids(rows))
-    prompt = build_order_prompt(rows, text)
-    if ask is None:
-        from brain.pick_candidates import ask_h_agent, ask_nemoclaw
-
-        if engine == "nemoclaw":
-            ask = ask_nemoclaw
-        elif engine == "h-agent":
-            ask = ask_h_agent
-        else:
-            raise ValueError(f"unknown order engine {engine!r}; use nemoclaw, h-agent, or none")
-
-    answer = ask(prompt)
-    constraints = parse_constraints(answer, allowed)
+    else:
+        constraints = parse_constraints(ask(build_order_prompt(rows, text)), set(short_ids(rows)))
     ordered, notes = apply_constraints(rows, constraints)
-    return ordered, notes, constraints
+    if engine != "none":
+        from brain.mix_llm_refine import refine_order
+
+        ordered, refine_notes = refine_order(ordered, constraints, rows, brief=text, ask=ask, provider=engine)
+        notes.extend(refine_notes)
+    return ordered, notes_prefix + notes, constraints

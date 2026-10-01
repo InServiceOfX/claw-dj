@@ -175,6 +175,14 @@ def _apply_schema(db: sqlite3.Connection) -> None:
     # separately-recorded data directory. Defaults to empty rather than to
     # `<mount_base>/clawdj`, so a stale row can never silently point the
     # portable database at the wrong place — re-register to repopulate it.
+    # Additive migration: how a beat_phase row was measured. "onset" is the
+    # original whole-signal read; "drum_windows" is an agreeing multi-window
+    # re-measure of a weak read; "drum_windows_unresolved" records that the
+    # re-measure ran and could not confirm a parity, so enrich does not
+    # repeat it every time.
+    phase_columns = {row[1] for row in db.execute("PRAGMA table_info(beat_phase)")}
+    if phase_columns and "method" not in phase_columns:
+        db.execute("ALTER TABLE beat_phase ADD COLUMN method TEXT NOT NULL DEFAULT 'onset'")
     collection_columns = {row[1] for row in db.execute("PRAGMA table_info(collections)")}
     if collection_columns and "data_dir" not in collection_columns:
         db.execute("ALTER TABLE collections ADD COLUMN data_dir TEXT NOT NULL DEFAULT ''")

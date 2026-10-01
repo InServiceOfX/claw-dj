@@ -6,6 +6,31 @@
 > HANDOFF.md updated as you work. Git rules (`CLAUDE.md`/`AGENTS.md`): never
 > commit to `master`; feature branches only; Ernest merges.
 
+## Active cross-machine priorities (updated 2026-09-30)
+
+- [x] **Build mix plan refactor (2026-09-30, branch
+      `feat/build-mix-plan-refactor`).** Request:
+      `docs/intents/request__build_mix_plan_refactor_and_gui_preservation.md`.
+      - Order: `brain/mix_optimizer.py` optimizes the whole set (multi-start
+        greedy + 2-opt + segment moves) over `mix_graph.pair_score` plus
+        snare verifiability; same set → same order regardless of pick order.
+      - Models: `brain/llm_providers.py` — `claude-cli` / `codex-cli` /
+        `grok-cli` (vendor sign-in), `anthropic-api` / `openai-api` /
+        `xai-api` (keys in gitignored `.env`, see `.env.example`),
+        `llama-server`. Model review (`brain/mix_llm_refine.py`) is kept only
+        if it passes the hard rules. NemoClaw / H Company order engines and
+        Shuffle opener are retired from Build mix plan.
+      - Backbeat: every `play_body` carries `backbeat` (matched / unverified /
+        listener_locked); Candidate playback order shows it per blend.
+        Analyze & enrich re-measures weak snare reads on drum-only windows
+        (`beat_phase.method`), accepting only agreeing windows.
+      - Measured: R&B set 56 songs — mean blend 0.738 → 0.762; 4 of 15 weak
+        snare reads recovered by the re-measure (not yet written to the DB:
+        run Analyze & enrich). Needs a live listen.
+      - CLI: `uv run python -m brain.build_mix_plan --order-engine claude-cli …`
+      - Next: Curate's "Ask the DJ brain" still uses NemoClaw/H Company/
+        generic engines; move it to `llm_providers` when wanted.
+
 ## Active cross-machine priorities (updated 2026-08-31)
 
 - [x] **Who Shot Ya album: skip the gun-in-mouth skit, every mix

@@ -35,9 +35,11 @@ Implement the single plan-aware entry to mix composition used by both the playli
 % Existing code to inspect before implementation
 
 - `brain/build_mix_plan.py`: `compose_mix_plan` and CLI behavior.
-- `brain/mix_graph.py`: `pair_score` and `greedy_mix_order` deterministic mix-quality ordering.
+- `brain/mix_graph.py`: `pair_score`, the pairwise compatibility graph.
+- `brain/mix_optimizer.py`: whole-set, backbeat-aware ordering (see `mix_optimizer_Python.prompt`).
+- `brain/mix_llm_refine.py`: model review of the optimized order under hard rules.
+- `brain/llm_providers.py`: Claude / Codex / Grok (signed-in CLI or API key) and llama-server.
 - `brain/mix_order_brief.py`: optional natural-language ordering constraints.
-- `brain/pick_candidates.py`: NemoClaw and H Company model calls.
 - `brain/playlist_editor.py`: in-process Build mix plan, Start mix, enrichment, and legacy constants.
 - `brain/web/playlist.html`: Build mix plan controls and dry-run preview.
 - Plan modules named by the dependencies above.
@@ -56,27 +58,28 @@ Because `build(slug, *, profile=None, dj_format=None, seconds_per_track=None, **
 1. Add `brain/plan_mix_build.py` with the exact public interface in `<pdd-interface>`.
 2. `build(slug, **opts)` MUST resolve plan-specific paths through `PlanPaths`; it MUST NOT silently write the legacy singleton `MIX_PLAN_PATH` or read `DEFAULT_PLAYLIST_JSON` when a plan slug is active.
 3. Inject effective plan notes, order constraints, bunch constraints, and transition overrides into the existing `compose_mix_plan` pipeline rather than duplicating composition logic.
-4. For every build mode, including NemoClaw order, H Company order, and local/Feel-only mode, selected tracks are an AVAILABLE POOL and not a required playback order.
-5. Every mode MUST run deterministic mix-quality ordering using the existing analyzed BPM, key, sample/cover lineage, chroma, artist, genre, and tempo-direction signals. No-LLM/local mode MUST reorder when the deterministic score prefers another sequence.
+4. For every build mode, with any model provider or none, selected tracks are an AVAILABLE POOL and not a required playback order.
+5. Every mode MUST run the deterministic whole-set optimizer (`brain.mix_optimizer`) over the analyzed BPM, key, sample/cover lineage, chroma, artist, genre, tempo-direction and snare-parity verifiability signals. No-model mode MUST reorder when the optimizer prefers another sequence.
 6. An empty natural-language brief MUST NOT disable deterministic ordering.
-7. NemoClaw and H Company MAY interpret optional natural-language constraints, but the resulting constraints are inputs to deterministic ordering. An LLM is not required to calculate the mix-quality sequence.
+7. A provider from `brain.llm_providers` (Claude, Codex or Grok via signed-in CLI or API key, or llama-server) MAY interpret optional natural-language constraints and MAY review the optimized order (`brain.mix_llm_refine`); its reorder is kept only when it passes the hard rules. An LLM is not required to calculate the mix-quality sequence. NemoClaw and H Company are retired as order engines; a request naming them builds with the optimizer and says so in the order notes.
 8. If optional model interpretation fails, report the model warning and fall back to unconstrained deterministic optimization rather than failing the complete mix build.
-9. H Company planning-only ordering MUST use a model-only path and MUST NOT initialize, require, or start a desktop environment or local desktop bridge.
+9. Model calls for ordering MUST be text-only: no tools, no web access, no desktop environment or local desktop bridge.
 10. Preserve every selected track exactly once unless an explicit, successfully parsed subset constraint requests otherwise. Reject or safely fall back from outputs containing unknown, duplicate, or missing track IDs.
 11. Treat explicit opener, adjacency, region, subset, and bunch constraints as authoritative. Optimize all remaining freedom.
-12. The build result MUST contain the complete candidate order for human review before Start mix. Building a plan MUST NOT start playback.
+12. The build result MUST contain the complete candidate order for human review before Start mix, and for each blend whether the snares were matched, only the bar count was aligned (unverified), or a listener-locked ride applied. Building a plan MUST NOT start playback.
+12a. Backbeat matching is a hard rule in every mix profile (DJ showcase, club set, mix to listen) and every DJ format: whenever both sides have a usable snare-parity read and no listener lock applies, the outgoing ride is adjusted so the snares land on the same counts. An unverified blend MUST be labelled as such, never silently presented as matched.
 13. Wrap the result through `plan_mix_envelope.decorate`, write `plans/<slug>/mix_plan.json` atomically, and append exactly one journal entry after a successful write. The resulting artifact MUST also preserve any effective downstream Mixxx control-port information needed for later execution consistency.
 14. Export `playlist_path(slug)` and `mix_plan_path(slug)` so Build, Arrange refresh, Start mix, re-export, and enrichment share path resolution.
 15. Any explicit Mixxx control API port override supplied through options or existing call context has highest priority. If no explicit override is supplied, the implementation MUST preserve and propagate the discovered or reused validated localhost control port used by the current plan/run context. The implementation MUST NOT silently substitute or assume `9995` when a validated non-default port is available. GUI and CLI behavior MUST stay consistent for this port handling. This requirement is about preserving runtime/coordination metadata for downstream execution only and MUST NOT be interpreted as permission for this module to initialize Mixxx, start playback, or start a runtime bridge.
 16. Keep legacy singleton constants as explicit fallback only for legacy/non-plan callers so existing patch-the-constant tests remain valid.
 17. The implementation MUST be deterministic for identical tracks, analysis, constraints, and options. Resolve equal-score ties stably by track identity.
-18. Add unittest coverage for: no-LLM reordering; empty-brief reordering; exact-once preservation; deterministic tie behavior; LLM failure fallback; invalid LLM output fallback; H planning without desktop initialization; explicit constraints; plan-scoped paths; preview payload; legacy fallback; explicit control-port override precedence; and discovered/reused validated localhost control-port propagation without fallback to `9995`.
+18. Add unittest coverage for: no-LLM reordering; empty-brief reordering; exact-once preservation; deterministic tie behavior; LLM failure fallback; invalid LLM output fallback; text-only model calls; retired engine fallback; model review accepted/rejected under the hard rules; per-blend backbeat labels; explicit constraints; plan-scoped paths; preview payload; legacy fallback; explicit control-port override precedence; and discovered/reused validated localhost control-port propagation without fallback to `9995`.
 19. Enforce vocals-only stem safety on the emitted events. A track whose title explicitly identifies it as Acapella, Acappella, A Cappella, Vocal Only, or Vocals Only MUST NOT have a solo `play_body` of any length — 32 dry beats is still the vocal alone. Playing a dry acapella as its own song is very rare. The planner MUST pair it with a compatible instrumental-only track already in the set (an immediately neighboring instrumental is the intended bed) or a looped instrumental section of a full mix (`bed_loop_beats`) via `entry_style=vocal_over_bed` so two decks play at once. The bed MUST stay live (`keep_outgoing_live`): fade the vocal out and keep the instrumental. Canonical accepted pattern: Get Up (Acapella) over Outta Control Instrumental — short instrumental intro, 96-beat vocal layer, next song loads on the vocal deck, bed still playing. Same-song instrumental is legal but not preferred except as that neighbor bed. A note of `entry_style=vocal_over_bed` is not enough if the previous track is a full mix; `apply_vocal_layers` MUST still move the instrumental immediately before the vocal. The agent MAY later swap either stem. A deliberate `showcase_acapella` note is the only sequential exception. A violation MUST fail the build with an actionable error naming the track and both legal remedies; documentation alone is insufficient. Canonical pairing lives in Rust (`clawdj stems pair`); the Python planner uses `brain.stems.apply_vocal_layers` / `assert_vocals_layered` in-process.
 20. Honor `keep_blend_tempo` on an incoming track: sync to the outgoing deck and do not settle the rate back to native after the transition. Do not invent this flag from a BPM gap alone. An explicit `play_bpm` still wins over it.
 
 % User story acceptance
 
-As a DJ, when I finalize a playlist I am declaring which songs are available, not fixing playback order. When I build a mix plan with NemoClaw, H Company, or no LLM, claw-dj optimizes the sequence for musical compatibility, preserves the intended track set, and shows me the candidate order before I choose Start mix. When I later proceed to Start mix, the plan produced by Build must not lose the chosen or discovered Mixxx control connection details and must not accidentally target the wrong default port.
+As a DJ, when I finalize a playlist I am declaring which songs are available, not fixing playback order. When I build a mix plan with no model, or with Claude, Codex, Grok or a local llama-server reviewing it, claw-dj optimizes the whole sequence for the best blends (snare-matchable pairs preferred), preserves the intended track set, and shows me the candidate order, with every blend that could not be snare-verified marked, before I choose Start mix. When I later proceed to Start mix, the plan produced by Build must not lose the chosen or discovered Mixxx control connection details and must not accidentally target the wrong default port.
 
 % Non-goals
 
@@ -90,7 +93,8 @@ As a DJ, when I finalize a playlist I am declaring which songs are available, no
 
 - Run the focused unittest modules for mix graph, order brief, plan mix build, and playlist editor.
 - Verify a no-brief/no-LLM fixture changes a deliberately poor input order while preserving the exact track-id multiset.
-- Verify the H planning test fails if any desktop environment constructor or bridge startup path is called.
+- Verify shuffled selection orders of the same set build the same candidate order.
+- Verify a model reply that adds a blind backbeat blend, moves the opener, or splits a requested pair is rejected and the optimized order is kept with a note.
 - Verify an explicit Mixxx control API port override wins over any discovered or default value in the built artifact metadata.
 - Verify that when a validated non-default localhost control port is already known, the built artifact preserves and propagates that port rather than falling back to `9995`.
 - Verify GUI and CLI build paths produce equivalent port-related metadata for the same inputs.
