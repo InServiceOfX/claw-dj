@@ -51,6 +51,24 @@ What is live now:
   apply` recorded the intent, but its architecture step needs the local
   llama-server (PDD's configured model) and did not run.
 
+### Follow-ups the same day (2026-09-30)
+
+- **Mix to listen = most of each song.** `MixProfile.ride_most_of_song`;
+  `build_plan.most_of_song_ride` (intro/first-beat entry, verse-safe exit in
+  the last 40%, bar-aligned rounding up, skip-note aware, capped so verse
+  extensions cannot pass the song end). `respect_verse_exit` now measures
+  from the real ride origin (cue + previous fade + anchor). The Lounge/bar
+  preset story is superseded in part.
+- **DJ notes authoritative everywhere.** `mix_order_brief.apply_note_endpoints`
+  pins `opener_style` first and `full_track` last; refine rejects moving
+  them. Plan-notes tests now patch `current_index_path` (they were reading
+  the active Elements DB).
+- **DJ showcase choreography.** `build_mix_plan.choreograph_showcase` →
+  `brain.showcase_moves`; `build_plan(showcase_plan=…)` replaces the flourish
+  rotation and may set an `exit_style` (echo_out / filter_drop) only where no
+  human note did. Segments carry `showcase_source: model` + `showcase_why`;
+  GUI marks them ✦.
+
 ## Who Shot Ya variations (2026-08-31)
 
 Active named plan: `notorious-big-who-shot-ya-variations`. Editorial

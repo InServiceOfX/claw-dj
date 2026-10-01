@@ -465,6 +465,7 @@ def build_plan(
     dj_format: "DjFormat | None" = None,
     provenance: dict | None = None,
     transition_beats_by_pair: dict[tuple[str, str], int] | None = None,
+    showcase_plan: dict[int, dict] | None = None,
 ) -> dict:
     from brain.dj_formats import format_provenance, get_format
     from brain.mix_profiles import PROFILES
@@ -1499,7 +1500,15 @@ def build_plan(
             scaled = tech["transition_beats"] * profile.transition_scale
             tech["transition_beats"] = max(4, int(round(scaled / 4)) * 4)
         flourish = "bass_swap"
-        if profile.flourish_every and index % profile.flourish_every == 0 and not incoming_directive["no_flourish"]:
+        model_move = (showcase_plan or {}).get(index)
+        if model_move is not None and not incoming_directive["no_flourish"]:
+            # DJ showcase choreographed by the selected model
+            # (brain.showcase_moves, already validated).
+            flourish = model_move.get("flourish") or "bass_swap"
+            tech["showcase_source"] = "model"
+            if model_move.get("why"):
+                tech["showcase_why"] = model_move["why"]
+        elif profile.flourish_every and index % profile.flourish_every == 0 and not incoming_directive["no_flourish"]:
             # Rotation includes the Rust slip gestures (stutter/censor);
             # the runner degrades them to plain blends when the clawdj
             # binary is missing, so plans stay portable.
@@ -1665,6 +1674,15 @@ def build_plan(
         pattern = profile.ride_phrases_pattern
         ride_phrases = pattern[index % len(pattern)]
         directive = track_directives(outgoing)
+        model_exit = ((showcase_plan or {}).get(index) or {}).get("exit")
+        if (
+            model_exit in ("echo_out", "filter_drop")
+            and directive["exit_style"] is None
+            and incoming_directive["entry_style"] is None
+            and index >= profile.smooth_opening_transitions
+        ):
+            # Model-chosen dramatic exit; a human note would have won above.
+            directive = {**directive, "exit_style": model_exit}
         if directive["exit_style"] == "echo_out":
             # Echo-out exit (docs/DJ_TRANSITIONS_PLAYBOOK.md #4): the
             # outgoing track fades under a rising echo tail, then the
@@ -2242,6 +2260,11 @@ def build_plan(
                 "score": tech["score"],
                 "showcase_move": tech["showcase_move"],
                 **(
+                    {"showcase_source": "model", "showcase_why": tech.get("showcase_why", "")}
+                    if tech.get("showcase_source") == "model"
+                    else {}
+                ),
+                **(
                     {
                         "dj_format": tech["dj_format"],
                         "format_recipe": tech["format_recipe"],
@@ -2360,6 +2383,58 @@ INSTRUMENT_MAP = {
 }
 
 
+def choreograph_showcase(
+    rows: list[dict],
+    *,
+    profile,
+    order_engine: str,
+    mix_brief: str,
+    ask=None,
+    notes: list[str],
+) -> dict[int, dict] | None:
+    """DJ showcase + a model provider: let the model pick each blend's move.
+
+    Returns None (keep the built-in flourish rotation) for every other Mix
+    feel, with no model, or when the model fails.
+    """
+    from brain import llm_providers
+    from brain.mix_order_brief import build_graph
+    from brain.showcase_moves import choreograph
+
+    if profile.ride_most_of_song or not profile.flourish_every:
+        return None
+    if order_engine not in llm_providers.PROVIDERS or len(rows) < 2:
+        return None
+    graph = build_graph(rows)
+    edges = graph.report([row["track_id"] for row in rows])
+    transitions = []
+    for i, (left, right, edge) in enumerate(zip(rows, rows[1:], edges)):
+        out_d, in_d = track_directives(left), track_directives(right)
+        transitions.append({
+            "i": i,
+            "from": f"{left.get('artist')} — {left.get('title')}",
+            "to": f"{right.get('artist')} — {right.get('title')}",
+            "bpm": [round(float(left["bpm"]), 1) if left.get("bpm") else None,
+                    round(float(right["bpm"]), 1) if right.get("bpm") else None],
+            "key": [left.get("key"), right.get("key")],
+            "blend_score": edge.score,
+            "backbeat": edge.backbeat,
+            "why_compatible": list(edge.reasons)[:3],
+            "lineage": any("lineage" in r for r in edge.reasons),
+            "no_flourish": bool(in_d["no_flourish"]),
+            "noted_style": bool(out_d["exit_style"] or in_d["entry_style"]),
+            "dj_notes": [(left.get("dj_notes") or "")[:160] or None, (right.get("dj_notes") or "")[:160] or None],
+        })
+    if ask is None:
+        ask = lambda prompt: llm_providers.ask(order_engine, prompt)  # noqa: E731
+    plan, showcase_notes = choreograph(
+        transitions, brief=mix_brief, ask=ask, provider=order_engine,
+        smooth_opening=profile.smooth_opening_transitions,
+    )
+    notes.extend(showcase_notes)
+    return plan or None
+
+
 def compose_mix_plan(
     *,
     playlist: Path = DEFAULT_PLAYLIST,
@@ -2472,6 +2547,10 @@ def compose_mix_plan(
     # When the agent narrowed to a short showcase, don't re-inflate with tracks.
     if order_constraints and order_constraints.get("use_only"):
         count = len(pool)
+    showcase_plan = choreograph_showcase(
+        pool[:count], profile=profile, order_engine=order_engine, mix_brief=mix_brief,
+        ask=ask, notes=order_notes,
+    )
     provenance = profile_provenance(profile, mix_brief, brief_notes)
     provenance["order_engine"] = order_engine
     provenance["order_notes"] = order_notes
@@ -2503,6 +2582,7 @@ def compose_mix_plan(
         dj_format=dj_format,
         provenance=provenance,
         transition_beats_by_pair=transition_beats_by_pair,
+        showcase_plan=showcase_plan,
     )
     if control_port is not None:
         plan.setdefault("runtime", {})["mixxx_control_port"] = int(control_port)

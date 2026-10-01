@@ -118,6 +118,13 @@ contexts:
         code:
           path: "brain/mix_llm_refine.py"
 
+  showcase_moves:
+    paths: ["*showcase_moves*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/showcase_moves.py"
+
   plan_staleness:
     paths: ["*plan_staleness*"]
     defaults:
