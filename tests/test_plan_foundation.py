@@ -40,6 +40,9 @@ class PlanFoundationTest(TestCase):
             patch.object(bunch_store, "DEFAULT_INDEX", self.db),
             patch.object(plan_notes, "DEFAULT_INDEX", self.db),
             patch.object(library_index, "DEFAULT_INDEX", self.db),
+            # The active music collection (e.g. /Volumes/Elements) must not
+            # leak into these tests: notes are written to self.db.
+            patch.object(library_index, "current_index_path", lambda path=None: path or self.db),
         ]
         for item in self.patches:
             item.start()

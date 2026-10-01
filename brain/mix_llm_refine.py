@@ -38,7 +38,7 @@ def build_refine_prompt(rows: list[dict], graph, brief: str) -> str:
             "key": row.get("key"),
             "genre": row.get("genre"),
             "snare_read": "weak" if row["track_id"] in weak else "ok",
-            "dj_notes": (row.get("dj_notes") or "")[:160] or None,
+            "dj_notes": (row.get("dj_notes") or "")[:400] or None,
         }
         for sid, row in ids.items()
     ]
@@ -65,6 +65,8 @@ Hard rules you must keep:
 - Use every id exactly once; never invent ids.
 - A song whose snare_read is "weak" cannot be snare-matched; do not place two
   weak songs next to each other.
+- Respect every song's dj_notes: they are the DJ's own instructions
+  (cue points, ride lengths, skips, opener/closer, tempo holds).
 - Vocals-only (acapella) tracks are layered over instrumentals by the
   builder; keep each acapella next to its instrumental if it already is.
 
@@ -137,6 +139,9 @@ def refine_order(
     opener = to_local.get(constraints.get("opener_id") or "")
     if opener and proposal_short[0] != opener:
         return ordered_rows, [f"{provider} review rejected: it moved the requested opener"]
+    closer = to_local.get(constraints.get("closer_id") or "")
+    if closer and proposal_short[-1] != closer:
+        return ordered_rows, [f"{provider} review rejected: it moved the closing song a DJ note pinned"]
     try:
         enforced, _, _ = enforce_constraints(list(proposal_short), local, local_constraints)
     except Exception as error:

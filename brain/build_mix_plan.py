@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 from contextlib import closing
@@ -23,7 +24,7 @@ from pathlib import Path
 
 from brain.mix_graph import bpm_compatibility, key_compatibility, parse_key
 from brain.phrase_analysis import seekable_cue_seconds, usable_first_beat_seconds
-from brain.verse import fill_segment_lookup, respect_verse_entry, respect_verse_exit
+from brain.verse import fill_segment_lookup, respect_verse_entry, respect_verse_exit, song_exit_seconds
 
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_PLAYLIST = DATA_DIR / "playlist.json"
@@ -905,6 +906,13 @@ def build_plan(
             )
         ):
             pick, source = intro, "phrase_intro"
+        if profile.ride_most_of_song:
+            # Listening mix plays the record, not the highlight: from the
+            # intro when one was detected, otherwise from the first beat.
+            if intro:
+                pick, source = intro, "phrase_intro"
+            else:
+                pick, source = {"cue_seconds": 0.0, "beat_index": 0, "confidence": None}, "song_start"
         if pick is None:
             pick = phrase
         # The beatgrid/energy phrase-picker has no idea where a word starts —
@@ -949,6 +957,55 @@ def build_plan(
             "cue_confidence": 0.0 if sanitized else pick.get("confidence"),
             "cue_source": source,
         })
+
+    def most_of_song_ride(
+        track: dict, slot: int, previous_fade: int, blend_beats: int, directive: dict
+    ) -> tuple[int, int]:
+        """(ride_beats, cap) that play most of the song from its cue.
+
+        The blend out starts no later than the song's end minus the blend
+        and a short tail, on a verse-safe moment (brain.verse
+        .song_exit_seconds), snapped down to a bar. `cap` is the latest
+        legal ride, used to bound later verse extensions.
+        """
+        period = 60.0 / float(track["bpm"])
+        cue = float(cue_fields(track, 0.1, slot).get("cue_seconds") or 0.0)
+        tail_beats = 4
+        latest = float(track["duration_seconds"]) - (blend_beats + tail_beats) * period
+        consumed = (previous_fade + 1) * period  # incoming blend + anchor beat
+        earliest = cue + consumed + max(0.0, (latest - cue - consumed) * 0.6)
+        exit_s, why = song_exit_seconds(
+            lyric_segment_lookup.get(track["track_id"]) or [],
+            earliest=earliest,
+            latest=latest,
+            blend_seconds=blend_beats * period,
+            title=str(track.get("title") or ""),
+            path=str(track.get("track_id") or ""),
+        )
+
+        # A skip_from/skip_to DJ note jumps over that span mid-ride, so the
+        # live beat count to a song-time exit is shorter by the skipped beats.
+        skipped = 0.0
+        skip_from, skip_to = directive.get("skip_from_seconds"), directive.get("skip_to_seconds")
+        if skip_from is not None and skip_to is not None and float(skip_to) > float(skip_from) > cue:
+            skipped = float(skip_to) - float(skip_from)
+
+        def ride_for(seconds: float, *, up: bool) -> int:
+            # Bar-aligned from the cue. A chorus start / verse end is
+            # rounded UP so the blend never starts in a verse's last bar.
+            live = seconds - (skipped if skip_to is not None and seconds >= float(skip_to) else 0.0)
+            beats = (live - cue) / period
+            bars = math.ceil(beats / 4 - 1e-6) if up else math.floor(beats / 4)
+            return max(0, bars * 4 - previous_fade - 1)
+
+        cap = ride_for(latest, up=False)
+        ride = min(cap, ride_for(exit_s, up=True))
+        print(
+            f"  [ride] {track['artist']} — {track['title']}: {ride} beats "
+            f"(blend out at {cue + (previous_fade + ride + 1) * period:.1f}s of "
+            f"{float(track['duration_seconds']):.0f}s; {why})"
+        )
+        return ride, cap
 
     def format_min_ride_beats(ride_phrases: int) -> int:
         """Beats a DJ-format ride must cover before an exit may be chosen.
@@ -1686,6 +1743,18 @@ def build_plan(
             # 1024: a 168 BPM double-time grid (Wanna Get To Know) needs ~640
             # beats to cover 4 minutes. 512 cut 50's verse off.
             ride_beats = max(0, min(1024, directive["ride_beats"]))
+        song_ride_cap: int | None = None
+        if (
+            profile.ride_most_of_song
+            and directive["ride_beats"] is None
+            and directive["ride_phrases"] is None
+            and outgoing.get("bpm")
+            and outgoing.get("duration_seconds")
+        ):
+            ride_beats, song_ride_cap = most_of_song_ride(
+                outgoing, index, previous_fade_beats, int(tech.get("transition_beats") or 32),
+                directive,
+            )
 
         # Remix Report: start an 8-bar intro on the downbeat of an 8-bar
         # chorus. 10-bar: wait 2 bars, then intro. 6-bar: skip 2 bars of
@@ -1969,8 +2038,14 @@ def build_plan(
             outgoing_cue = float(
                 cue_fields(outgoing, 0.1, index).get("cue_seconds") or 0.0
             )
+            # The ride is counted after the incoming blend that started this
+            # song (previous_fade_beats) plus the anchor beat, so the fade
+            # begins that much later than cue + ride.
+            ride_origin = outgoing_cue + (previous_fade_beats + 1) * (
+                60.0 / float(outgoing["bpm"])
+            )
             ride_beats, verse_reason = respect_verse_exit(
-                outgoing_cue,
+                ride_origin,
                 ride_beats,
                 float(outgoing["bpm"]),
                 lyric_segment_lookup.get(outgoing["track_id"]) or [],
@@ -1982,6 +2057,9 @@ def build_plan(
                 print(
                     f"  [verse] {outgoing['artist']} — {outgoing['title']}: {verse_reason}"
                 )
+        if song_ride_cap is not None and ride_beats > song_ride_cap:
+            # A verse extension must not push the blend past the song's end.
+            ride_beats = song_ride_cap
 
         # Real onset/waveform check (brain.onset_analysis): a standard
         # backbeat puts the snare on every OTHER beat, so which beat-in-bar
@@ -2265,7 +2343,7 @@ def build_plan(
     final_directive = track_directives(final_track)
     final_cue = cue_fields(final_track, 0.1, len(selected) - 1)
     full_seconds = None
-    if final_directive["full_track"] and final_track.get("duration_seconds"):
+    if (final_directive["full_track"] or profile.ride_most_of_song) and final_track.get("duration_seconds"):
         cue_seconds = float(final_cue.get("cue_seconds") or 0.0)
         full_seconds = max(1.0, float(final_track["duration_seconds"]) - cue_seconds)
     finale = {

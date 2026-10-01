@@ -1,9 +1,18 @@
-<!-- pdd-story-status: drafted-2026-08-31 -->
+<!-- pdd-story-status: drafted-2026-08-31; superseded-in-part 2026-09-30 -->
 <!-- pdd-story-areas: mix_profiles, build_mix_plan, plan_mix_build, mix_graph -->
 <!-- pdd-story-prompts: plan_mix_build_Python.prompt -->
 <!-- pdd-story-dev-units: plan_mix_build_Python.prompt -->
 
 # User Story: Restaurant / bar / lounge mix feel plays most of each song with DJ blends
+
+> **Superseded in part (Ernest, 2026-09-30):** instead of a fourth
+> "Lounge / bar" preset, **Mix to listen itself** now plays most of each
+> song: enter from the intro (or first beat), ride to the song's end minus
+> the outgoing blend, and start that blend on a chorus, after a verse, or
+> in an instrumental stretch — never mid-verse. The "do not change Mix to
+> listen's 85s / best-part behavior" rule below is retired; criteria 2–6
+> now apply to Mix to listen. DJ showcase and Club set are unchanged.
+> Request: `docs/intents/request__mix_to_listen_plays_most_of_each_song.md`.
 
 ## Story
 
