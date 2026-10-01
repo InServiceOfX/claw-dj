@@ -97,6 +97,27 @@ contexts:
         code:
           path: "brain/plan_mix_build.py"
 
+  llm_providers:
+    paths: ["*llm_providers*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/llm_providers.py"
+
+  mix_optimizer:
+    paths: ["*mix_optimizer*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/mix_optimizer.py"
+
+  mix_llm_refine:
+    paths: ["*mix_llm_refine*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/mix_llm_refine.py"
+
   plan_staleness:
     paths: ["*plan_staleness*"]
     defaults:

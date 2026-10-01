@@ -855,14 +855,16 @@
   },
   {
     "reason": "The GUI's build_mix calls compose_mix_plan IN-PROCESS against the module-level MIX_PLAN_PATH, so adding a --plan flag to build_mix_plan.py would never reach it and the Arrange tab would be permanently empty.",
-    "description": "The single plan-aware entry to mix composition, callable from both the GUI and the CLI so the two cannot produce different artifacts. build(slug, **opts) resolves EVERY path from PlanPaths and never from MIX_PLAN_PATH or DEFAULT_PLAYLIST_JSON, injects effective notes plus ordering constraints plus transition overrides, calls the existing compose_mix_plan, wraps the result through decorate(), writes plans/<slug>/mix_plan.json and appends one journal entry. For every build mode (including NemoClaw order, H Company order, and Feel only), the selected tracks are an AVAILABLE POOL, not a required playback order: the builder may reorder the finalized playlist as needed for mix quality, must preserve every available track exactly once unless explicit subset constraints say otherwise, and must return the candidate order for user review before Start mix. Any natural-language ordering constraints may be interpreted with LLM help, but mix-quality ordering itself must not require an LLM and must still work in every mode. H Company planning-only ordering must not require or start a local desktop bridge. When downstream execution needs a Mixxx control API port, preserve an explicit override as highest priority and otherwise propagate the discovered/reused validated localhost control port consistently rather than assuming 9995. Exports playlist_path(slug) and mix_plan_path(slug) so start_mix, reexport_finalized and start_enrich resolve the same way rather than re-deriving paths. Without this module /api/mix/build writes the legacy singleton while api_plan_arrange reads plans/<slug>/mix_plan.json, and /api/mix/start plays the wrong plan under a live run. Exists as its own module rather than an inline diff because playlist_editor.py is 1437 lines, past the single-prompt regeneration ceiling. Keep the legacy constants in place as a fallback so the existing tests' patch-the-constant idiom survives.",
+    "description": "The single plan-aware entry to mix composition, callable from both the GUI and the CLI so the two cannot produce different artifacts. build(slug, **opts) resolves EVERY path from PlanPaths and never from MIX_PLAN_PATH or DEFAULT_PLAYLIST_JSON, injects effective notes plus ordering constraints plus transition overrides, calls the existing compose_mix_plan, wraps the result through decorate(), writes plans/<slug>/mix_plan.json and appends one journal entry. For every build mode (no model, or any brain.llm_providers provider reviewing the order), the selected tracks are an AVAILABLE POOL, not a required playback order: the builder may reorder the finalized playlist as needed for mix quality, must preserve every available track exactly once unless explicit subset constraints say otherwise, and must return the candidate order for user review before Start mix. Any natural-language ordering constraints may be interpreted with LLM help, but mix-quality ordering itself must not require an LLM and must still work in every mode. Model calls are text-only and never start a desktop bridge. Ordering uses the whole-set backbeat-aware optimizer (brain.mix_optimizer); a model's reorder is kept only under the hard rules (brain.mix_llm_refine). Each blend in the candidate order is labelled snare-matched, unverified, or listener-locked. When downstream execution needs a Mixxx control API port, preserve an explicit override as highest priority and otherwise propagate the discovered/reused validated localhost control port consistently rather than assuming 9995. Exports playlist_path(slug) and mix_plan_path(slug) so start_mix, reexport_finalized and start_enrich resolve the same way rather than re-deriving paths. Without this module /api/mix/build writes the legacy singleton while api_plan_arrange reads plans/<slug>/mix_plan.json, and /api/mix/start plays the wrong plan under a live run. Exists as its own module rather than an inline diff because playlist_editor.py is 1437 lines, past the single-prompt regeneration ceiling. Keep the legacy constants in place as a fallback so the existing tests' patch-the-constant idiom survives.",
     "dependencies": [
       "brain/plan_paths_Python.prompt",
       "brain/plan_journal_Python.prompt",
       "brain/plan_notes_Python.prompt",
       "brain/transition_overrides_Python.prompt",
       "brain/order_constraints_Python.prompt",
-      "brain/plan_mix_envelope_Python.prompt"
+      "brain/plan_mix_envelope_Python.prompt",
+      "brain/mix_optimizer_Python.prompt",
+      "brain/mix_llm_refine_Python.prompt"
     ],
     "priority": 13,
     "filename": "brain/plan_mix_build_Python.prompt",
@@ -2698,5 +2700,95 @@
       {"kind": "api", "source": "/api/collections", "method": "GET"},
       {"kind": "api", "source": "/api/collections", "method": "POST"}
     ]}}
+  },
+  {
+    "reason": "NemoClaw was too hard to deploy and keep up and H Company's model is not the right fit; Ernest wants Claude, Codex, Grok or llama-server.",
+    "description": "Model providers for Build mix plan: Claude, Codex and Grok through their signed-in CLIs, Claude/OpenAI/xAI through API keys in the gitignored .env, and a local llama-server. One ask(provider, prompt) -> text call and a never-raising status_all() for the GUI. claw-dj never runs OAuth or stores credentials.",
+    "dependencies": [],
+    "priority": 44,
+    "filename": "brain/llm_providers_Python.prompt",
+    "filepath": "brain/llm_providers.py",
+    "tags": [
+      "backend",
+      "llm",
+      "providers"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "status_all",
+            "signature": "status_all() -> list[dict]"
+          },
+          {
+            "name": "ask",
+            "signature": "ask(provider: str, prompt: str, *, timeout_s: float = 600.0) -> str"
+          },
+          {
+            "name": "load_env",
+            "signature": "load_env(path: Path = ENV_PATH) -> None"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The single greedy tour ignored backbeat verifiability and stranded weak pairs; 28/55 blends of the R&B set were silently bar-count-only.",
+    "description": "Whole-set playback-order optimizer: directed edge weights from mix_graph.pair_score plus tempo direction and snare-parity verifiability (unverified and blind blends penalized), multi-start greedy then 2-opt and segment moves. Order depends only on the set's contents.",
+    "dependencies": [],
+    "priority": 45,
+    "filename": "brain/mix_optimizer_Python.prompt",
+    "filepath": "brain/mix_optimizer.py",
+    "tags": [
+      "backend",
+      "mix",
+      "ordering"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "optimize_order",
+            "signature": "optimize_order(graph: MixGraph, *, opener_id: str | None = None, time_budget_s: float = 8.0, starts: int = 12) -> list[str]"
+          },
+          {
+            "name": "order_summary",
+            "signature": "order_summary(graph: MixGraph, order_ids: list[str]) -> dict"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Ernest chose optimizer leads, LLM refines (2026-09-30).",
+    "description": "Model review of the optimized order. Keeps a model's reorder only if it uses the same songs once, keeps the requested opener/pairings/regions, adds no blind backbeat blend, adds at most one unverified blend, and stays within 3% of the optimizer objective. Never fails the build.",
+    "dependencies": [
+      "brain/mix_optimizer_Python.prompt",
+      "brain/llm_providers_Python.prompt"
+    ],
+    "priority": 46,
+    "filename": "brain/mix_llm_refine_Python.prompt",
+    "filepath": "brain/mix_llm_refine.py",
+    "tags": [
+      "backend",
+      "mix",
+      "llm"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "refine_order",
+            "signature": "refine_order(ordered_rows, constraints, all_rows, *, brief, ask, provider, snare_confidence=None) -> tuple[list[dict], list[str]]"
+          }
+        ]
+      }
+    }
   }
 ]

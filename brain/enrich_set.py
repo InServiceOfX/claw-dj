@@ -279,6 +279,71 @@ def fill_beat_phase(db, tracks: list[dict], *, max_seconds: float = 240.0, progr
     return analyzed
 
 
+def remeasure_weak_beat_phase(db, tracks: list[dict], *, progress=None) -> dict:
+    """Re-read weak snare phases from drum-only windows (once per track).
+
+    A weak read silently downgrades every blend touching that song to
+    bar-count alignment. Only an agreeing multi-window re-measure replaces
+    the stored read (see brain.onset_analysis.agree_on_parity); otherwise
+    the row is marked so the next enrich does not repeat the work.
+    """
+    from brain.onset_analysis import SNARE_CONFIDENCE_GATE, remeasure_snare_phase
+
+    ids = [t["track_id"] for t in tracks]
+    if not ids:
+        return {"checked": 0, "recovered": 0, "unresolved": 0}
+    rows = db.execute(
+        "SELECT track_id, snare_parity, confidence, bpm, first_beat_seconds, method "
+        f"FROM beat_phase WHERE track_id IN ({','.join('?' * len(ids))})",
+        ids,
+    ).fetchall()
+    weak = [
+        row for row in rows
+        if float(row["confidence"] or 0.0) < SNARE_CONFIDENCE_GATE and row["method"] == "onset"
+    ]
+    by_id = {t["track_id"]: t for t in tracks}
+    recovered = unresolved = 0
+    for i, row in enumerate(weak, 1):
+        track = by_id.get(row["track_id"], {})
+        label = f"[{i}/{len(weak)}] {track.get('artist')} — {track.get('title')}"
+        try:
+            import librosa
+
+            duration = librosa.get_duration(path=row["track_id"])
+        except Exception:
+            duration = None
+        result = remeasure_snare_phase(
+            row["track_id"],
+            bpm=float(row["bpm"]),
+            first_beat_seconds=float(row["first_beat_seconds"]),
+            duration_seconds=duration,
+            gate=SNARE_CONFIDENCE_GATE,
+        )
+        if result is None:
+            db.execute(
+                "UPDATE beat_phase SET method = 'drum_windows_unresolved', analyzed_at = ? WHERE track_id = ?",
+                (time.time(), row["track_id"]),
+            )
+            unresolved += 1
+            msg = f"  [backbeat] {label}: still unverified (drum windows disagree or stay weak {row['confidence']:.3f})"
+        else:
+            db.execute(
+                "UPDATE beat_phase SET snare_parity = ?, confidence = ?, method = 'drum_windows', analyzed_at = ? "
+                "WHERE track_id = ?",
+                (result["snare_parity"], result["confidence"], time.time(), row["track_id"]),
+            )
+            recovered += 1
+            msg = (
+                f"  [backbeat] {label}: verified from {result['agreeing']}/{result['windows']} drum windows "
+                f"({row['confidence']:.3f} -> {result['confidence']:.3f})"
+            )
+        print(msg)
+        if progress:
+            progress(msg)
+    db.commit()
+    return {"checked": len(weak), "recovered": recovered, "unresolved": unresolved}
+
+
 def enrichment_status(playlist_path: Path = DEFAULT_PLAYLIST_JSON) -> dict:
     """Gap report for the UI — does not mutate anything."""
     if not playlist_path.exists():
@@ -450,6 +515,13 @@ def run_enrich(
                 done = fill_beat_phase(db, targets, progress=note)
                 summary["beat_phase_analyzed"] = done
                 note(f"beat_phase: {done} analyzed")
+            weak = remeasure_weak_beat_phase(db, tracks, progress=note)
+            summary["backbeat_remeasure"] = weak
+            if weak["checked"]:
+                note(
+                    f"backbeat re-measure: {weak['recovered']} verified, "
+                    f"{weak['unresolved']} still unverified of {weak['checked']} weak reads"
+                )
         else:
             note("[beat_phase] skipped")
 

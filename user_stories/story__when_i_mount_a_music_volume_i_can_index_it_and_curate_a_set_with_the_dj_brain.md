@@ -1,4 +1,4 @@
-<!-- pdd-story-status: observed-working-baseline-2026-08-09 -->
+<!-- pdd-story-status: observed-working-baseline-2026-08-09; GUI controls accepted 2026-09-30 -->
 <!-- pdd-story-areas: collection, scan_library, playlist_editor, pick_candidates -->
 
 # User Story: Mount a music volume, index it once, curate a set with the DJ brain
@@ -50,6 +50,16 @@ routine “check for new music” stays cheap after the first full index.
 5. **Startup default**
    - Restarting the playlist editor reuses the last-used active collection
      without forcing a “which volume?” prompt every time.
+
+6. **Curate page controls (preserve as-is, Ernest 2026-09-30)**
+   - The **Music collection** panel shows the active collection and its
+     volume (e.g. `ElementsMusic · /Volumes/Elements`), a **Known
+     collections** list with **Use selected**, and **Start new collection…**
+     to point at another mounted volume.
+   - The **New music** panel shows the last scan as
+     `N new · N changed · N unchanged · N need tags` and the
+     `Scanned folders: …` line, with a **Check for new music** button that
+     runs the incremental re-check above.
 
 ## Out of scope for this story
 

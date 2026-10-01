@@ -1,0 +1,42 @@
+<pdd-reason>Build mix plan needs a model it can actually reach on Ernest's machine. NemoClaw (Docker sandbox + port forward) was too hard to deploy and keep up, and H Company's planning model is not the right fit. Claude, Codex and Grok are already installed and signed in as CLIs, and llama-server runs locally.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "status_all", "signature": "status_all() -> list[dict]", "returns": "one row per provider: name, label, kind, sign_in, env_vars, available, detail"},
+      {"name": "ask", "signature": "ask(provider: str, prompt: str, *, timeout_s: float = 600.0) -> str", "sideEffects": "spawns a vendor CLI or makes one HTTP call"},
+      {"name": "load_env", "signature": "load_env(path: Path = ENV_PATH) -> None"}
+    ],
+    "constants": ["PROVIDERS", "ProviderError", "ENV_PATH", "DEFAULT_ANTHROPIC_MODEL"]
+  }
+}
+</pdd-interface>
+
+% Goal
+
+One text-in / text-out call to a language model, reachable in the ways a local DJ app can legitimately use:
+
+- Signed-in vendor CLI (the user's subscription; the vendor CLI owns its browser login): `claude-cli`, `codex-cli`, `grok-cli`.
+- API key kept in the repository's gitignored `.env`: `anthropic-api` (ANTHROPIC_API_KEY, optional CLAWDJ_ANTHROPIC_MODEL, default `claude-opus-5-5`), `openai-api` (OPENAI_API_KEY + CLAWDJ_OPENAI_MODEL), `xai-api` (XAI_API_KEY + CLAWDJ_XAI_MODEL).
+- Local llama.cpp `llama-server` (OpenAI-compatible; LLAMA_SERVER_URL, default http://127.0.0.1:8080).
+
+% Requirements
+
+1. `PROVIDERS` lists exactly the seven providers above with a human label, kind (`cli` | `api` | `local`), the one-time terminal sign-in command for CLI providers (`claude auth login`, `codex login`, `grok login --oauth`), and the env vars for API/local providers.
+2. `status_all()` reports availability and a one-line human detail for every provider without raising: CLI installed and signed in; API key (and model where required) set; llama-server answering `/health`.
+3. `ask()` sends one prompt and returns only the model's answer text. CLI providers run non-interactively with no tools, no web access and no persisted session; the prompt is passed on stdin or a temporary file, never in a shell string.
+4. `.env` is loaded without overriding variables already set in the process environment.
+5. The Anthropic API path uses the official `anthropic` SDK (not raw HTTP, not an OpenAI-compatible shim), explicit effort, and the server-side refusal fallback.
+
+<contract_rules>
+R1 (MUST NOT): claw-dj runs no OAuth flow and writes no credential, token, or API key anywhere; sign-in belongs to the vendor CLI and keys live only in the user's gitignored `.env` or environment.
+R2 (MUST): any failure (not installed, not signed in, missing key, HTTP error, timeout, refusal) raises `ProviderError` with a human-readable reason, never a raw subprocess or HTTP exception.
+R3 (MUST): an unknown provider name, including the retired `nemoclaw` and `h-agent`, raises `ProviderError`.
+R4 (MUST): `status_all()` never raises and never prompts.
+R5 (MUST NOT): a provider being unavailable blocks any caller that can work without a model.
+</contract_rules>
+
+% Verification
+
+`tests/test_llm_providers.py`: every provider has a sign-in or env route; unknown/retired names raise; missing keys name the env var; `.env` does not override the shell; `.env` is gitignored; Claude CLI argv has `-p` and an empty tool list with the prompt on stdin; CLI failure becomes ProviderError; a down llama-server is reported, not raised.

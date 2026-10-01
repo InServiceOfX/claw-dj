@@ -1,0 +1,39 @@
+<pdd-reason>Ernest chose "optimizer leads, LLM refines" (2026-09-30): the graph optimizer always produces a valid order; a model may improve the listening journey but can never break the mixing rules or block a build.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "refine_order", "signature": "refine_order(ordered_rows: list[dict], constraints: dict, all_rows: list[dict], *, brief: str, ask: Callable[[str], str], provider: str, snare_confidence: dict[str, float] | None = None) -> tuple[list[dict], list[str]]"},
+      {"name": "build_refine_prompt", "signature": "build_refine_prompt(rows: list[dict], graph: MixGraph, brief: str) -> str"}
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/mix_optimizer_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/llm_providers_Python.prompt</pdd-dependency>
+
+% Goal
+
+Let a model review the optimized order like a DJ (opener and closer, energy arc, lineage payoffs, repetitive artist runs) and keep its reorder only when it passes the hard rules.
+
+% Requirements
+
+1. The prompt gives the model short ids only (no file paths), each song's artist, title, BPM, key, genre, snare-read status and DJ notes, the current order with blend scores and backbeat labels, and the user's brief. It asks for one JSON object `{"order": [...], "notes": [...]}`.
+2. Accept the proposal only when all of these hold; otherwise keep the optimizer's order and add one note saying why:
+   - the same songs, each exactly once;
+   - the requested opener is still first, and re-applying the brief's adjacency groups, region windows and mashup payoffs leaves the proposal unchanged;
+   - no more blind blends than the optimized order, and at most one more unverified blend;
+   - the graph objective is within 3% (minimum 0.5) of the optimized order's.
+3. On acceptance, notes record the before/after mean blend score and the model's own one-line reasons.
+
+<contract_rules>
+R1 (MUST NOT): a model error, timeout, refusal, unparsable reply or rejected proposal fails the build; the optimized order is returned instead.
+R2 (MUST NOT): accept an order that adds a blind backbeat blend.
+R3 (MUST NOT): accept an order that moves the requested opener or splits a requested pairing.
+R4 (MUST): every outcome (skipped, rejected with reason, accepted) is visible in the plan's order notes.
+</contract_rules>
+
+% Verification
+
+`tests/test_mix_optimizer.py::RefineTest`: model failure keeps order with a "review skipped" note; wrong song set is rejected; a cheap closer swap is accepted; a proposal that splits a requested pair is rejected; the retired `nemoclaw` engine falls back to the optimizer with a "retired" note.
