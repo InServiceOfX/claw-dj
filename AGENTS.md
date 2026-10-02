@@ -16,6 +16,7 @@ Build and operate `claw-dj`: an autonomous or semi-autonomous DJ that plays Mixx
    - `docs/ARCHITECTURE.md` — brain/hands split.
    - `docs/MIXXX_CONTROL_SURFACE.md` — reachable Mixxx controls.
    - `docs/DJ_TRANSITIONS_PLAYBOOK.md` and `docs/DJ_STYLE_GUIDE.md` — mixing craft.
+   - `docs/LIVE_MINI_EXPERIMENTS.md` — try one piece of a mix live in Mixxx with a flagged script before touching the full plan.
    - `docs/ANTHOLOGY_AND_SHORT_FORM_PROGRAM.md` — named anthology slate,
      editorial standard, short-form research, and promotion lifecycle.
    - `docs/SETUP_NEW_MACHINE.md` — music/database portability.
@@ -201,3 +202,15 @@ Offline exports are optional consumers of the same musical decisions and MUST
 NOT overwrite live events or originals. Preserve the explicit performance when
 working on generic builders. See docs/SHARED_PERFORMANCE.md. Keep backbeat
 alignment and every source exclusion through loops, skips, fades and pre-roll.
+
+## Live mini-experiments
+
+For a new or uncertain idea (a transition, a loop or re-entry, a 2/3+ deck
+layer), offer a short live experiment before editing the full plan: a script
+in `brain/data/plans/<slug>/authoring/` that drives Mixxx through
+`hands.run_mix_plan` helpers, with `--dry-run` and a flag for every musical
+guess (entry/handoff beat, blend beats, per-deck beat shift, mode). Ernest
+runs it in his own terminal and iterates. Live only, never a rendered file.
+Restore every Mixxx control it touched. When he likes a result, record it in
+DJ notes with the exact flags. Method, checklist and worked examples:
+`docs/LIVE_MINI_EXPERIMENTS.md` and `docs/live_experiments/*.py`.

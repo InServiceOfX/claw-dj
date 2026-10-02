@@ -1,5 +1,33 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Mo Money segment, Diana Ross notes, live mini-experiments (Opus 5.5, 2026-10-02)
+
+- **Live mini-experiments** are the way to try one piece of a mix: a flagged
+  script that drives Mixxx live, run by Ernest in his own terminal. How-to and
+  checklist: `docs/LIVE_MINI_EXPERIMENTS.md`; patterns in `docs/live_experiments/`.
+  Story: `user_stories/story__live_mini_experiments_on_a_section_of_a_mix.md`.
+- **Kept:** *I'm Coming Out* reprise first. Start at 2:55 (grid beat 318),
+  hand off at beat 368 to the 0:00 intro on deck 2 with a 4-beat blend, then
+  play the song with the trumpet solo (148.737 → 175.098 s) skipped:
+  `uv run python docs/live_experiments/reprise_to_intro.py`.
+  The plan builder cannot schedule a same-song second-deck re-entry yet.
+- **Library DJ notes (every mix), required timings:**
+  - *I'm Coming Out* (The No. 1's): intro 0:00–0:43 instrumental, first
+    chorus 0:43–1:01, trumpet solo 2:29–2:54 (optional skip), reprise 2:55,
+    fade from ~3:45, end 3:56.
+  - *Mo Money Mo Problems*, album (Life After Death CD1): mandatory skip of
+    Diddy's verse, 58.681 → 116.165 s.
+  - *Mo Money Mo Problems*, Radio Mix: mandatory skip of Diddy's verse,
+    69.416 → 124.612 s.
+  - Both Mo Money versions land before Biggie's "uh, uh". Verified to sound
+    fine at 109.25 BPM.
+- **`pitch_adjust_semitones=<signed n>`** DJ note holds a fractional pitch for a
+  whole track (keylock on); Ariana is +0.6 in the Mo Money segment plan.
+- **Gaps:** running the unittest suite overwrites `brain/data/phrase_analysis.json`
+  (`tests/test_enrich_set.py`); regenerate it from the `phrases` table. An
+  interrupted mix can leave a deck's filter closed. `reset_instrument` sets EQ
+  to 0.5, while Mixxx unity is 1.0 (unverified level impact).
+
 ## Same-beat measurement tools and EQ controls (Opus 5.5, 2026-09-27)
 
 Any harness can now measure, author and verify a one-beat continuous mix from

@@ -62,9 +62,13 @@ Mutations require the revision from `show --json` or an intentional `--force`.
 - Do not equate a playlist with a DJ performance.
 - Ground cue points and verse/chorus claims in real analysis or synced lyrics.
 - Preserve intentional `dj_notes`; identify tracks by exact `track_id`, not title alone.
-- Dry-run plans and render transition previews before a full live set.
+- Dry-run plans and audition transitions live in Mixxx (`docs/LIVE_MINI_EXPERIMENTS.md`) before a full live set; never render audio previews.
 - Treat Ernest's audible feedback as higher-quality evidence than a plausible plan.
 - After interruption or failure, restore deck, recording, crossfader, EQ, keylock, and effect state deliberately.
+
+## Live mini-experiments
+
+Before changing a full mix for a new idea, offer a short live Mixxx experiment script with flags (entry/handoff beat, blend beats, per-deck beat shift). Ernest runs and iterates on it; never render audio. Follow the repository's `docs/LIVE_MINI_EXPERIMENTS.md` and copy a `docs/live_experiments/*.py` pattern.
 
 ## Media publishing
 

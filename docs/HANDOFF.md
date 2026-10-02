@@ -373,6 +373,28 @@ human notes/approved plans need backups independently of Git.
 
 Both goals point at the same architecture, so there's one codebase.
 
+## Live mini-experiments and same-song re-entry (2026-10-02)
+
+Ernest tries one piece of a mix live with a small flagged script rather than
+rebuilding a full plan (`docs/LIVE_MINI_EXPERIMENTS.md`, patterns in
+`docs/live_experiments/`). The first kept result is a same-song move: the
+*I'm Coming Out* 2:55 reprise on deck 1, the 0:00 intro on deck 2 at grid
+beat 368 with a 4-beat blend, then the song with the trumpet solo skipped.
+
+Known gaps this exposed:
+
+- **The plan builder can't express it.** It cannot schedule a same-song
+  second-deck re-entry or a third deck, so a liked experiment is recorded in
+  DJ notes with its exact flags until it can.
+- **Test pollution.** `tests/test_enrich_set.py` writes the real
+  `brain/data/phrase_analysis.json` (`enrich_set.PHRASE_OUT`); after a test
+  run every cue falls back to 10%.
+- **Filter left closed.** `filter_sweep_out` closes the outgoing deck's
+  filter, and only the post-transition `filter_reset` reopens it. An
+  interrupted mix leaves it closed (seen at `super1` 0.13).
+- **EQ unity mismatch.** `reset_instrument` sets EQ bands to 0.5, while
+  Mixxx's default/unity is 1.0.
+
 ## Build mix plan: whole-set optimizer + model providers (2026-09-30)
 
 Ernest's verdict after the Who Shot Ya three-model mix: keep the Curate and
