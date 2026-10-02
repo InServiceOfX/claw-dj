@@ -504,6 +504,26 @@ class IncomingBpmTargetTests(TestCase):
 
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")
+    def test_incoming_pitch_hold_is_written_and_not_released(self, _sleep, _wait_for_next_beat) -> None:
+        mixxx = IncomingBpmTargetMixxx()
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 1,
+                "technique": "standard_blend",
+                "moves": ["sync", "crossfade", "eq_restore"],
+                "incoming_bpm_target": 103.0,
+                "incoming_pitch_semitones": 0.6,
+            },
+            port=9995,
+        )
+        pitch_writes = [v for g, k, v in mixxx.writes if g == "[Channel2]" and k == "pitch_adjust"]
+        self.assertEqual(pitch_writes, [0.6])
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
     def test_incoming_bpm_target_still_gets_a_phase_only_sync(self, _sleep, _wait_for_next_beat) -> None:
         # Found 2026-07-17: a play_bpm hold skipping "sync" entirely meant
         # tempo was correct but the incoming deck's PHASE never actually

@@ -1316,6 +1316,33 @@ class MixPlanTest(TestCase):
         self.assertEqual(transitions[1]["showcase_move"], "gentle_blend")
         self.assertGreaterEqual(transitions[1]["transition_beats"], 24)
 
+    def test_pitch_adjust_note_holds_a_fractional_pitch_and_replaces_key_bridge(self) -> None:
+        def track(name, key, notes=""):
+            return {"track_id": f"/music/{name}.mp3", "artist": name, "title": name,
+                    "bpm": 104.0, "key": key, "dj_notes": notes}
+
+        for value in ("+0.6", "-0.55"):
+            plan = build_plan(
+                [track("bed", "C#m"),
+                 track("layer", "F#", f"play_bpm=104.37; pitch_adjust_semitones={value}")],
+                count=2,
+                seconds_per_track=20.0,
+                affinity_lookup={},
+            )
+            transition = next(e for e in plan["events"] if e["op"] == "transition")
+            self.assertAlmostEqual(transition["incoming_pitch_semitones"], float(value))
+            self.assertNotIn("pitch_adjust_semitones", transition)
+            self.assertNotIn("key_blend", transition["moves"])
+
+    def test_pitch_adjust_note_beyond_two_semitones_is_rejected(self) -> None:
+        tracks = [
+            {"track_id": "/music/a.mp3", "artist": "A", "title": "A", "bpm": 100.0, "key": "Am"},
+            {"track_id": "/music/b.mp3", "artist": "B", "title": "B", "bpm": 100.0, "key": "Am",
+             "dj_notes": "pitch_adjust_semitones=-2.5"},
+        ]
+        with self.assertRaises(ValueError):
+            build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+
     def test_opener_effect_and_verse_landing_cue(self) -> None:
         tracks = [
             {

@@ -67,6 +67,10 @@ keys must match exactly):
                              skip_after is live beats *after the incoming blend*
                              (play_body start), not from cue. 16-bar verses are
                              64 beats; a hook-talk + verse may be 80.
+  pitch_adjust_semitones=<signed number>  hold this pitch for the whole track (keylock on),
+                             fractional semitones within ±2, e.g. +0.6. Use only when a
+                             measurement or the human ear says the record is out of tune with
+                             what it layers or blends over. Replaces the planner's key bridge.
   exit_bpm=<number>          gradually bring this track to a target BPM before its exit
   tempo_ramp_beats=<int>     number of final ride beats used for the exit_bpm glide
   entry_style=beat_drop | gentle_blend | halftime_blend | verse_landing | vocal_over_bed

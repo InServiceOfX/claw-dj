@@ -1025,6 +1025,17 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     if event.get("incoming_bpm_target") is not None:
         set_bpm_target(mixxx, to_deck, float(event["incoming_bpm_target"]))
 
+    # A pitch_adjust_semitones DJ note: hold this pitch (keylock on) for the
+    # incoming track's whole life on the deck. load_deck resets it to 0 for
+    # the next track, so nothing has to release it here.
+    pitch_hold = event.get("incoming_pitch_semitones")
+    if pitch_hold is not None:
+        pitch_hold = float(pitch_hold)
+        if abs(pitch_hold) > 2.0:
+            raise ValueError(f"unsafe pitch hold {pitch_hold:+g}; plan limit is ±2 semitones")
+        mixxx.set(in_g, "pitch_adjust", pitch_hold)
+        print(f"  holding deck {to_deck} pitch at {pitch_hold:+g} st (DJ note)")
+
     key_shift = 0.0
     if "key_blend" in moves:
         key_shift = float(event.get("pitch_adjust_semitones") or 0.0)

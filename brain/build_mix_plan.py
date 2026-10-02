@@ -37,6 +37,30 @@ _PITCH_CLASS_NAMES = (
 )
 
 
+PITCH_HOLD_LIMIT_SEMITONES = 2.0
+
+
+def hold_incoming_pitch(tech: dict, directive: dict) -> None:
+    """Apply a ``pitch_adjust_semitones`` DJ note to the incoming transition.
+
+    The note holds that pitch for the incoming track's whole life on its
+    deck. It replaces a planner key bridge, which only glides back to native
+    during the blend: the human tuning is the ear's verdict.
+    """
+    semitones = directive.get("pitch_adjust_semitones")
+    if semitones is None:
+        return
+    if abs(semitones) > PITCH_HOLD_LIMIT_SEMITONES:
+        raise ValueError(
+            f"pitch_adjust_semitones={semitones:+g} exceeds "
+            f"±{PITCH_HOLD_LIMIT_SEMITONES:g} semitones"
+        )
+    tech["incoming_pitch_semitones"] = float(semitones)
+    for key in ("pitch_adjust_semitones", "pitch_adjust_target", "pitch_adjust_compatibility"):
+        tech.pop(key, None)
+    tech["moves"] = [move for move in tech.get("moves", []) if move != "key_blend"]
+
+
 def pitch_adjust_for_blend(
     outgoing_key: str | None,
     incoming_key: str | None,
@@ -215,11 +239,18 @@ def track_directives(track: dict) -> dict:
         matches = re.findall(rf"\b{re.escape(name)}\s*=\s*([a-z_]+)", notes, re.I)
         return matches[-1].casefold() if matches else None
 
+    def signed(name: str) -> float | None:
+        matches = re.findall(rf"\b{re.escape(name)}\s*=\s*([+-]?\d+(?:\.\d+)?)", notes, re.I)
+        return float(matches[-1]) if matches else None
+
     return {
         "cue_seconds": number("cue_seconds"),
         "ride_phrases": int(value) if (value := number("ride_phrases")) is not None else None,
         "ride_beats": int(value) if (value := number("ride_beats")) is not None else None,
         "play_bpm": number("play_bpm"),
+        # Human-tuned pitch for the whole track (fractional semitones, keylock
+        # on), e.g. to sit a sped-up record in tune over a shared sample.
+        "pitch_adjust_semitones": signed("pitch_adjust_semitones"),
         "settle_bpm": number("settle_bpm"),
         "exit_bpm": number("exit_bpm"),
         "tempo_ramp_beats": int(value) if (value := number("tempo_ramp_beats")) is not None else None,
@@ -1369,6 +1400,7 @@ def build_plan(
                     tech["moves"] = ["sync", "vocal_over_bed", "bed_loop"]
                 if incoming_directive["play_bpm"] is not None:
                     tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
+                hold_incoming_pitch(tech, incoming_directive)
                 events.append(
                     {
                         "op": "load",
@@ -1410,6 +1442,7 @@ def build_plan(
             tech.setdefault("showcase_move", "bass_swap")
             if incoming_directive["play_bpm"] is not None:
                 tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
+            hold_incoming_pitch(tech, incoming_directive)
             override_beats = transition_beats_by_pair.get(
                 (bed["track_id"], incoming["track_id"])
             )
@@ -1668,6 +1701,7 @@ def build_plan(
             tech["incoming_bpm_target"] = incoming_directive["play_bpm"]
         elif incoming_directive["keep_blend_tempo"]:
             tech["keep_blend_tempo"] = True
+        hold_incoming_pitch(tech, incoming_directive)
         if incoming_directive["settle_bpm"] is not None and incoming.get("bpm"):
             # Enter matched to the outgoing deck (ordinary sync, so the
             # overlap stays drift-free), then glide to this tempo instead of
