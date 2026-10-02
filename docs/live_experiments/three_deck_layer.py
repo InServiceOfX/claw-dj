@@ -39,18 +39,36 @@ sys.path.insert(0, str(ROOT))
 from hands.mixxx_control import DEFAULT_PORT, MixxxControl  # noqa: E402
 from hands.run_mix_plan import deck_group, eq_group, filter_group, load_deck, set_bpm_target  # noqa: E402
 
+
+def library_track(artist: str, title: str, hint: str = "") -> str:
+    """Exact track_id from the current library, so no drive name is hardcoded.
+
+    hint is a folder/album fragment that picks one copy when the library
+    holds several (Ariana's song is on two deluxe editions)."""
+    from contextlib import closing
+    from brain import library_index
+    with closing(library_index.connect(library_index.current_index_path())) as db:
+        rows = [r[0] for r in db.execute(
+            "SELECT track_id FROM tracks WHERE artist LIKE ? AND title = ? AND available = 1"
+            " AND track_id LIKE ?",
+            (f"%{artist}%", title, f"%{hint}%"))]
+    if len(rows) != 1:
+        raise SystemExit(f"expected one available '{artist} - {title}' in the library, found {len(rows)}: {rows}")
+    return rows[0]
+
 TEMPO = 104.37
 
 INST = {
-    "path": "/Volumes/USB322FD/Music/HipHop/The Notorious B.I.G/Singles/The Notorious B.I.G. - Mo Money, Mo Problems (CDS) [1997] by Hillside/03. Mo Money, Mo Problems (Instrumental).mp3",
+    "artist": "Notorious B.I.G.", "title": "Mo Money, Mo Problems (Instrumental)",
     "bpm": 104.37240124740124, "first_beat": 0.390635,
 }
 ARIANA = {
-    "path": "/Volumes/USB322FD/Music/Pop/Ariana Grande - Discography - 2011-2018/Albums (CD)/2014 - My Everything (Japanese Deluxe Edition) - (320 kbps)/08. Break Your Heart Right Back (Feat. Childish Gambino).mp3",
+    "artist": "Ariana Grande", "title": "Break Your Heart Right Back (Feat. Childish Gambino)",
+    "hint": "Japanese Deluxe Edition",  # the copy the Mo Money plan uses
     "bpm": 94.0, "first_beat": 0.178005,
 }
 ROSS = {
-    "path": "/Volumes/USB322FD/Music/RnB/Diana Ross & The Supremes/The No. 1's/22 I'm Coming Out.mp3",
+    "artist": "Diana Ross", "title": "I'm Coming Out",
     "bpm": 109.25, "first_beat": 0.452948,
 }
 
@@ -164,9 +182,9 @@ def main() -> None:
                 for band in (1, 2, 3):
                     save_set(eq_group(deck), f"parameter{band}", 1.0)
 
-            load_deck(mixxx, 1, INST["path"], cue_seconds=plan["inst_cue"], expected_bpm=INST["bpm"])
-            load_deck(mixxx, 2, ARIANA["path"], cue_seconds=plan["ariana_cue"], expected_bpm=ARIANA["bpm"])
-            load_deck(mixxx, 3, ROSS["path"], cue_seconds=plan["ross_cue"], expected_bpm=ROSS["bpm"])
+            load_deck(mixxx, 1, library_track(INST["artist"], INST["title"], INST.get("hint", "")), cue_seconds=plan["inst_cue"], expected_bpm=INST["bpm"])
+            load_deck(mixxx, 2, library_track(ARIANA["artist"], ARIANA["title"], ARIANA.get("hint", "")), cue_seconds=plan["ariana_cue"], expected_bpm=ARIANA["bpm"])
+            load_deck(mixxx, 3, library_track(ROSS["artist"], ROSS["title"], ROSS.get("hint", "")), cue_seconds=plan["ross_cue"], expected_bpm=ROSS["bpm"])
             for deck in decks:
                 set_bpm_target(mixxx, deck, TEMPO)     # keylock stays on (load_deck)
                 mixxx.set(deck_group(deck), "volume", 0.0)

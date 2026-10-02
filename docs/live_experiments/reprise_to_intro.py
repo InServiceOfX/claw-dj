@@ -39,7 +39,23 @@ sys.path.insert(0, str(ROOT))
 from hands.mixxx_control import DEFAULT_PORT, MixxxControl  # noqa: E402
 from hands.run_mix_plan import deck_group, eq_group, filter_group, load_deck  # noqa: E402
 
-ROSS = "/Volumes/USB322FD/Music/RnB/Diana Ross & The Supremes/The No. 1's/22 I'm Coming Out.mp3"
+
+def library_track(artist: str, title: str, hint: str = "") -> str:
+    """Exact track_id from the current library, so no drive name is hardcoded.
+
+    hint is a folder/album fragment that picks one copy when the library
+    holds several (Ariana's song is on two deluxe editions)."""
+    from contextlib import closing
+    from brain import library_index
+    with closing(library_index.connect(library_index.current_index_path())) as db:
+        rows = [r[0] for r in db.execute(
+            "SELECT track_id FROM tracks WHERE artist LIKE ? AND title = ? AND available = 1"
+            " AND track_id LIKE ?",
+            (f"%{artist}%", title, f"%{hint}%"))]
+    if len(rows) != 1:
+        raise SystemExit(f"expected one available '{artist} - {title}' in the library, found {len(rows)}: {rows}")
+    return rows[0]
+
 BPM = 109.25
 FIRST_BEAT = 0.452948
 PERIOD = 60.0 / BPM
@@ -89,6 +105,7 @@ def main() -> None:
     args = parser.parse_args()
 
     intro_beat = INTRO_BEAT + args.intro_shift
+    ross = library_track("Diana Ross", "I'm Coming Out")
     handoff_s = at(args.handoff_beat)
     blend_end_beat = args.handoff_beat + (args.blend_beats if args.mode == "blend" else 0)
     print(f"reprise from {at(REPRISE_BEAT):.2f}s (beat {REPRISE_BEAT}), "
@@ -127,9 +144,9 @@ def main() -> None:
                     save_set(eq_group(deck), f"parameter{band}", EQ_UNITY)
             low_unity = EQ_UNITY
 
-            load_deck(mixxx, 1, ROSS, cue_seconds=at(REPRISE_BEAT), expected_bpm=BPM)
+            load_deck(mixxx, 1, ross, cue_seconds=at(REPRISE_BEAT), expected_bpm=BPM)
             if args.mode == "blend":
-                load_deck(mixxx, 2, ROSS, cue_seconds=at(intro_beat), expected_bpm=BPM)
+                load_deck(mixxx, 2, ross, cue_seconds=at(intro_beat), expected_bpm=BPM)
                 mixxx.set(deck_group(2), "volume", 0.0)
                 mixxx.set(eq_group(2), "parameter1", 0.0)      # incoming bass waits for the swap
             mixxx.set(deck_group(1), "volume", 1.0)

@@ -67,19 +67,27 @@ a copied script runs from either location.
    super1 = 0.5`, EQ `parameter1..3 = 1.0` (Mixxx unity), `pitch_adjust`,
    `volume`, `orientation = 1` (center). An interrupted mix can leave a
    filter closed, which made one experiment sound muffled (2026-10-02).
-5. **Load and cue** with `hands.run_mix_plan.load_deck(mixxx, deck, path,
+5. **Find tracks in the library, never by path.** Look up the exact `track_id`
+   by artist and title in the library DB (`library_track()` in the patterns).
+   When the library holds several copies (Ariana's song is on two deluxe
+   editions), pass a folder hint and match the copy in the plan's
+   `playlist.json`; the helper refuses to guess.
+   A hardcoded `/Volumes/<drive>/...` breaks on other machines and fails
+   `tests/test_collection.py` (it scans everything under `brain/`, including
+   `authoring/` scripts).
+6. **Load and cue** with `hands.run_mix_plan.load_deck(mixxx, deck, path,
    cue_seconds=..., expected_bpm=native_bpm)`. It verifies the cue and sets
    keylock and quantize on. Change tempo with `set_bpm_target`.
-6. **Start in phase:** press play about 0.05 s before the target bar of the
+7. **Start in phase:** press play about 0.05 s before the target bar of the
    deck already playing, then set `beatsync_phase`. Quantize lands it on the
    beat. Time entries by polling `playposition * duration` against source
    seconds. Don't count beats.
-7. **Skips and re-entries** use `beatjump_size` plus `beatjump_forward` or
+8. **Skips and re-entries** use `beatjump_size` plus `beatjump_forward` or
    `beatjump_backward` with a multiple of 4 beats, so bars carry across.
-8. **Blends** ramp channel `volume` with a smoothstep, and swap bass by
+9. **Blends** ramp channel `volume` with a smoothstep, and swap bass by
    moving `parameter1` (incoming at 0 until halfway). Treat a zero-length
    blend as an on-beat cut. Never divide by it.
-9. **Print a word at each event** (`reprise`, `intro in`, `bass swap`, …) so
+10. **Print a word at each event** (`reprise`, `intro in`, `bass swap`, …) so
    Ernest can tell what he's hearing.
 
 ## Make every musical guess a flag
