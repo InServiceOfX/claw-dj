@@ -27,6 +27,8 @@
 <pdd-dependency>brain/transition_overrides_Python.prompt</pdd-dependency>
 <pdd-dependency>brain/order_constraints_Python.prompt</pdd-dependency>
 <pdd-dependency>brain/plan_mix_envelope_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/mix_optimizer_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/mix_llm_refine_Python.prompt</pdd-dependency>
 
 % Goal
 

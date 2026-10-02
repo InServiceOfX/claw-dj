@@ -194,3 +194,17 @@ Each accepted change links to an immutable intent event.
 >   llama.cpp `llama-server`; with no provider, a deterministic graph optimizer
 >   builds the mix.
 <!-- pdd-intent-entry:refactor-build-mix-plan-and-preserve-the-curate--f4cf5bf3:end -->
+
+<!-- pdd-intent-entry:live-mini-experiments-on-a-section-of-a-mix-48d34784:start -->
+## Live mini-experiments on a section of a mix
+
+- Intent event: [`docs/intents/intent__live-mini-experiments-on-a-section-of-a-mix-48d34784.md`](intents/intent__live-mini-experiments-on-a-section-of-a-mix-48d34784.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `not stated`
+
+> i like the idea of the audition and we ought to audition more experimental things in the future. currently this audition in particular doesn't sound great and might not be a good idea. In particular backbeat sync isn't there it's off by 1 beat. I'd encourage these one off auditions in the future for things we want to experiment with. Becaue now we found out if an idea is good or not! (this specific time it might not be). So how about this, I want to try, so this won't modify the full mix with all the songs, and htis should be a user story because I've been thinkign about it a long time, while working with a LLM whether in claude code, codex, grok build, hermes agent, etc., we want to be able to "test" and "experiment" on smaller sections of a mix, whether it's a transition, or cueing a part of a song to repeat and loop over and over, or to create a new blend and new sound, whether 2 or 3 or more decks, without having for the user to listen and sit through entire mix and reconstructing netire mix. Our claw-dj "harness" should allow for this "mini" expeirmentation, work and iterative with the LLM or AI agent, AI harness on smaller parts of the mix which if successful will be incorporated into the larger mix with all the songs.
+>
+> Earlier in the same conversation: let's not rely on ffmpeg at all; we want to mix live. no rendered WAV. use mixxx or tools, functions using mixxx and mix live.
+<!-- pdd-intent-entry:live-mini-experiments-on-a-section-of-a-mix-48d34784:end -->
