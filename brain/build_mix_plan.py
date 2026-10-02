@@ -2191,7 +2191,6 @@ def build_plan(
         # Keep the planned backbeat/bar position by removing whole bars only.
         end = directive["mandatory_end_seconds"]
         if end is not None:
-            import math
             cue = float(cue_fields(outgoing, 0.1, index).get("cue_seconds") or 0.0)
             skipped = max(0.0, float(directive["skip_to_seconds"] or 0) -
                           max(cue, float(directive["skip_from_seconds"] or 0)))
