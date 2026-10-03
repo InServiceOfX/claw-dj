@@ -30,6 +30,12 @@ LOAD_TIMEOUT_S = 30.0
 
 EQ_GROUP = "[EqualizerRack1_{channel}_Effect1]"
 FILTER_GROUP = "[QuickEffectRack1_{channel}]"
+# Mixxx's deck EQ gains run 0-4 with unity at 1.0 (parameterN_set_default
+# reads 1.0 on every band); the QuickEffect filter is neutral at 0.5.
+# Verified live 2026-10-03. The runner used 0.5 as "unity" before, i.e.
+# about -6 dB on every band, with its boost/dip/bass-swap values scaled to it.
+EQ_UNITY = 1.0
+FILTER_NEUTRAL = 0.5
 
 # Rust gesture executor (core-rust) — sub-beat timing loops for slip fills
 # and platter moves. Plans may name these gestures; when the binary is
@@ -204,6 +210,21 @@ def filter_group(deck: int) -> str:
     return FILTER_GROUP.format(channel=f"[Channel{deck}]")
 
 
+def neutralize_deck_effects(mixxx: MixxxControl, decks) -> None:
+    """Open each deck's QuickEffect filter and set its EQ back to unity."""
+    for deck in decks:
+        for group, key, value in (
+            (filter_group(deck), "super1", FILTER_NEUTRAL),
+            (eq_group(deck), "parameter1", EQ_UNITY),
+            (eq_group(deck), "parameter2", EQ_UNITY),
+            (eq_group(deck), "parameter3", EQ_UNITY),
+        ):
+            try:
+                mixxx.set(group, key, value)
+            except Exception:
+                pass
+
+
 def reset_instrument(mixxx: MixxxControl) -> None:
     mixxx.set("[Master]", "crossfader", -1.0)
     mixxx.set("[Master]", "gain", 1.0)
@@ -219,9 +240,9 @@ def reset_instrument(mixxx: MixxxControl) -> None:
         mixxx.set(group, "mute", 0)
         try:
             eg = eq_group(deck)
-            mixxx.set(eg, "parameter1", 0.5)
-            mixxx.set(eg, "parameter2", 0.5)
-            mixxx.set(eg, "parameter3", 0.5)
+            mixxx.set(eg, "parameter1", EQ_UNITY)
+            mixxx.set(eg, "parameter2", EQ_UNITY)
+            mixxx.set(eg, "parameter3", EQ_UNITY)
         except Exception:
             pass
         try:
@@ -629,12 +650,12 @@ def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[s
                 pass
         elif move == "eq_boost_in_mid":
             try:
-                mixxx.set(eq_group(to_deck), "parameter2", 0.7)
+                mixxx.set(eq_group(to_deck), "parameter2", EQ_UNITY * 1.4)
             except Exception:
                 pass
         elif move == "eq_dip_out_mid":
             try:
-                mixxx.set(eq_group(from_deck), "parameter2", 0.25)
+                mixxx.set(eq_group(from_deck), "parameter2", EQ_UNITY * 0.5)
             except Exception:
                 pass
         elif move == "eq_kill_out_high":
@@ -646,9 +667,9 @@ def apply_moves(mixxx: MixxxControl, from_deck: int, to_deck: int, moves: list[s
             for deck in (from_deck, to_deck):
                 try:
                     eg = eq_group(deck)
-                    mixxx.set(eg, "parameter1", 0.5)
-                    mixxx.set(eg, "parameter2", 0.5)
-                    mixxx.set(eg, "parameter3", 0.5)
+                    mixxx.set(eg, "parameter1", EQ_UNITY)
+                    mixxx.set(eg, "parameter2", EQ_UNITY)
+                    mixxx.set(eg, "parameter3", EQ_UNITY)
                 except Exception:
                     pass
         elif move == "filter_open_in":
@@ -1239,9 +1260,9 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             # IS the technique"). The incoming deck's bass stays untouched
             # per Ernest's 2026-07-14 note above.
             ramp = smoothstep(min(1.0, (progress - 0.35) / 0.3))
-            mixxx.set(eq_group(from_deck), "parameter1", 0.5 * (1.0 - ramp))
+            mixxx.set(eq_group(from_deck), "parameter1", EQ_UNITY * (1.0 - ramp))
             if not swapped and progress >= 0.65:
-                mixxx.set(eq_group(to_deck), "parameter1", 0.5)
+                mixxx.set(eq_group(to_deck), "parameter1", EQ_UNITY)
                 swapped = True
                 print("  bass swap (gradual)")
         if "filter_sweep_out" in moves:
@@ -1383,6 +1404,10 @@ def run_plan(
                     mixxx.set(deck_group(deck), "play", 0)
                 except Exception:
                     pass
+            # A blend stopped midway can leave a filter closed or an EQ band
+            # killed; the next run (or a human) would inherit it (2026-10-02:
+            # deck 1 stuck at super1 0.13 made a later run sound muffled).
+            neutralize_deck_effects(mixxx, (1, 2))
         finally:
             if we_started_recording:
                 print("\nstopping recording…")

@@ -13,6 +13,7 @@ from hands.run_mix_plan import (
     perform_juggle_intro,
     perform_transition,
     ramp_bpm_target,
+    reset_instrument,
     resolve_plan_argument,
     run_plan,
     set_bpm_target,
@@ -1328,3 +1329,36 @@ class SettleBpmTests(TestCase):
         settle_rate(mixxx, 2, steps=4, settle_bpm=120.0, native_bpm=83.0)
         rates = [value for group, key, value in mixxx.writes if key == "rate"]
         self.assertLessEqual(max(rates), 0.40 + 1e-9)
+
+
+class EqAndFilterStateTests(TestCase):
+    """Mixxx's EQ unity is 1.0 (parameterN_set_default reads 1.0 on every band)
+    and the QuickEffect filter is neutral at 0.5 (verified live 2026-10-03)."""
+
+    def test_reset_instrument_sets_eq_to_mixxx_unity(self) -> None:
+        mixxx = FakeMixxx()
+        reset_instrument(mixxx)  # type: ignore[arg-type]
+        for deck in (1, 2):
+            for band in (1, 2, 3):
+                self.assertIn(
+                    (f"[EqualizerRack1_[Channel{deck}]_Effect1]", f"parameter{band}", 1.0), mixxx.writes
+                )
+
+    def test_ctrl_c_mid_mix_reopens_filters_and_resets_eq(self) -> None:
+        # Regression (2026-10-02): a mix stopped mid-blend left deck 1's filter
+        # at super1 0.13 (a heavy low-pass), so the next run sounded muffled.
+        mixxx = FakeMixxx()
+        mixxx.values[("[QuickEffectRack1_[Channel1]]", "super1")] = 0.13
+        control = MagicMock()
+        control.return_value.__enter__.return_value = mixxx
+        with (
+            patch("hands.run_mix_plan.MixxxControl", control),
+            patch("hands.source_cutoffs.prepare_plan", side_effect=lambda plan, **_: plan),
+            patch("hands.run_mix_plan._run_events", side_effect=KeyboardInterrupt),
+        ):
+            run_plan({"events": [{"op": "reset_instrument"}], "tracks": []},
+                     port=9995, dry_run=False, max_events=None)
+        for deck in (1, 2):
+            self.assertEqual(mixxx.values[(f"[QuickEffectRack1_[Channel{deck}]]", "super1")], 0.5)
+            for band in (1, 2, 3):
+                self.assertEqual(mixxx.values[(f"[EqualizerRack1_[Channel{deck}]_Effect1]", f"parameter{band}")], 1.0)
