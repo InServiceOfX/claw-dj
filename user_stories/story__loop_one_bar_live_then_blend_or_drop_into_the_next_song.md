@@ -33,9 +33,18 @@ next downbeat.
 
 Diana Ross, *I'm Coming Out*: one bar of the section *Mo Money Mo
 Problems* samples (2:55.10–2:57.30, grid beats 318–322 at 109.25 BPM),
-3 passes. Ernest, 2026-10-03: "this is fire." The 8-bar loop of the same
-section sounded slightly off at the wrap, which is why criterion 4
-exists.
+3 passes. Ernest, 2026-10-03: "this is fire."
+
+The 8-bar loop of the same section shows why criterion 4 exists. On the
+file's grid (beats 318-350) it sounded slightly off at the wrap. Tuned by
+ear it "sounds FIRE": start one beat later and end half a beat earlier
+(grid beats 319-350.5, 175.647-192.947 s, `--bars 8 --start-shift 1
+--end-shift -0.5`), 4-5 passes. Eight real bars in 17.30 s is about
+111 BPM: the live band runs faster here than the file's 109.25 BPM grid
+(an earlier measurement of her reprise also read about 111 BPM), so a
+grid-length loop wraps late. Loops on live-drummed records start from the
+grid and are then tuned by ear (or by measurement), and the tuned points
+go in the song's DJ notes.
 
 ## Source
 

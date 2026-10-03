@@ -220,3 +220,15 @@ Each accepted change links to an immutable intent event.
 
 > this is fire (i.e. this is great): looping one bar of Diana Ross's I'm Coming Out (grid beats 318-322, the part Mo Money Mo Problems samples) for 3 passes. As a DJ effect to then be able to take this loop repeat 2 or 3 at most 4 times (no hard upper limit but don't want to be annoying) and then mix or blend into another song or deck live would be fire (i.e. great). Is there some way to capture this in general as a technique, first described as a user story (the user the human DJ would like claw-dj to loop a single bar live, and then immediately blend into another song or drop at the right time).
 <!-- pdd-intent-entry:loop-one-bar-live-then-blend-or-drop-into-the-ne-4cbf3ed6:end -->
+
+<!-- pdd-intent-entry:skip-a-section-by-handing-off-to-the-same-song-o-4a636e8b:start -->
+## Skip a section by handing off to the same song on another deck
+
+- Intent event: [`docs/intents/intent__skip-a-section-by-handing-off-to-the-same-song-o-4a636e8b.md`](intents/intent__skip-a-section-by-handing-off-to-the-same-song-o-4a636e8b.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `not stated`
+
+> this sounds great! (mix_reprise_first_full.py --start-at diddy) great job! is there a way to generalize this, or make this a user story, or amend our current user story to reflect the work you did here? this just sounds great and a lot better than the skip before. (Context, 2026-10-03: skipping Diddy's verse in Mo Money Mo Problems with an instant beat jump was audible, "you can hear the skip"; Ernest suggested instead blending the current deck into another deck playing the same song cued a little before the start of Biggie's verse. It worked once the second copy was lined up at the same point of the repeated chorus, 96 beats on, measured from the vocal, and the handoff happened late in the first chorus so most of it plays, with a 4-beat blend.)
+<!-- pdd-intent-entry:skip-a-section-by-handing-off-to-the-same-song-o-4a636e8b:end -->
