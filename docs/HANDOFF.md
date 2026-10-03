@@ -373,6 +373,18 @@ human notes/approved plans need backups independently of Git.
 
 Both goals point at the same architecture, so there's one codebase.
 
+## Live toolkit, EQ unity, interrupt cleanup (2026-10-03)
+
+`hands/live_kit.py` is now the shared library for live experiments and
+hand-built live mixes (see `docs/LIVE_MINI_EXPERIMENTS.md`). Mixxx's deck EQ
+unity is 1.0, not 0.5: confirmed live with `parameterN_set_default` on an idle
+deck, and the runner now uses `EQ_UNITY`. Interrupted mixes reset filter and EQ.
+The enrich test no longer writes real data files. Known gaps still open:
+- the plan builder cannot schedule a same-song handoff, a loop-then-drop or a
+  third deck;
+- the verse guard ignores skip notes;
+- the skip math falls back to cue 0.0 when a track's cue is missing.
+
 ## Live mini-experiments and same-song re-entry (2026-10-02)
 
 Ernest tries one piece of a mix live with a small flagged script rather than

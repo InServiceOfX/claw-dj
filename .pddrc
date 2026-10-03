@@ -302,6 +302,13 @@ contexts:
         code:
           path: "hands/mixxx_control.py"
 
+  live_kit:
+    paths: ["*live_kit*"]
+    defaults:
+      outputs:
+        code:
+          path: "hands/live_kit.py"
+
   start_script:
     paths: ["*start_Bash*", "*start_script*"]
     defaults:

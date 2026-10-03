@@ -2818,5 +2818,86 @@
         ]
       }
     }
+  },
+  {
+    "reason": "Live mini-experiments and hand-built live mixes kept re-implementing the same Mixxx moves in gitignored scripts, so other machines and agents could not reuse the techniques Ernest approved by ear.",
+    "description": "Reusable live Mixxx moves for live mini-experiments and hand-built live mixes: library lookup by artist/title (folder hint for duplicate copies), grid beat <-> source seconds, a session object that refuses playing decks, sets a clean slate (filter neutral, EQ unity) and restores every control, timing by live play position, eased automation and fader-style cuts, the same-song two-deck handoff for skips and re-entries, the EQ-split riff crossover for decks carrying the same riff, exact loops (native beat loop or fractional loop points), bar-by-bar cut patterns, and a recording context. Live only; no rendered audio, no drive paths.",
+    "dependencies": [
+      "hands/mixxx_control_Python.prompt"
+    ],
+    "priority": 48,
+    "filename": "hands/live_kit_Python.prompt",
+    "filepath": "hands/live_kit.py",
+    "tags": [
+      "runtime",
+      "mixxx",
+      "live",
+      "experiments"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "library_track",
+            "signature": "library_track(artist: str, title: str, hint: str = '', *, index_path: Path | None = None) -> str",
+            "errors": [
+              "SystemExit"
+            ]
+          },
+          {
+            "name": "track_from_library",
+            "signature": "track_from_library(artist: str, title: str, hint: str = '', *, index_path: Path | None = None) -> Track"
+          },
+          {
+            "name": "same_song_handoff",
+            "signature": "same_song_handoff(live: Live, *, out_deck: int, in_deck: int, track: Track, at_beat: float, blend_beats: float = 4) -> None"
+          },
+          {
+            "name": "eq_split_crossover",
+            "signature": "eq_split_crossover(live: Live, *, clock_deck: int, clock_track: Track, out_deck: int, in_deck: int, enter_beat: float, hold_beats: float = 0, cross_beats: float = 8) -> None"
+          },
+          {
+            "name": "exact_loop",
+            "signature": "exact_loop(live: Live, *, deck: int, track: Track, start_beat: float, beats: float) -> bool"
+          },
+          {
+            "name": "play_bar_pattern",
+            "signature": "play_bar_pattern(live: Live, *, clock_deck: int, clock_track: Track, start_beat: float, pattern: str, states: dict[str, list[tuple[str, str, float]]], beats_per_step: float = 4) -> None"
+          }
+        ],
+        "classes": [
+          {
+            "name": "Track",
+            "signature": "Track(artist: str, title: str, bpm: float, first_beat: float, hint: str = '')",
+            "methods": [
+              "at(beat) -> float",
+              "beat_at(seconds) -> float",
+              "path() -> str"
+            ]
+          },
+          {
+            "name": "Live",
+            "signature": "Live(mixxx: MixxxControl)",
+            "methods": [
+              "prepare(decks, *, master_gain=None, crossfader=0.0)",
+              "restore()",
+              "save_set(group, key, value)",
+              "pos(deck) -> float",
+              "wait(deck, seconds, lead=0.0)",
+              "automate(clock, track, b0, b1, lanes)",
+              "cut(targets, seconds=CUT_SECONDS)",
+              "eq(deck, low=EQ_UNITY, mid=EQ_UNITY, high=EQ_UNITY)",
+              "vol(deck, value)",
+              "load(deck, track, beat, *, bpm=None, pitch=0.0)",
+              "start(deck, volume=1.0)",
+              "stop(deck)",
+              "recording()"
+            ]
+          }
+        ]
+      }
+    }
   }
 ]

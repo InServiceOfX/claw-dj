@@ -1,5 +1,31 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Live toolkit and runner fixes (Opus 5.5, 2026-10-03, branch `feat/live-toolkit-and-fixes`)
+
+- **`hands/live_kit.py`** (prompt `prompts/hands/live_kit_Python.prompt`, tests
+  `tests/test_live_kit.py`): the approved live moves as one toolkit:
+  - library lookup by artist/title with a copy hint;
+  - grid math; a session that refuses playing decks, sets a clean slate and
+    restores everything;
+  - eased automation and fader-style cuts;
+  - `same_song_handoff` (Diddy skip, reprise -> intro);
+  - `eq_split_crossover` (riff on two decks);
+  - `exact_loop` (native or fractional loop points);
+  - `play_bar_pattern`; a recording context.
+  `docs/live_experiments/reprise_to_intro.py` now uses it.
+- **Runner:**
+  - EQ unity is **1.0** (`EQ_UNITY`, verified with Mixxx's `_set_default`).
+    The old 0.5 "reset" was about -6 dB on every band, so normal mixes now play
+    about 6 dB louder at Mixxx's own unity.
+  - Ctrl-C now reopens filters and resets EQ (`neutralize_deck_effects`).
+- **Tests:** `tests/test_enrich_set.py` no longer overwrites the real
+  `phrase_analysis.json` / `chroma_similarity.json`.
+- **Next:** teach the plan builder/runner `same_song_handoff`, loop-then-drop,
+  and the third-deck instrumental bridge (stories:
+  `story__skip_a_section_by_handing_off_to_the_same_song_on_another_deck.md`,
+  `story__loop_one_bar_live_then_blend_or_drop_into_the_next_song.md`). Port
+  the Mo Money authoring script onto the toolkit.
+
 ## Mo Money segment, Diana Ross notes, live mini-experiments (Opus 5.5, 2026-10-02)
 
 - **Live mini-experiments** are the way to try one piece of a mix: a flagged

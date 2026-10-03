@@ -6,7 +6,10 @@ flags, and keep only what he likes. Story:
 [`user_stories/story__live_mini_experiments_on_a_section_of_a_mix.md`](../user_stories/story__live_mini_experiments_on_a_section_of_a_mix.md).
 
 Until the harness has a built-in experiment command, an experiment is a
-small Python script that drives Mixxx through the repo's own helpers.
+small Python script built on **`hands/live_kit.py`**, the shared toolkit of
+the live moves Ernest has approved (prompt:
+`prompts/hands/live_kit_Python.prompt`). Use it instead of copying code
+between scripts.
 
 > "It was a lot of FUN to do it like this." (Ernest, 2026-10-02, after nine
 > live rounds found the Diana Ross reprise-first handoff)
@@ -45,10 +48,28 @@ mix untouched.
   these to start:
   - [`reprise_to_intro.py`](live_experiments/reprise_to_intro.py):
     a 2-deck same-song handoff with blend or jump mode, a source skip, and a
-    full-song play-through. Ernest liked the result.
+    full-song play-through, built on `hands.live_kit`. Ernest liked the
+    result. Start here.
   - [`three_deck_layer.py`](live_experiments/three_deck_layer.py):
     3 decks at one tempo with per-deck pitch, low EQ, an entry time and
-    shift flags. The idea was dropped, but the pattern is sound.
+    shift flags. The idea was dropped, but the pattern is sound. It predates
+    the toolkit, so it still carries its own helpers.
+
+### What the toolkit gives you (`hands.live_kit`)
+
+| Need | Use |
+|---|---|
+| Find a song without a drive path | `library_track(artist, title, hint)`, `track_from_library(...)` (grid from the library) |
+| Grid beat <-> source seconds | `Track(...).at(beat)`, `.beat_at(seconds)` |
+| Refuse playing decks, clean slate, put everything back | `Live.prepare(decks)` ... `finally: live.restore()` |
+| Load and cue, tempo, pitch | `live.load(deck, track, beat, bpm=..., pitch=...)`, `live.start(deck)` |
+| Timing by play position | `live.wait(deck, seconds)`, `live.automate(clock, track, b0, b1, lanes)` |
+| Click-free in/out cuts | `live.cut([(group, key, target), ...])` |
+| Skip or re-enter a song without a jump | `same_song_handoff(...)` |
+| Blend two decks carrying the same riff | `eq_split_crossover(..., hold_beats=8, cross_beats=8)` |
+| Loops, including tuned fractional ones | `exact_loop(live, deck=..., track=..., start_beat=..., beats=31.5)` |
+| Bar-by-bar in/out patterns | `play_bar_pattern(...)` |
+| Record the run | `with live.recording(): ...` |
 
 Find the repo root by walking up to `pyproject.toml` (see the examples), so
 a copied script runs from either location.

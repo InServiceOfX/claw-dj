@@ -1,0 +1,52 @@
+<pdd-reason>Live mini-experiments and hand-built live mixes kept re-implementing the same Mixxx moves in gitignored scripts, so other machines and agents could not reuse the techniques Ernest approved by ear.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "library_track", "signature": "library_track(artist: str, title: str, hint: str = '', *, index_path: Path | None = None) -> str", "errors": ["SystemExit"]},
+      {"name": "track_from_library", "signature": "track_from_library(artist: str, title: str, hint: str = '', *, index_path: Path | None = None) -> Track"},
+      {"name": "same_song_handoff", "signature": "same_song_handoff(live: Live, *, out_deck: int, in_deck: int, track: Track, at_beat: float, blend_beats: float = 4) -> None"},
+      {"name": "eq_split_crossover", "signature": "eq_split_crossover(live: Live, *, clock_deck: int, clock_track: Track, out_deck: int, in_deck: int, enter_beat: float, hold_beats: float = 0, cross_beats: float = 8) -> None"},
+      {"name": "exact_loop", "signature": "exact_loop(live: Live, *, deck: int, track: Track, start_beat: float, beats: float) -> bool"},
+      {"name": "play_bar_pattern", "signature": "play_bar_pattern(live: Live, *, clock_deck: int, clock_track: Track, start_beat: float, pattern: str, states: dict[str, list[tuple[str, str, float]]], beats_per_step: float = 4) -> None"}
+    ],
+    "classes": [
+      {"name": "Track", "signature": "Track(artist: str, title: str, bpm: float, first_beat: float, hint: str = '')", "methods": ["at(beat) -> float", "beat_at(seconds) -> float", "path() -> str"]},
+      {"name": "Live", "signature": "Live(mixxx: MixxxControl)", "methods": ["prepare(decks, *, master_gain=None, crossfader=0.0)", "restore()", "save_set(group, key, value)", "pos(deck) -> float", "wait(deck, seconds, lead=0.0)", "automate(clock, track, b0, b1, lanes)", "cut(targets, seconds=CUT_SECONDS)", "eq(deck, low=EQ_UNITY, mid=EQ_UNITY, high=EQ_UNITY)", "vol(deck, value)", "load(deck, track, beat, *, bpm=None, pitch=0.0)", "start(deck, volume=1.0)", "stop(deck)", "recording()"]}
+    ]
+  }
+}
+</pdd-interface>
+
+% Goal
+
+Provide one reusable library of live Mixxx moves for live mini-experiments
+(`user_stories/story__live_mini_experiments_on_a_section_of_a_mix.md`) and for
+hand-built live mixes, extracted from the scripts Ernest heard and approved on
+2026-10-01..03. Every move drives Mixxx live through `hands.mixxx_control` on
+the original files. Nothing is rendered.
+
+% Requirements
+
+1. Tracks are found by artist and title in the current library index, never by a hardcoded drive path. When several available copies match, a folder/album `hint` must narrow them to exactly one; otherwise raise `SystemExit` naming the candidates (the wrong-copy trap).
+2. `Track.at(beat)` maps a Mixxx grid beat to source seconds: `first_beat + beat * 60 / bpm`; `beat_at` is its inverse. `track_from_library` reads bpm and first beat from the library's `beat_phase` row.
+3. `Live.prepare(decks)` refuses to start when any listed deck is playing, then saves and sets a clean slate on each deck: filter neutral (`FILTER_NEUTRAL` 0.5), EQ at Mixxx unity (`EQ_UNITY` 1.0), volume 0, pitch_adjust 0, orientation center. `Live.restore()` puts every saved control back, last saved first, and must be called from `finally` (Ctrl-C included); it also stops the prepared decks.
+4. `Live.load` cues the exact source second with `hands.run_mix_plan.load_deck`, sets an optional tempo with `set_bpm_target` (stopped deck only), applies pitch, and leaves the deck silent with filter neutral and EQ at unity. `Live.start` sets volume, plays, and phase-locks with `beatsync_phase`.
+5. Timing follows each deck's live play position (`playposition * duration`, source seconds), never a beat counter. `Live.wait` raises if the deck stops before the target. `Live.automate` eases each lane with a smoothstep from one clock-deck grid beat to another. `Live.cut` eases lanes to targets over about 60 ms so in/out cuts never click.
+6. `same_song_handoff`: the incoming deck already holds a second copy of the same recording, cued at the same point of the repeated music. At `at_beat` of the outgoing deck the incoming deck starts silent with its bass cut, rises over the first half of the blend, the bass swaps, and the outgoing deck falls over the second half and stops. A zero-length blend is an on-beat cut. (`story__skip_a_section_by_handing_off_to_the_same_song_on_another_deck.md`.)
+7. `eq_split_crossover`: for two decks that carry the same riff or drums (a song and its instrumental, a sample and its source), the incoming deck enters bass-only with the bass swapped on the entry beat, holds that for `hold_beats`, then over `cross_beats` the outgoing mids/highs and volume fall while the incoming mids/highs rise (the approved Diana Ross -> Mo Money bridge: hold 8, cross 8). Both riffs are never at full range together (`story__when_i_mix_with_three_or_more_decks_every_deck_has_a_job_and_one_backbeat.md`).
+8. `exact_loop`: a loop of 1/2/4/8/16/32 beats starting on a whole grid beat uses Mixxx's `beatloop_N_activate`; any other start or length (fractions allowed) sets `loop_start_position` / `loop_end_position` in interleaved stereo samples from `track_samplerate`, then enables the loop. Returns True when the native beat loop was used. (`story__loop_one_bar_live_then_blend_or_drop_into_the_next_song.md`: live-drummed records need fractional tuning.)
+9. `play_bar_pattern` applies one state per character on successive pattern steps, each switch eased with `Live.cut` and landing on the step's downbeat. Unknown characters raise `ValueError` before anything plays.
+10. `Live.recording()` is a context manager around Mixxx's recorder using `start_recording` / `stop_recording`; it only stops a recording it started.
+11. No module-level drive paths, no ffmpeg, no rendered audio, no network.
+
+% Output
+
+- Primary output: `hands/live_kit.py`.
+- `docs/LIVE_MINI_EXPERIMENTS.md` and `docs/live_experiments/*.py` use the kit.
+
+% Verification
+
+- `uv run python -m unittest tests/test_live_kit.py` with a fake Mixxx whose play position advances; no live Mixxx or audio.
+- Cover: library lookup (one, none, several narrowed by hint), grid math, prepare refusing a playing deck and restore order, cut and automate reaching their targets, same-song handoff end state, EQ-split crossover end state, exact_loop native vs loop points with the right sample positions, pattern validation and states.
