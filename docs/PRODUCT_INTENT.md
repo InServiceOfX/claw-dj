@@ -208,3 +208,15 @@ Each accepted change links to an immutable intent event.
 >
 > Earlier in the same conversation: let's not rely on ffmpeg at all; we want to mix live. no rendered WAV. use mixxx or tools, functions using mixxx and mix live.
 <!-- pdd-intent-entry:live-mini-experiments-on-a-section-of-a-mix-48d34784:end -->
+
+<!-- pdd-intent-entry:loop-one-bar-live-then-blend-or-drop-into-the-ne-4cbf3ed6:start -->
+## Loop one bar live, then blend or drop into the next song
+
+- Intent event: [`docs/intents/intent__loop-one-bar-live-then-blend-or-drop-into-the-ne-4cbf3ed6.md`](intents/intent__loop-one-bar-live-then-blend-or-drop-into-the-ne-4cbf3ed6.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `not stated`
+
+> this is fire (i.e. this is great): looping one bar of Diana Ross's I'm Coming Out (grid beats 318-322, the part Mo Money Mo Problems samples) for 3 passes. As a DJ effect to then be able to take this loop repeat 2 or 3 at most 4 times (no hard upper limit but don't want to be annoying) and then mix or blend into another song or deck live would be fire (i.e. great). Is there some way to capture this in general as a technique, first described as a user story (the user the human DJ would like claw-dj to loop a single bar live, and then immediately blend into another song or drop at the right time).
+<!-- pdd-intent-entry:loop-one-bar-live-then-blend-or-drop-into-the-ne-4cbf3ed6:end -->
