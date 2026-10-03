@@ -942,6 +942,59 @@ class MixPlanTest(TestCase):
         self.assertAlmostEqual(body.get("skip_from_seconds"), 91.34, places=2)
         self.assertAlmostEqual(body.get("skip_to_seconds"), 132.93, places=2)
 
+    def test_skip_handoff_plays_the_skip_as_a_same_song_handoff(self) -> None:
+        # story__skip_a_section_by_handing_off_to_the_same_song_on_another_deck.md:
+        # a second copy on the free deck, cued at skip_to, takes over with a short
+        # blend that ends at skip_from; the next song loads onto the freed deck.
+        tracks = [
+            {"track_id": "/music/a.mp3", "artist": "A", "title": "Opener", "bpm": 104.0, "key": "Am",
+             "duration_seconds": 200.0, "dj_notes": "cue_seconds=0; trust_cue_seconds; ride_beats=63; trust_ride_beats"},
+            {"track_id": "/music/b.mp3", "artist": "B", "title": "Middle", "bpm": 104.0, "key": "Am",
+             "duration_seconds": 240.0,
+             "dj_notes": ("cue_seconds=0; trust_cue_seconds; ride_beats=255; trust_ride_beats; "
+                          "skip_from_seconds=69.03; skip_to_seconds=121.88; skip_handoff; skip_handoff_beats=4")},
+            {"track_id": "/music/c.mp3", "artist": "C", "title": "Closer", "bpm": 104.0, "key": "Am",
+             "duration_seconds": 200.0},
+        ]
+        plan = build_plan(tracks, count=3, seconds_per_track=20.0, affinity_lookup={})
+        events = plan["events"]
+        first = next(i for i, e in enumerate(events) if e["op"] == "transition")
+        preload = next(e for e in events[:first] if e["op"] == "preload_after_transition")
+        self.assertEqual(preload["track_id"], "/music/b.mp3")
+        self.assertTrue(preload.get("handoff_copy"))
+        self.assertAlmostEqual(preload["cue_seconds"], 121.88, places=2)
+        body = next(e for e in events if e["op"] == "play_body" and e["track_id"] == "/music/b.mp3")
+        handoff = body["handoff"]
+        self.assertNotIn("skip_beats", body)
+        self.assertEqual(handoff["to_deck"], preload["deck"])
+        self.assertNotEqual(handoff["to_deck"], body["deck"])
+        self.assertEqual(handoff["blend_beats"], 4)
+        self.assertEqual(handoff["then_load"]["track_id"], "/music/c.mp3")
+        period = 60 / 104.0
+        # the blend ends at skip_from: after_beats + blend = live beats to skip_from
+        fade = events[first]["transition_beats"]
+        self.assertAlmostEqual(handoff["after_beats"] + 4, round(69.03 / period) - fade, delta=1)
+        second = next(e for e in events[first + 1:] if e["op"] == "transition")
+        self.assertEqual(second["from_deck"], handoff["to_deck"])
+        self.assertEqual(second["to_deck"], body["deck"])
+
+    def test_skip_without_handoff_token_stays_a_beat_jump(self) -> None:
+        tracks = [
+            {"track_id": "/music/a.mp3", "artist": "A", "title": "Opener", "bpm": 104.0, "key": "Am",
+             "duration_seconds": 200.0, "dj_notes": "cue_seconds=0; trust_cue_seconds; ride_beats=63; trust_ride_beats"},
+            {"track_id": "/music/b.mp3", "artist": "B", "title": "Middle", "bpm": 104.0, "key": "Am",
+             "duration_seconds": 240.0,
+             "dj_notes": "cue_seconds=0; trust_cue_seconds; ride_beats=255; trust_ride_beats; "
+                         "skip_from_seconds=69.03; skip_to_seconds=121.88"},
+            {"track_id": "/music/c.mp3", "artist": "C", "title": "Closer", "bpm": 104.0, "key": "Am",
+             "duration_seconds": 200.0},
+        ]
+        plan = build_plan(tracks, count=3, seconds_per_track=20.0, affinity_lookup={})
+        body = next(e for e in plan["events"] if e["op"] == "play_body" and e["track_id"] == "/music/b.mp3")
+        self.assertNotIn("handoff", body)
+        self.assertIn("skip_beats", body)
+        self.assertFalse(any(e.get("handoff_copy") for e in plan["events"]))
+
     def test_skip_after_subtracts_incoming_blend_beats(self) -> None:
         tracks = [
             {

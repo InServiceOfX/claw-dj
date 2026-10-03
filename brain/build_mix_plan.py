@@ -37,6 +37,26 @@ _PITCH_CLASS_NAMES = (
 )
 
 
+SKIP_HANDOFF_BEATS = 4
+
+
+def skip_handoff_beats(directive: dict) -> int | None:
+    """Blend beats when a forward skip is marked ``skip_handoff``, else None.
+
+    story__skip_a_section_by_handing_off_to_the_same_song_on_another_deck.md:
+    the outgoing copy fades over the blend that ends at skip_from; the second
+    copy starts at skip_to when that blend begins, so nothing inside
+    [skip_from, skip_to] is ever heard.
+    """
+    skip_from, skip_to = directive.get("skip_from_seconds"), directive.get("skip_to_seconds")
+    if not directive.get("skip_handoff") or skip_from is None or skip_to is None:
+        return None
+    if float(skip_to) <= float(skip_from):
+        return None
+    beats = directive.get("skip_handoff_beats")
+    return max(0, int(round(beats))) if beats is not None else SKIP_HANDOFF_BEATS
+
+
 PITCH_HOLD_LIMIT_SEMITONES = 2.0
 
 
@@ -292,6 +312,10 @@ def track_directives(track: dict) -> dict:
         # lock. Ticks can match while kick sits on snare; ride_beats ±1
         # does not fix that. Ear flag, or high-confidence phase mismatch.
         "snare_align": bool(re.search(r"\bsnare_align\b", notes, re.I)),
+        # Perform the skip as a same-song handoff (a second copy on the free
+        # deck) instead of an audible beat jump; blend length in beats.
+        "skip_handoff": bool(re.search(r"\bskip_handoff\b", notes, re.I)),
+        "skip_handoff_beats": number("skip_handoff_beats"),
         # Rare escape hatch for an ear-certified cue that deliberately sits
         # between analyzed beatgrid lines. Ordinary cues are snapped to the
         # nearest real beat below; otherwise a half-beat cue can never be
@@ -1021,6 +1045,9 @@ def build_plan(
         skip_from, skip_to = directive.get("skip_from_seconds"), directive.get("skip_to_seconds")
         if skip_from is not None and skip_to is not None and float(skip_to) > float(skip_from) > cue:
             skipped = float(skip_to) - float(skip_from)
+            # A handoff starts the copy at skip_to when the blend *begins*, so
+            # the song advances a further blend's worth past a beat jump.
+            skipped += (skip_handoff_beats(directive) or 0) * period
 
         def ride_for(seconds: float, *, up: bool) -> int:
             # Bar-aligned from the cue. A chorus start / verse end is
@@ -1346,6 +1373,7 @@ def build_plan(
     events.append(start_event)
 
     live_deck = 1
+    handoff_copy_for = None      # track_id whose second copy waits on the free deck
     play_s = seconds_per_track
     segments = []
     previous_fade_beats = 0
@@ -2229,6 +2257,8 @@ def build_plan(
             skipped = max(0.0, float(directive["skip_to_seconds"] or 0) -
                           max(cue, float(directive["skip_from_seconds"] or 0)))
             native_bpm = float(outgoing.get("bpm") or 0)
+            if skipped and native_bpm > 0:
+                skipped += (skip_handoff_beats(directive) or 0) * 60 / native_bpm
             if native_bpm <= 0:
                 raise ValueError("mandatory_end_seconds needs source BPM for transition planning")
             budget = math.floor((end - cue - skipped) * native_bpm / 60) - int(previous_fade_beats) - int(tech["transition_beats"]) - 4
@@ -2276,7 +2306,28 @@ def build_plan(
             skip_after = max(0, skip_after - int(previous_fade_beats or 0))
             skip_beats = max(4, round((float(skip_to) - float(skip_from)) / period))
             skip_beats -= skip_beats % 4
-            if skip_beats > 0 and skip_after < int(body_event["beats"]):
+            blend = skip_handoff_beats(directive)
+            if (
+                blend is not None
+                and handoff_copy_for == outgoing["track_id"]
+                and 0 <= skip_after - blend
+                and skip_after < int(body_event["beats"])
+            ):
+                body_event["handoff"] = {
+                    "to_deck": in_deck,
+                    "after_beats": skip_after - blend,
+                    "blend_beats": blend,
+                    "skip_from_seconds": round(float(skip_from), 3),
+                    "skip_to_seconds": round(float(skip_to), 3),
+                    # the next song loads onto the deck this copy frees
+                    "then_load": {
+                        "track_id": incoming["track_id"],
+                        "artist": incoming["artist"],
+                        "title": incoming["title"],
+                        **cue_fields(incoming, 0.12, index + 1),
+                    },
+                }
+            elif skip_beats > 0 and skip_after < int(body_event["beats"]):
                 body_event["skip_after_beats"] = skip_after
                 body_event["skip_beats"] = skip_beats
                 body_event["skip_from_seconds"] = round(float(skip_from), 3)
@@ -2321,6 +2372,11 @@ def build_plan(
             )
             body_event["native_bpm"] = outgoing.get("bpm")
         events.append(body_event)
+        if "handoff" in body_event:
+            # The song now continues on the copy deck; the next song was loaded
+            # onto the original deck, so the next transition runs copy -> original.
+            out_deck, in_deck = in_deck, out_deck
+        handoff_copy_for = None
 
         # Prefetch next-next track onto the deck this transition will free.
         # vocal_over_bed keeps the bed live and still needs the vocal on the
@@ -2330,16 +2386,35 @@ def build_plan(
             tech.get("keep_outgoing_live") or tech.get("technique") == "vocal_over_bed"
         ):
             nxt = selected[index + 2]
-            events.append(
-                {
-                    "op": "preload_after_transition",
-                    "deck": out_deck,
-                    "track_id": nxt["track_id"],
-                    "artist": nxt["artist"],
-                    "title": nxt["title"],
-                    **cue_fields(nxt, 0.1, index + 2),
-                }
-            )
+            incoming_skip_to = incoming_directive.get("skip_to_seconds")
+            if skip_handoff_beats(incoming_directive) is not None:
+                # The incoming song will skip by handing off to a second copy:
+                # park that copy, cued at skip_to, on the deck this transition
+                # frees. The next song loads after the handoff instead.
+                events.append(
+                    {
+                        "op": "preload_after_transition",
+                        "deck": out_deck,
+                        "track_id": incoming["track_id"],
+                        "artist": incoming["artist"],
+                        "title": incoming["title"],
+                        "cue_seconds": round(float(incoming_skip_to), 3),
+                        "cue_source": "skip_handoff_copy",
+                        "handoff_copy": True,
+                    }
+                )
+                handoff_copy_for = incoming["track_id"]
+            else:
+                events.append(
+                    {
+                        "op": "preload_after_transition",
+                        "deck": out_deck,
+                        "track_id": nxt["track_id"],
+                        "artist": nxt["artist"],
+                        "title": nxt["title"],
+                        **cue_fields(nxt, 0.1, index + 2),
+                    }
+                )
 
         events.append(
             {

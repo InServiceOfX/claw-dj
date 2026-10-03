@@ -210,6 +210,39 @@ def filter_group(deck: int) -> str:
     return FILTER_GROUP.format(channel=f"[Channel{deck}]")
 
 
+def perform_same_song_handoff(mixxx: MixxxControl, from_deck: int, to_deck: int, blend_beats: float) -> None:
+    """Hand a song from from_deck to a second copy on to_deck (already cued).
+
+    The copy takes the playing deck's tempo and phase (beatsync) and its pitch
+    hold, starts with its bass cut, and the crossfader moves over the blend with
+    the bass swapped halfway; then the original stops. Zero beats is a cut.
+    story__skip_a_section_by_handing_off_to_the_same_song_on_another_deck.md
+    """
+    out_g, in_g = deck_group(from_deck), deck_group(to_deck)
+    bpm = mixxx.get(out_g, "bpm") or 120.0
+    mixxx.set(in_g, "pitch_adjust", mixxx.get(out_g, "pitch_adjust"))
+    mixxx.set(in_g, "volume", 1.0)
+    mixxx.set(eq_group(to_deck), "parameter1", 0.0)
+    mixxx.set(in_g, "play", 1)
+    mixxx.set(in_g, "beatsync", 1)
+    start_cf, end_cf = crossfader_target(from_deck), crossfader_target(to_deck)
+    seconds = max(0.0, float(blend_beats)) * 60.0 / bpm
+    swapped = False
+    t0 = time.monotonic()
+    while seconds > 0 and (progress := (time.monotonic() - t0) / seconds) < 1.0:
+        mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * smoothstep(progress))
+        if not swapped and progress >= 0.5:
+            mixxx.set(eq_group(to_deck), "parameter1", EQ_UNITY)
+            mixxx.set(eq_group(from_deck), "parameter1", 0.0)
+            swapped = True
+        time.sleep(0.02)
+    mixxx.set("[Master]", "crossfader", end_cf)
+    mixxx.set(eq_group(to_deck), "parameter1", EQ_UNITY)
+    mixxx.set(out_g, "play", 0)
+    mixxx.set(eq_group(from_deck), "parameter1", EQ_UNITY)
+    print(f"  same-song handoff: deck {from_deck} -> deck {to_deck} ({blend_beats:g}-beat blend)")
+
+
 def neutralize_deck_effects(mixxx: MixxxControl, decks) -> None:
     """Open each deck's QuickEffect filter and set its EQ back to unity."""
     for deck in decks:
@@ -1465,13 +1498,15 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                         break
                 requested_beats = int(beats)
                 skip_beats = int(event.get("skip_beats") or 0)
-                beats = _safe_body_beats(
-                    mixxx,
-                    int(event["deck"]),
-                    requested_beats,
-                    next_transition_beats=next_transition_beats,
-                    skip_beats=skip_beats,
-                )
+                if not event.get("handoff"):
+                    # A handoff continues on the copy deck; it is clamped there.
+                    beats = _safe_body_beats(
+                        mixxx,
+                        int(event["deck"]),
+                        requested_beats,
+                        next_transition_beats=next_transition_beats,
+                        skip_beats=skip_beats,
+                    )
                 if beats < requested_beats:
                     extra = (
                         f" and a {skip_beats}-beat skip"
@@ -1507,7 +1542,51 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                         ) % 4
                 # timeout scales with the ride: full verses (verse tour) can outlast
                 # the old fixed 90s at slower tempos
-                if steady_beats:
+                ramp_deck = int(event["deck"])
+                handoff = event.get("handoff")
+                if steady_beats and handoff:
+                    group = deck_group(int(event["deck"]))
+                    after = int(handoff.get("after_beats") or 0)
+                    blend = float(handoff.get("blend_beats") or 0)
+                    copy_deck = int(handoff["to_deck"])
+                    if after > 0:
+                        wait_for_beats(
+                            port,
+                            group,
+                            after,
+                            timeout_s=max(90.0, after * 1.5),
+                            phase_anchor=phase_anchor,
+                            trust_ride_beats=bool(event.get("trust_ride_beats")),
+                        )
+                    perform_same_song_handoff(mixxx, int(event["deck"]), copy_deck, blend)
+                    print(
+                        f"  skipped {handoff.get('skip_from_seconds')}s -> "
+                        f"{handoff.get('skip_to_seconds')}s on a second copy"
+                    )
+                    nxt = handoff.get("then_load")
+                    if nxt:
+                        load_deck(
+                            mixxx,
+                            int(event["deck"]),
+                            nxt["track_id"],
+                            nxt.get("cue_fraction", 0.1),
+                            nxt.get("cue_seconds"),
+                            expected_bpms.get(nxt["track_id"]),
+                        )
+                    remaining = max(0, steady_beats - after - int(round(blend)))
+                    remaining = _safe_body_beats(
+                        mixxx, copy_deck, remaining, next_transition_beats=next_transition_beats
+                    )
+                    if remaining:
+                        wait_for_beats(
+                            port,
+                            deck_group(copy_deck),
+                            remaining,
+                            timeout_s=max(90.0, remaining * 1.5),
+                            trust_ride_beats=bool(event.get("trust_ride_beats")),
+                        )
+                    ramp_deck = copy_deck
+                elif steady_beats:
                     skip_after = int(event.get("skip_after_beats") or 0)
                     skip_beats = int(event.get("skip_beats") or 0)
                     group = deck_group(int(event["deck"]))
@@ -1565,7 +1644,7 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                 if ramp_beats:
                     ramp_bpm_target(
                         mixxx,
-                        int(event["deck"]),
+                        ramp_deck,
                         native_bpm=float(event["native_bpm"]),
                         target_bpm=float(event["exit_bpm_target"]),
                         beats=ramp_beats,

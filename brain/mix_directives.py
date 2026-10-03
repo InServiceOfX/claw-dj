@@ -67,6 +67,11 @@ keys must match exactly):
                              skip_after is live beats *after the incoming blend*
                              (play_body start), not from cue. 16-bar verses are
                              64 beats; a hook-talk + verse may be 80.
+  skip_handoff               bare flag with skip_from/skip_to: perform the skip as a same-song handoff
+                             (a second copy on the free deck takes over with a short blend that ends at
+                             skip_from; the copy starts at skip_to) instead of an audible beat jump. Choose
+                             the pair so the repeated music lines up (measure it), e.g. 96 beats apart.
+  skip_handoff_beats=<int>   blend length for skip_handoff (default 4)
   pitch_adjust_semitones=<signed number>  hold this pitch for the whole track (keylock on),
                              fractional semitones within ±2, e.g. +0.6. Use only when a
                              measurement or the human ear says the record is out of tune with

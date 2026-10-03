@@ -39,6 +39,13 @@ def carry_library_skips(global_note: str, plan_note: str) -> str:
     ends = re.findall(r"\bmandatory_end_seconds\s*=\s*\d+(?:\.\d+)?", global_note, re.I)
     if ends:
         extras.append(ends[-1])
+    # How a mandatory skip is performed (a same-song handoff) travels with it.
+    if mandatory:
+        if re.search(r"\bskip_handoff\b", global_note, re.I) and not re.search(r"\bskip_handoff\b", plan_note, re.I):
+            extras.append("skip_handoff")
+        beats = re.findall(r"\bskip_handoff_beats\s*=\s*\d+(?:\.\d+)?", global_note, re.I)
+        if beats and not re.search(r"\bskip_handoff_beats\s*=", plan_note, re.I):
+            extras.append(beats[-1])
     for token in dict.fromkeys(_LIBRARY_SKIP_TOKEN.findall(global_note)):
         key = token.split("=", 1)[0].strip()
         if mandatory or not re.search(rf"\b{re.escape(key)}\s*=", plan_note, re.I):

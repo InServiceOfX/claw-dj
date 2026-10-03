@@ -152,6 +152,19 @@ class PlanFoundationTest(TestCase):
         with library_index.connect(self.db) as db:
             self.assertEqual(db.execute("SELECT dj_notes FROM tracks").fetchone()[0], "global human note")
 
+    def test_09c_plan_overlay_keeps_a_mandatory_skip_handoff(self):
+        carried = plan_notes.carry_library_skips(
+            "mandatory_skip; skip_from_seconds=69.03; skip_to_seconds=121.88; skip_handoff; skip_handoff_beats=4",
+            "play_bpm=109.25",
+        )
+        self.assertIn("skip_from_seconds=69.03", carried)
+        self.assertRegex(carried, r"\bskip_handoff\b")
+        self.assertIn("skip_handoff_beats=4", carried)
+        self.assertEqual(
+            plan_notes.carry_library_skips("skip_from_seconds=1; skip_to_seconds=2; skip_handoff", "ride_beats=8; skip_from_seconds=1; skip_to_seconds=2"),
+            "ride_beats=8; skip_from_seconds=1; skip_to_seconds=2",
+        )
+
     def test_09b_plan_overlay_keeps_library_skip_tokens(self):
         meta = self._plan()
         self._track(

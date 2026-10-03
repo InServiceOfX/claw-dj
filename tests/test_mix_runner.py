@@ -795,6 +795,40 @@ class EchoOutExitTests(TestCase):
         _sleep.assert_any_call(2.0)  # four beats at FakeMixxx's 120 BPM
 
 
+class SameSongHandoffTests(TestCase):
+    @patch("hands.run_mix_plan.time.sleep")
+    @patch("hands.run_mix_plan.load_deck")
+    @patch("hands.run_mix_plan.wait_for_beats")
+    def test_play_body_hands_off_to_the_copy_and_loads_the_next_song(self, wait, load, _sleep) -> None:
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel2]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "bpm")] = 109.25
+        mixxx.values[("[Channel2]", "pitch_adjust")] = 0.6
+        _run_events(
+            mixxx,
+            [{
+                "op": "play_body", "deck": 2, "beats": 200, "track": "B — Middle", "trust_ride_beats": True,
+                "handoff": {
+                    "to_deck": 1, "after_beats": 60, "blend_beats": 4,
+                    "skip_from_seconds": 69.03, "skip_to_seconds": 121.88,
+                    "then_load": {"track_id": "/music/c.mp3", "cue_seconds": 0.5, "cue_fraction": 0.1},
+                },
+            }],
+            {"/music/c.mp3": 104.0},
+            port=9995,
+        )
+        waited = [(call.args[1], call.args[2]) for call in wait.call_args_list]
+        self.assertEqual(waited, [("[Channel2]", 60), ("[Channel1]", 136)])
+        self.assertIn(("[Channel1]", "play", 1), mixxx.writes)
+        self.assertIn(("[Channel1]", "beatsync", 1), mixxx.writes)
+        self.assertIn(("[Channel1]", "pitch_adjust", 0.6), mixxx.writes)
+        self.assertEqual(mixxx.values[("[Channel2]", "play")], 0)
+        self.assertEqual(mixxx.values[("[Master]", "crossfader")], -1.0)   # copy deck 1 is left
+        self.assertNotIn(("[Channel2]", "beatjump_forward", 1), mixxx.writes)
+        load.assert_called_once()
+        self.assertEqual(load.call_args.args[1:3], (2, "/music/c.mp3"))
+
+
 class SkipVerseTests(TestCase):
     @patch("hands.run_mix_plan.wait_for_beats")
     def test_play_body_beatjumps_over_a_skipped_verse(self, wait) -> None:
