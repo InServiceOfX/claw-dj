@@ -49,6 +49,13 @@ class BeatPhaseWiringTests(unittest.TestCase):
         )
         self._connect_patch.start()
         self.addCleanup(self._connect_patch.stop)
+        # run_enrich exports phrase_analysis.json and chroma_similarity.json;
+        # keep them in the temp dir so the suite never overwrites real data.
+        for name, filename in (("PHRASE_OUT", "phrase_analysis.json"),
+                               ("CHROMA_SIMILARITY", "chroma_similarity.json")):
+            output_patch = patch(f"brain.enrich_set.{name}", Path(self._tmp.name) / filename)
+            output_patch.start()
+            self.addCleanup(output_patch.stop)
 
     def test_run_enrich_calls_fill_beat_phase_and_it_lands_in_the_table(self) -> None:
         calls = []
@@ -125,6 +132,33 @@ class BeatPhaseWiringTests(unittest.TestCase):
             )
 
         self.assertEqual(analyzed, [self.track_id])
+
+    def test_run_enrich_in_tests_never_writes_the_real_data_dir(self) -> None:
+        """Regression (2026-10-01): running this suite overwrote the real
+        brain/data/phrase_analysis.json with an empty track list, so every
+        plan build fell back to 10% cues (Mo Money cued mid-verse)."""
+        import hashlib
+        from brain import enrich_set
+        from brain.playlist import DATA_DIR
+
+        real = [DATA_DIR / "phrase_analysis.json", DATA_DIR / "chroma_similarity.json"]
+
+        def fingerprint():
+            return {str(f): hashlib.sha256(f.read_bytes()).hexdigest() if f.exists() else None for f in real}
+
+        before = fingerprint()
+        with (
+            patch("brain.analyze_via_mixxx.pending_grid_ids", return_value=[]),
+            patch("brain.enrich_set.fill_phrases", return_value=0),
+        ):
+            run_enrich(
+                playlist_path=self.playlist_path,
+                skip_bpm=True, skip_lyrics=True, skip_chroma=True,
+                skip_beat_phase=True, skip_timelines=True,
+            )
+        self.assertEqual(fingerprint(), before)
+        for path in (enrich_set.PHRASE_OUT, enrich_set.CHROMA_SIMILARITY):
+            self.assertNotEqual(path.parent, DATA_DIR, f"{path} still points at the real data dir")
 
 
 if __name__ == "__main__":
