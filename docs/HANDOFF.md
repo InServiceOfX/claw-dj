@@ -1250,6 +1250,14 @@ interactive wizard — run with Ernest present. `holo install nemoclaw`
 
 ## Known gaps / next steps, roughly in priority order
 
+0. **Gentle faders: one path still unchecked (2026-10-03).** The live toolkit,
+   the normal runner and the plan builder now refuse blends faster than 16
+   counts (`shared/gentle_faders.py`, story
+   `story__blend_with_gentle_faders_never_fast.md`). The explicit-performance
+   path (`execution_mode=live_source_tracks`, Rust `clawdj perform`, clip
+   `fade_in`/`fade_out` in seconds) is **not** checked yet. Its smoothstep
+   gain envelopes and 2-beat loop edges need the same rule, with explicit
+   exemptions for juggles and loop edges.
 1. **Run the full set-player demo end to end**
    (`uv run python -m brain.set_player --tracks 3 --seconds 45`) with the
    hai-agents desktop bridge doing the loads — each piece is validated but

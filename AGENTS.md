@@ -213,6 +213,21 @@ fader do the fading instead of slamming EQ to zero. Ernest, 2026-10-03: agents
 Short 4-beat blends are only for same-song handoffs of identical material. In
 code: `hands.live_kit.fade_out(...)`, `GENTLE_FADE_BEATS`, `automate(..., curve="linear")`.
 
+This is **enforced in code**, not just advice (Ernest, 2026-10-03: "You and any
+other AI agent, AI harness has to STOP doing that"). Fading **in** counts too.
+- `shared/gentle_faders.py` holds the one rule: `GENTLE_BLEND_BEATS = 16`.
+- `hands.live_kit.Live.automate` raises `ValueError` when a channel fader would
+  sweep faster than full travel per 16 counts (an S-curve's steepest point counts).
+  `fast=True` is only for juggling, deliberate cuts and same-song handoffs; write
+  the reason next to it.
+- `hands.run_mix_plan` refuses a plan with a blend shorter than 16 counts before
+  anything plays, and moves the crossfader on a linear ramp.
+- `brain.build_mix_plan` never schedules a blend below 16 counts, even for a
+  "quick" brief or a per-pair override.
+- Story: `user_stories/story__blend_with_gentle_faders_never_fast.md`.
+Do not lower the constant or sprinkle `fast=True` to get a script running;
+lengthen the move instead.
+
 ## Live mini-experiments
 
 For a new or uncertain idea (a transition, a loop or re-entry, a 2/3+ deck

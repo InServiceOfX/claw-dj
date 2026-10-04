@@ -1661,6 +1661,29 @@ class MixPlanTest(TestCase):
         self.assertEqual(bodies[1]["phase_anchor"]["planned_anchor_beat_index"], 105)
         self.assertEqual(bodies[1]["phase_anchor"]["target_beat_mod4"], 105 % 4)
 
+    def test_blends_never_go_below_the_gentle_minimum(self) -> None:
+        # Ernest, 2026-10-03: agents move the faders TOO FAST in one-shot builds.
+        # A "quick" brief (scale 0.75) and a short per-pair override both used
+        # to schedule 12- and 8-beat blends; the floor is 16 counts.
+        from dataclasses import replace
+        from shared.gentle_faders import GENTLE_BLEND_BEATS
+        tracks = [
+            {"track_id": f"/m/{n}.mp3", "artist": n.upper(), "title": n, "bpm": 100.0, "key": "Am",
+             "dj_notes": "cue_seconds=0; ride_beats=48; trust_ride_beats"}
+            for n in ("a", "b", "c")
+        ]
+        quick, _notes = apply_brief(PROFILES["dj-showcase"], "quick")
+        self.assertLess(quick.transition_scale, 1.0)
+        plan = build_plan(
+            tracks, count=3, seconds_per_track=20.0, affinity_lookup={},
+            profile=replace(quick, transition_scale=0.5),
+            transition_beats_by_pair={("/m/a.mp3", "/m/b.mp3"): 8},
+        )
+        transitions = [e for e in plan["events"] if e["op"] == "transition"]
+        self.assertTrue(transitions)
+        for event in transitions:
+            self.assertGreaterEqual(event["transition_beats"], GENTLE_BLEND_BEATS, event["technique"])
+
     def test_tempo_ramp_exit_shapes_outgoing_before_native_bpm_blend(self) -> None:
         tracks = [
             {

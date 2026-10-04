@@ -8,6 +8,7 @@ hands.mixxx_control; nothing is rendered. See docs/LIVE_MINI_EXPERIMENTS.md.
 """
 from __future__ import annotations
 
+import re
 import time
 from contextlib import closing, contextmanager
 from pathlib import Path
@@ -25,13 +26,17 @@ from hands.run_mix_plan import (
     stop_recording,
 )
 from hands.transition import smoothstep
+from shared.gentle_faders import GENTLE_BLEND_BEATS
 
 CUT_SECONDS = 0.06          # an in/out cut eases this long so it never clicks
 # Fading a song out into a different song: ramp its channel fader down steadily
 # over about this many counts (Ernest, 2026-10-03: agents "move that vertical
 # knob down TOO FAST ... channel fader needs to be gentler"). Only beat juggling,
 # deliberate cuts and same-song handoffs move faster.
-GENTLE_FADE_BEATS = 16
+GENTLE_FADE_BEATS = GENTLE_BLEND_BEATS     # shared.gentle_faders: one rule for every harness
+# smoothstep's steepest point is 1.5x a linear ramp's speed over the same span
+_PEAK_SPEED = {"linear": 1.0, "smooth": 1.5}
+_CHANNEL = re.compile(r"^\[Channel\d+\]$")
 NATIVE_LOOP_BEATS = (1, 2, 4, 8, 16, 32)
 
 
@@ -151,13 +156,21 @@ class Live:
                 raise RuntimeError(f"deck {deck} stopped before {seconds:.2f}s")
             time.sleep(0.01)
 
-    def automate(self, clock: int, track: Track, b0: float, b1: float, lanes, *, curve: str = "smooth") -> None:
+    def automate(self, clock: int, track: Track, b0: float, b1: float, lanes, *, curve: str = "smooth",
+                 fast: bool = False) -> None:
         """Ease each (group, key, v0, v1) from clock-deck grid beat b0 to b1.
 
         curve="smooth" eases in and out (fastest in the middle); "linear" is a
-        steady ramp, the gentler choice for a channel fader coming down."""
-        if curve not in ("smooth", "linear"):
+        steady ramp, the gentler choice for a channel fader.
+
+        A channel fader (a deck's "volume") may never move faster than a full
+        sweep per GENTLE_FADE_BEATS at its steepest point; a faster move raises
+        ValueError before anything is written. Pass fast=True only for beat
+        juggling, a deliberate cut, or a same-song handoff."""
+        if curve not in _PEAK_SPEED:
             raise ValueError(f"unknown curve {curve!r}")
+        if not fast:
+            check_gentle_fader(b1 - b0, lanes, curve=curve)
         shape = smoothstep if curve == "smooth" else (lambda v: v)
         t0, t1 = track.at(b0), track.at(b1)
         while True:
@@ -215,6 +228,21 @@ class Live:
 
 # --- techniques ---------------------------------------------------------------
 
+def check_gentle_fader(beats: float, lanes, *, curve: str = "linear") -> None:
+    """Raise ValueError when any channel-fader lane in (group, key, v0, v1)
+    lanes would sweep faster than a full fader travel per GENTLE_FADE_BEATS."""
+    for group, key, v0, v1 in lanes:
+        if key != "volume" or not _CHANNEL.match(group) or v0 == v1:
+            continue
+        needed = abs(v1 - v0) * GENTLE_FADE_BEATS * _PEAK_SPEED[curve]
+        if beats + 1e-9 < needed:
+            raise ValueError(
+                f"{group} fader {v0:g} -> {v1:g} over {beats:g} beats ({curve}) is too fast: a blend "
+                f"needs at least {needed:g} beats (a full sweep per {GENTLE_FADE_BEATS} counts, linear). "
+                "Use a longer, linear ramp; fast=True is only for juggling, deliberate cuts and "
+                "same-song handoffs.")
+
+
 def same_song_handoff(live: Live, *, out_deck: int, in_deck: int, track: Track,
                       at_beat: float, blend_beats: float = 4) -> None:
     """Hand the same recording from out_deck to in_deck (already cued at the
@@ -225,10 +253,11 @@ def same_song_handoff(live: Live, *, out_deck: int, in_deck: int, track: Track,
     live.start(in_deck, volume=0.0 if blend_beats else 1.0)
     if blend_beats:
         half = at_beat + blend_beats / 2
-        live.automate(out_deck, track, at_beat, half, [(deck_group(in_deck), "volume", 0.0, 1.0)])
+        live.automate(out_deck, track, at_beat, half, [(deck_group(in_deck), "volume", 0.0, 1.0)], fast=True)
         live.eq(in_deck)
         live.m.set(eq_group(out_deck), "parameter1", 0.0)
-        live.automate(out_deck, track, half, at_beat + blend_beats, [(deck_group(out_deck), "volume", 1.0, 0.0)])
+        live.automate(out_deck, track, half, at_beat + blend_beats, [(deck_group(out_deck), "volume", 1.0, 0.0)],
+                      fast=True)                   # same-song handoff: identical material, short is approved
     else:
         live.eq(in_deck)
     live.stop(out_deck)
@@ -239,8 +268,10 @@ def eq_split_crossover(live: Live, *, clock_deck: int, clock_track: Track, out_d
                        enter_beat: float, hold_beats: float = 0, cross_beats: float = 8) -> None:
     """For two decks carrying the same riff or drums: in_deck enters bass-only
     with the bass swapped on enter_beat, holds that for hold_beats, then the
-    riff crosses over in cross_beats (out mids/highs and volume down, in
-    mids/highs up). The approved Diana Ross -> Mo Money bridge is hold 8, cross 8."""
+    riff crosses over in cross_beats (out mids/highs down, in mids/highs up).
+    The outgoing channel fader falls on a steady linear ramp over at least
+    GENTLE_FADE_BEATS from the start of the cross, so a short riff cross never
+    slams the fader. The approved Diana Ross -> Mo Money bridge is hold 8, cross 8."""
     e_out, e_in = eq_group(out_deck), eq_group(in_deck)
     live.eq(in_deck, low=EQ_UNITY, mid=0.0, high=0.0)
     live.wait(clock_deck, clock_track.at(enter_beat), lead=0.05)
@@ -249,22 +280,29 @@ def eq_split_crossover(live: Live, *, clock_deck: int, clock_track: Track, out_d
     cross_from = enter_beat + hold_beats
     if hold_beats:
         live.wait(clock_deck, clock_track.at(cross_from))
+    g_out = deck_group(out_deck)
+    fader_beats = max(cross_beats, GENTLE_FADE_BEATS)
+    at_cross_end = 1.0 - cross_beats / fader_beats
     live.automate(clock_deck, clock_track, cross_from, cross_from + cross_beats, [
         (e_out, "parameter2", EQ_UNITY, 0.0), (e_out, "parameter3", EQ_UNITY, 0.0),
-        (deck_group(out_deck), "volume", 1.0, 0.0),
         (e_in, "parameter2", 0.0, EQ_UNITY), (e_in, "parameter3", 0.0, EQ_UNITY),
-    ])
+        (g_out, "volume", 1.0, at_cross_end),
+    ], curve="linear")
+    if at_cross_end > 0:
+        live.automate(clock_deck, clock_track, cross_from + cross_beats, cross_from + fader_beats,
+                      [(g_out, "volume", at_cross_end, 0.0)], curve="linear")
     live.stop(out_deck)
     live.eq(out_deck)
 
 
 def fade_out(live: Live, *, deck: int, clock_deck: int, clock_track: Track, start_beat: float,
-             beats: float = GENTLE_FADE_BEATS, stop: bool = True) -> None:
+             beats: float = GENTLE_FADE_BEATS, stop: bool = True, fast: bool = False) -> None:
     """Bring a deck's channel fader down gently: a steady (linear) ramp from its
-    current level to 0 over `beats` of the clock deck, then stop the deck."""
+    current level to 0 over `beats` of the clock deck, then stop the deck.
+    Fewer than GENTLE_FADE_BEATS for a full fader raises unless fast=True."""
     group = deck_group(deck)
     live.automate(clock_deck, clock_track, start_beat, start_beat + beats,
-                  [(group, "volume", live.m.get(group, "volume"), 0.0)], curve="linear")
+                  [(group, "volume", live.m.get(group, "volume"), 0.0)], curve="linear", fast=fast)
     if stop:
         live.stop(deck)
 

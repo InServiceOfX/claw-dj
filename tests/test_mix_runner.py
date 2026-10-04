@@ -485,7 +485,7 @@ class IncomingBpmTargetTests(TestCase):
         # set_bpm_target was getting silently overwritten by a later
         # beatsync call when "sync" was also in the technique's moves,
         # snapping the incoming deck back toward the outgoing deck's
-        # tempo. transition_beats=1 with a very high outgoing bpm keeps
+        # tempo. transition_beats=16 (the gentle minimum) at a very high outgoing bpm keeps
         # the crossfade loop's real elapsed time negligible.
         mixxx = IncomingBpmTargetMixxx()
         perform_transition(
@@ -493,7 +493,7 @@ class IncomingBpmTargetTests(TestCase):
             {
                 "from_deck": 1,
                 "to_deck": 2,
-                "transition_beats": 1,
+                "transition_beats": 16,
                 "technique": "standard_blend",
                 "moves": ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"],
                 "incoming_bpm_target": 103.0,
@@ -512,7 +512,7 @@ class IncomingBpmTargetTests(TestCase):
             {
                 "from_deck": 1,
                 "to_deck": 2,
-                "transition_beats": 1,
+                "transition_beats": 16,
                 "technique": "standard_blend",
                 "moves": ["sync", "crossfade", "eq_restore"],
                 "incoming_bpm_target": 103.0,
@@ -539,7 +539,7 @@ class IncomingBpmTargetTests(TestCase):
             {
                 "from_deck": 1,
                 "to_deck": 2,
-                "transition_beats": 1,
+                "transition_beats": 16,
                 "technique": "standard_blend",
                 "moves": ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"],
                 "incoming_bpm_target": 103.0,
@@ -560,7 +560,7 @@ class IncomingBpmTargetTests(TestCase):
             {
                 "from_deck": 1,
                 "to_deck": 2,
-                "transition_beats": 1,
+                "transition_beats": 16,
                 "technique": "half_time_or_cut",
                 "moves": ["sync", "hard_cut"],
                 "incoming_bpm_target": 103.0,
@@ -579,7 +579,7 @@ class IncomingBpmTargetTests(TestCase):
             {
                 "from_deck": 1,
                 "to_deck": 2,
-                "transition_beats": 1,
+                "transition_beats": 16,
                 "technique": "standard_blend",
                 "moves": ["sync", "eq_dip_out_mid", "crossfade", "eq_restore"],
             },
@@ -688,6 +688,51 @@ class JuggleIntroTests(TestCase):
         self.assertEqual(mixxx.get("[Channel1]", "play"), 1)
 
 
+class GentleBlendTests(TestCase):
+    """Ernest, 2026-10-03: agents move the faders TOO FAST. A blend into a
+    different song takes at least GENTLE_BLEND_BEATS, on a steady ramp."""
+
+    def _transition(self, beats, technique="standard_blend", moves=("sync", "crossfade")):
+        return {"op": "transition", "from_deck": 1, "to_deck": 2, "transition_beats": beats,
+                "technique": technique, "moves": list(moves),
+                "from_track": "A — Out", "to_track": "B — In"}
+
+    def test_a_plan_with_a_short_blend_is_refused_before_anything_plays(self) -> None:
+        from hands.run_mix_plan import check_gentle_blends
+        with self.assertRaisesRegex(ValueError, "A — Out -> B — In.*12 beats"):
+            check_gentle_blends([self._transition(32), self._transition(12)])
+
+    def test_cuts_exits_and_gentle_blends_pass_the_check(self) -> None:
+        from hands.run_mix_plan import GENTLE_BLEND_BEATS, check_gentle_blends
+        self.assertGreaterEqual(GENTLE_BLEND_BEATS, 16)
+        check_gentle_blends([
+            self._transition(16), self._transition(32),
+            self._transition(4, technique="half_time_or_cut"),
+            self._transition(4, technique="beat_drop_entry", moves=("brake_out", "hard_cut")),
+            self._transition(4, technique="echo_out_exit", moves=("echo_out_exit",)),
+            self._transition(4, technique="filter_drop_exit", moves=("filter_drop_exit",)),
+            {"op": "load", "deck": 1},
+        ])
+
+    def test_perform_transition_refuses_a_short_blend(self) -> None:
+        mixxx = FakeMixxx()
+        with self.assertRaises(ValueError):
+            perform_transition(mixxx, self._transition(8), port=9995)  # type: ignore[arg-type]
+        self.assertEqual(mixxx.writes, [])
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_the_crossfader_moves_on_a_steady_ramp(self, _sleep, _wait) -> None:
+        mixxx = FakeMixxx()
+        clock = iter([0.0] + [i * 0.5 for i in range(0, 40)])
+        with patch("hands.run_mix_plan.time.monotonic", lambda: next(clock)):
+            perform_transition(mixxx, self._transition(16), port=9995)  # type: ignore[arg-type]
+        xf = [v for g, k, v in mixxx.writes if (g, k) == ("[Master]", "crossfader")]
+        inner = [v for v in xf if -1.0 < v < 1.0]
+        steps = [round(b - a, 6) for a, b in zip(inner, inner[1:])]
+        self.assertTrue(steps and max(steps) - min(steps) < 1e-6)       # equal steps: linear
+
+
 class VerseLandingMissTests(TestCase):
     @patch("hands.run_mix_plan.wait_for_next_beat")
     @patch("hands.run_mix_plan.time.sleep")
@@ -698,10 +743,11 @@ class VerseLandingMissTests(TestCase):
         mixxx = FakeMixxx()
         mixxx.values[("[Channel2]", "duration")] = 268.0
         mixxx.values[("[Channel2]", "playposition")] = 76.6 / 268.0  # short of 84.27
+        mixxx.values[("[Channel1]", "bpm")] = 6000.0          # 16-beat blend in 0.16 s of test time
         perform_transition(
             mixxx,
             {
-                "from_deck": 1, "to_deck": 2, "transition_beats": 1,
+                "from_deck": 1, "to_deck": 2, "transition_beats": 16,
                 "technique": "verse_landing_blend",
                 "moves": ["crossfade"],
                 "landing_seconds": 84.27,

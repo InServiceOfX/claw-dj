@@ -106,11 +106,13 @@ a copied script runs from either location.
    seconds. Don't count beats.
 8. **Skips and re-entries** use `beatjump_size` plus `beatjump_forward` or
    `beatjump_backward` with a multiple of 4 beats, so bars carry across.
-9. **Blends** fade the outgoing song's channel fader **gently**: a steady
-   (linear) ramp over about 16 counts or more (`fade_out`, `GENTLE_FADE_BEATS`),
-   never a 4-8 count drop, except for beat juggling, deliberate cuts and
-   same-song handoffs. Bring the incoming song up with a smoothstep, and swap bass by
-   moving `parameter1` (incoming at 0 until halfway). Treat a zero-length
+9. **Blends** move both channel faders **gently**: a steady (linear) ramp
+   over about 16 counts or more (`fade_out`, `GENTLE_FADE_BEATS`), never a 4-8
+   count move, fading in as well as out, except for beat juggling, deliberate
+   cuts and same-song handoffs. `Live.automate` **refuses** a faster fader move
+   (`ValueError`) unless you pass `fast=True` with the reason next to it
+   (`story__blend_with_gentle_faders_never_fast.md`). Swap bass by moving
+   `parameter1` (incoming at 0 until halfway). Treat a zero-length
    blend as an on-beat cut. Never divide by it.
 10. **Print a word at each event** (`reprise`, `intro in`, `bass swap`, …) so
    Ernest can tell what he's hearing.

@@ -1,5 +1,27 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Gentle faders enforced in code (Opus 5.5, 2026-10-03, branch `feat/gentle-fader-enforcement`)
+
+Ernest: agents move the channel faders "TOO FAST ... STOP doing that". The rule
+was only in AGENTS.md; now the code refuses it
+(`user_stories/story__blend_with_gentle_faders_never_fast.md`):
+- `shared/gentle_faders.py`: `GENTLE_BLEND_BEATS = 16`, the exempt cut/exit
+  techniques and moves, `is_gentle_blend`, `gentle_beats`.
+- `hands/live_kit.py`: `Live.automate` raises when a channel fader sweeps faster
+  than full travel per 16 counts (S-curve measured at its steepest); `fast=True`
+  for juggles, cuts and same-song handoffs only. `eq_split_crossover` keeps the
+  outgoing fader falling over 16+ even on a short riff cross; `fade_out` refuses
+  short fades.
+- `hands/run_mix_plan.py`: refuses a plan with a blend under 16 counts before
+  anything plays; `perform_transition` refuses one too; the crossfader and the
+  vocal-over-bed fades are linear.
+- `brain/build_mix_plan.py`: a "quick" brief (scale 0.75/0.5) and per-pair
+  overrides no longer push a blend below 16.
+- Old plans with short blends are refused: rebuild them.
+- The Mo Money authoring script (`mix_reprise_first_full.py`) runs clean against a
+  fake Mixxx. Its approved unison entry is marked `fast=True` with the reason;
+  `mix_v2.py` is superseded and now stops at its first fast fade.
+
 ## Live toolkit and runner fixes (Opus 5.5, 2026-10-03, branch `feat/live-toolkit-and-fixes`)
 
 - **`hands/live_kit.py`** (prompt `prompts/hands/live_kit_Python.prompt`, tests

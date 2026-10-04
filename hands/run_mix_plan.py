@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from brain import plan_paths
+from shared.gentle_faders import GENTLE_BLEND_BEATS, is_gentle_blend
 from hands.mixxx_control import DEFAULT_PORT, MixxxControl
 from hands.transition import crossfader_target, deck_group, smoothstep, wait_for_beats, wait_for_next_beat
 
@@ -36,6 +37,22 @@ FILTER_GROUP = "[QuickEffectRack1_{channel}]"
 # about -6 dB on every band, with its boost/dip/bass-swap values scaled to it.
 EQ_UNITY = 1.0
 FILTER_NEUTRAL = 0.5
+
+
+def check_gentle_blends(events: list[dict]) -> None:
+    """Refuse a plan, before anything plays, whose blends move the faders too fast."""
+    short = [
+        f"event {i} ({event.get('from_track', '?')} -> {event.get('to_track', '?')}): "
+        f"{event.get('transition_beats')} beats"
+        for i, event in enumerate(events, 1)
+        if event.get("op") == "transition" and is_gentle_blend(event)
+        and float(event.get("transition_beats", GENTLE_BLEND_BEATS)) < GENTLE_BLEND_BEATS
+    ]
+    if short:
+        raise ValueError(
+            f"blends must take at least {GENTLE_BLEND_BEATS} counts (gentle faders); "
+            "rebuild the plan or mark a deliberate cut:\n  " + "\n  ".join(short))
+
 
 # Rust gesture executor (core-rust) — sub-beat timing loops for slip fills
 # and platter moves. Plans may name these gestures; when the binary is
@@ -1042,6 +1059,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     beats = int(event.get("transition_beats", 16))
     moves = list(event.get("moves") or [])
     technique = event.get("technique", "standard_blend")
+    if is_gentle_blend(event) and beats < GENTLE_BLEND_BEATS:
+        raise ValueError(f"{beats}-beat blend is too fast; blends take at least {GENTLE_BLEND_BEATS} counts")
     out_g, in_g = deck_group(from_deck), deck_group(to_deck)
     bpm = mixxx.get(out_g, "bpm")
     if bpm <= 0:
@@ -1207,7 +1226,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             mixxx.set(in_g, "beatsync_phase", 1)
         start_cf = mixxx.get("[Master]", "crossfader")
         fade_s = max(0.5, beats * 60.0 / bpm)
-        open_s = min(4.0, fade_s * 0.15)
+        # gentle: open and close over up to GENTLE_BLEND_BEATS, steady ramps
+        open_s = min(GENTLE_BLEND_BEATS * 60.0 / bpm, fade_s / 2)
         t0 = time.monotonic()
         while True:
             elapsed = time.monotonic() - t0
@@ -1215,10 +1235,10 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
                 break
             if elapsed <= open_s:
                 progress = elapsed / open_s
-                mixxx.set("[Master]", "crossfader", start_cf + (0.0 - start_cf) * smoothstep(progress))
+                mixxx.set("[Master]", "crossfader", start_cf + (0.0 - start_cf) * progress)
             elif elapsed >= fade_s - open_s:
                 progress = (elapsed - (fade_s - open_s)) / open_s
-                mixxx.set(in_g, "volume", 1.0 - smoothstep(progress))
+                mixxx.set(in_g, "volume", 1.0 - progress)
             time.sleep(0.02)
         mixxx.set(in_g, "volume", 0.0)
         mixxx.set("[Master]", "crossfader", crossfader_target(from_deck))
@@ -1283,7 +1303,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     while True:
         progress = min(1.0, (time.monotonic() - t0) / fade_s)
         curve = smoothstep(progress)
-        mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * curve)
+        # the fader itself moves on a steady ramp (gentle); the filter keeps its ease
+        mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * progress)
         if bass_swap and progress >= 0.35:
             # GRADUAL bass handover, not an instant kill: ramp the outgoing
             # deck's low EQ from neutral to zero across the middle of the
@@ -1404,6 +1425,7 @@ def run_plan(
 
     plan = prepare_plan(plan, dry_run=dry_run)
     events = plan["events"]
+    check_gentle_blends(events)
     if max_events:
         events = events[:max_events]
 

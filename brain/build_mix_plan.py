@@ -25,6 +25,7 @@ from pathlib import Path
 from brain.mix_graph import bpm_compatibility, key_compatibility, parse_key
 from brain.phrase_analysis import seekable_cue_seconds, usable_first_beat_seconds
 from brain.verse import fill_segment_lookup, respect_verse_entry, respect_verse_exit, song_exit_seconds
+from shared.gentle_faders import gentle_beats
 
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_PLAYLIST = DATA_DIR / "playlist.json"
@@ -1475,7 +1476,7 @@ def build_plan(
                 (bed["track_id"], incoming["track_id"])
             )
             if override_beats is not None:
-                tech["transition_beats"] = max(1, int(override_beats))
+                tech["transition_beats"] = gentle_beats(tech, max(1, int(override_beats)))
             # Vocal deck is free after the layer. Load the next full song
             # there before handing off from the still-playing bed.
             events.append(
@@ -1577,7 +1578,8 @@ def build_plan(
         # often we show off and how long the landing takes.
         if profile.transition_scale != 1.0:
             scaled = tech["transition_beats"] * profile.transition_scale
-            tech["transition_beats"] = max(4, int(round(scaled / 4)) * 4)
+            # a "quick" profile shortens cuts, never a blend below the gentle minimum
+            tech["transition_beats"] = gentle_beats(tech, max(4, int(round(scaled / 4)) * 4))
         flourish = "bass_swap"
         model_move = (showcase_plan or {}).get(index)
         if model_move is not None and not incoming_directive["no_flourish"]:
@@ -2104,7 +2106,7 @@ def build_plan(
             (outgoing["track_id"], incoming["track_id"])
         )
         if override_beats is not None:
-            tech["transition_beats"] = max(1, int(override_beats))
+            tech["transition_beats"] = gentle_beats(tech, max(1, int(override_beats)))
 
         # mix-to-listen: the whole outgoing blend must sit after the verse,
         # not start in a hook and then eat the next rap. Showcase profiles

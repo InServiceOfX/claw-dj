@@ -129,7 +129,7 @@ class GridAndSessionTests(unittest.TestCase):
             live.cut([("[Channel1]", "volume", 0.0)], seconds=0.0)
             self.assertEqual(mixxx.values[("[Channel1]", "volume")], 0.0)
             mixxx.values[("[Channel1]", "play")] = 1.0
-            live.automate(1, TRACK, 0, 4, [("[Channel2]", "volume", 0.0, 1.0)])
+            live.automate(1, TRACK, 0, 16, [("[Channel2]", "volume", 0.0, 1.0)], curve="linear")
         self.assertEqual(mixxx.values[("[Channel2]", "volume")], 1.0)
 
     def test_linear_curve_is_a_steady_ramp_and_unknown_curves_are_refused(self) -> None:
@@ -138,8 +138,8 @@ class GridAndSessionTests(unittest.TestCase):
         mixxx.cue(1, TRACK.at(0) - 0.5)
         live = Live(mixxx)
         with no_sleep():
-            live.automate(1, TRACK, 0, 4, [("[Channel2]", "volume", 1.0, 0.0)], curve="linear")
-        ramp = [v for g, k, v in mixxx.writes if (g, k) == ("[Channel2]", "volume")]
+            live.automate(1, TRACK, 0, 4, [(EQ.format(d=2), "parameter2", 1.0, 0.0)], curve="linear")
+        ramp = [v for g, k, v in mixxx.writes if (g, k) == (EQ.format(d=2), "parameter2")]
         steps = [round(a - b, 6) for a, b in zip(ramp, ramp[1:]) if 0 < b < 1 and 0 < a < 1]
         self.assertTrue(steps and max(steps) - min(steps) < 1e-6)   # equal steps: linear
         with self.assertRaises(ValueError):
@@ -157,8 +157,47 @@ class GridAndSessionTests(unittest.TestCase):
         _live, clock, track, b0, b1, lanes = automate.call_args.args
         self.assertEqual((clock, b0, b1), (1, 100, 100 + GENTLE_FADE_BEATS))
         self.assertEqual(lanes, [("[Channel2]", "volume", 0.8, 0.0)])
-        self.assertEqual(automate.call_args.kwargs, {"curve": "linear"})
+        self.assertEqual(automate.call_args.kwargs, {"curve": "linear", "fast": False})
         self.assertEqual(mixxx.values[("[Channel2]", "play")], 0)
+
+    def test_a_fast_channel_fader_move_is_refused_before_anything_is_written(self) -> None:
+        # Ernest, 2026-10-03: agents move the channel faders TOO FAST; 8 counts is too fast
+        mixxx = ClockMixxx()
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        live = Live(mixxx)
+        for b1, curve, lanes in (
+            (8, "linear", [("[Channel2]", "volume", 1.0, 0.0)]),           # out too fast
+            (4, "linear", [("[Channel2]", "volume", 0.0, 1.0)]),           # in too fast
+            (16, "smooth", [("[Channel2]", "volume", 1.0, 0.0)]),          # S-curve peaks 1.5x
+            (4, "linear", [("[Channel2]", "volume", 0.0, 0.5)]),           # half a sweep in 4 is still too fast
+        ):
+            before = len(mixxx.writes)
+            with self.subTest(b1=b1, curve=curve), no_sleep(), self.assertRaises(ValueError):
+                live.automate(1, TRACK, 0, b1, lanes, curve=curve)
+            self.assertEqual(len(mixxx.writes), before)
+
+    def test_gentle_fader_moves_eq_lanes_and_explicit_fast_moves_are_allowed(self) -> None:
+        mixxx = ClockMixxx()
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        live = Live(mixxx)
+        with no_sleep():
+            live.automate(1, TRACK, 0, 16, [("[Channel2]", "volume", 1.0, 0.0)], curve="linear")
+            live.automate(1, TRACK, 16, 24, [("[Channel2]", "volume", 0.0, 0.5)], curve="linear")
+            live.automate(1, TRACK, 24, 48, [("[Channel2]", "volume", 0.5, 0.0)], curve="smooth")
+            live.automate(1, TRACK, 48, 50, [(EQ.format(d=2), "parameter1", 1.0, 0.0)])   # EQ is not a fader
+            live.automate(1, TRACK, 50, 52, [("[Channel2]", "volume", 0.0, 1.0)], fast=True)  # juggle/cut
+        self.assertEqual(mixxx.values[("[Channel2]", "volume")], 1.0)
+
+    def test_a_short_fade_out_is_refused_unless_marked_fast(self) -> None:
+        from hands.live_kit import fade_out
+        mixxx = ClockMixxx()
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "volume")] = 1.0
+        with no_sleep(), self.assertRaises(ValueError):
+            fade_out(Live(mixxx), deck=2, clock_deck=1, clock_track=TRACK, start_beat=0, beats=8)
+        with no_sleep():
+            fade_out(Live(mixxx), deck=2, clock_deck=1, clock_track=TRACK, start_beat=0, beats=8, fast=True)
+        self.assertEqual(mixxx.values[("[Channel2]", "volume")], 0.0)
 
     def test_wait_raises_when_the_deck_stops(self) -> None:
         with no_sleep(), self.assertRaises(RuntimeError):
@@ -221,6 +260,18 @@ class TechniqueTests(unittest.TestCase):
         self.assertEqual(mixxx.values[("[Channel2]", "play")], 0)
         self.assertEqual(mixxx.values[(EQ.format(d=3), "parameter2")], 1.0)
         self.assertEqual(mixxx.values[(EQ.format(d=3), "parameter1")], 1.0)
+
+    def test_eq_split_crossover_fades_the_outgoing_fader_gently_even_on_a_short_cross(self) -> None:
+        from hands.live_kit import GENTLE_FADE_BEATS
+        mixxx = ClockMixxx(step=0.05)
+        mixxx.values[("[Channel2]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "volume")] = 1.0
+        with no_sleep():
+            eq_split_crossover(Live(mixxx), clock_deck=2, clock_track=TRACK, out_deck=2, in_deck=3,
+                               enter_beat=8, hold_beats=0, cross_beats=8)
+        # the fader reaches 0 no earlier than GENTLE_FADE_BEATS after the cross starts
+        self.assertGreaterEqual(TRACK.beat_at(mixxx.seconds["[Channel2]"]), 8 + GENTLE_FADE_BEATS - 0.2)
+        self.assertEqual(mixxx.values[("[Channel2]", "volume")], 0.0)
 
     def test_exact_loop_uses_the_native_beat_loop_when_it_can(self) -> None:
         mixxx = ClockMixxx()
