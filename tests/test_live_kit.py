@@ -132,6 +132,34 @@ class GridAndSessionTests(unittest.TestCase):
             live.automate(1, TRACK, 0, 4, [("[Channel2]", "volume", 0.0, 1.0)])
         self.assertEqual(mixxx.values[("[Channel2]", "volume")], 1.0)
 
+    def test_linear_curve_is_a_steady_ramp_and_unknown_curves_are_refused(self) -> None:
+        mixxx = ClockMixxx(step=0.5)                       # one beat of TRACK per position read
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        mixxx.cue(1, TRACK.at(0) - 0.5)
+        live = Live(mixxx)
+        with no_sleep():
+            live.automate(1, TRACK, 0, 4, [("[Channel2]", "volume", 1.0, 0.0)], curve="linear")
+        ramp = [v for g, k, v in mixxx.writes if (g, k) == ("[Channel2]", "volume")]
+        steps = [round(a - b, 6) for a, b in zip(ramp, ramp[1:]) if 0 < b < 1 and 0 < a < 1]
+        self.assertTrue(steps and max(steps) - min(steps) < 1e-6)   # equal steps: linear
+        with self.assertRaises(ValueError):
+            live.automate(1, TRACK, 0, 4, [], curve="wobbly")
+
+    def test_fade_out_takes_gentle_fade_beats_by_default_and_stops_the_deck(self) -> None:
+        from hands.live_kit import GENTLE_FADE_BEATS, fade_out
+        self.assertGreaterEqual(GENTLE_FADE_BEATS, 16)
+        mixxx = ClockMixxx()
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "volume")] = 0.8
+        with no_sleep(), patch.object(Live, "automate", autospec=True) as automate:
+            fade_out(Live(mixxx), deck=2, clock_deck=1, clock_track=TRACK, start_beat=100)
+        _live, clock, track, b0, b1, lanes = automate.call_args.args
+        self.assertEqual((clock, b0, b1), (1, 100, 100 + GENTLE_FADE_BEATS))
+        self.assertEqual(lanes, [("[Channel2]", "volume", 0.8, 0.0)])
+        self.assertEqual(automate.call_args.kwargs, {"curve": "linear"})
+        self.assertEqual(mixxx.values[("[Channel2]", "play")], 0)
+
     def test_wait_raises_when_the_deck_stops(self) -> None:
         with no_sleep(), self.assertRaises(RuntimeError):
             Live(ClockMixxx()).wait(1, 10.0)

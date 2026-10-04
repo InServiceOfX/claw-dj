@@ -27,6 +27,11 @@ from hands.run_mix_plan import (
 from hands.transition import smoothstep
 
 CUT_SECONDS = 0.06          # an in/out cut eases this long so it never clicks
+# Fading a song out into a different song: ramp its channel fader down steadily
+# over about this many counts (Ernest, 2026-10-03: agents "move that vertical
+# knob down TOO FAST ... channel fader needs to be gentler"). Only beat juggling,
+# deliberate cuts and same-song handoffs move faster.
+GENTLE_FADE_BEATS = 16
 NATIVE_LOOP_BEATS = (1, 2, 4, 8, 16, 32)
 
 
@@ -146,13 +151,19 @@ class Live:
                 raise RuntimeError(f"deck {deck} stopped before {seconds:.2f}s")
             time.sleep(0.01)
 
-    def automate(self, clock: int, track: Track, b0: float, b1: float, lanes) -> None:
-        """Ease each (group, key, v0, v1) from clock-deck grid beat b0 to b1."""
+    def automate(self, clock: int, track: Track, b0: float, b1: float, lanes, *, curve: str = "smooth") -> None:
+        """Ease each (group, key, v0, v1) from clock-deck grid beat b0 to b1.
+
+        curve="smooth" eases in and out (fastest in the middle); "linear" is a
+        steady ramp, the gentler choice for a channel fader coming down."""
+        if curve not in ("smooth", "linear"):
+            raise ValueError(f"unknown curve {curve!r}")
+        shape = smoothstep if curve == "smooth" else (lambda v: v)
         t0, t1 = track.at(b0), track.at(b1)
         while True:
             x = (self.pos(clock) - t0) / (t1 - t0) if t1 > t0 else 1.0
             for group, key, v0, v1 in lanes:
-                self.m.set(group, key, v0 + (v1 - v0) * smoothstep(min(1.0, max(0.0, x))))
+                self.m.set(group, key, v0 + (v1 - v0) * shape(min(1.0, max(0.0, x))))
             if x >= 1.0:
                 return
             if self.m.get(deck_group(clock), "play") < 0.5:
@@ -245,6 +256,17 @@ def eq_split_crossover(live: Live, *, clock_deck: int, clock_track: Track, out_d
     ])
     live.stop(out_deck)
     live.eq(out_deck)
+
+
+def fade_out(live: Live, *, deck: int, clock_deck: int, clock_track: Track, start_beat: float,
+             beats: float = GENTLE_FADE_BEATS, stop: bool = True) -> None:
+    """Bring a deck's channel fader down gently: a steady (linear) ramp from its
+    current level to 0 over `beats` of the clock deck, then stop the deck."""
+    group = deck_group(deck)
+    live.automate(clock_deck, clock_track, start_beat, start_beat + beats,
+                  [(group, "volume", live.m.get(group, "volume"), 0.0)], curve="linear")
+    if stop:
+        live.stop(deck)
 
 
 def exact_loop(live: Live, *, deck: int, track: Track, start_beat: float, beats: float) -> bool:

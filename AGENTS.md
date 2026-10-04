@@ -203,6 +203,16 @@ NOT overwrite live events or originals. Preserve the explicit performance when
 working on generic builders. See docs/SHARED_PERFORMANCE.md. Keep backbeat
 alignment and every source exclusion through loops, skips, fades and pre-roll.
 
+## Gentle channel faders
+
+Unless you are beat juggling (which must be judicious) or making a deliberate
+cut, fade a song out gently: ramp its channel fader (the vertical per-deck
+volume fader) down steadily over about 16 counts or more, not 4-8, and let the
+fader do the fading instead of slamming EQ to zero. Ernest, 2026-10-03: agents
+"move that vertical knob down TOO FAST ... channel fader needs to be gentler."
+Short 4-beat blends are only for same-song handoffs of identical material. In
+code: `hands.live_kit.fade_out(...)`, `GENTLE_FADE_BEATS`, `automate(..., curve="linear")`.
+
 ## Live mini-experiments
 
 For a new or uncertain idea (a transition, a loop or re-entry, a 2/3+ deck
