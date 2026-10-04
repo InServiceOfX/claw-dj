@@ -20,7 +20,9 @@ was only in AGENTS.md; now the code refuses it
 - Old plans with short blends are refused: rebuild them.
 - The Mo Money authoring script (`mix_reprise_first_full.py`) runs clean against a
   fake Mixxx. Its approved unison entry is marked `fast=True` with the reason;
-  `mix_v2.py` is superseded and now stops at its first fast fade.
+  Older working copies (`mix_v2.py`, `creative_mo_money_ross.py`, `audition_ross_hook.py`,
+  `experiment_ross_reprise_to_intro.py`) were deleted 2026-10-04 at Ernest's request: the
+  one total mix is `mix_reprise_first_full.py`.
 
 ## Live toolkit and runner fixes (Opus 5.5, 2026-10-03, branch `feat/live-toolkit-and-fixes`)
 
