@@ -70,6 +70,7 @@ mix untouched.
 | Loops, including tuned fractional ones | `exact_loop(live, deck=..., track=..., start_beat=..., beats=31.5)` |
 | Bar-by-bar in/out patterns | `play_bar_pattern(...)` |
 | Record the run | `with live.recording(): ...` |
+| Fade a song out gently | `fade_out(live, deck=..., clock_deck=..., clock_track=..., start_beat=...)` (16 counts, linear) |
 
 Find the repo root by walking up to `pyproject.toml` (see the examples), so
 a copied script runs from either location.
@@ -105,7 +106,10 @@ a copied script runs from either location.
    seconds. Don't count beats.
 8. **Skips and re-entries** use `beatjump_size` plus `beatjump_forward` or
    `beatjump_backward` with a multiple of 4 beats, so bars carry across.
-9. **Blends** ramp channel `volume` with a smoothstep, and swap bass by
+9. **Blends** fade the outgoing song's channel fader **gently**: a steady
+   (linear) ramp over about 16 counts or more (`fade_out`, `GENTLE_FADE_BEATS`),
+   never a 4-8 count drop, except for beat juggling, deliberate cuts and
+   same-song handoffs. Bring the incoming song up with a smoothstep, and swap bass by
    moving `parameter1` (incoming at 0 until halfway). Treat a zero-length
    blend as an on-beat cut. Never divide by it.
 10. **Print a word at each event** (`reprise`, `intro in`, `bass swap`, …) so
