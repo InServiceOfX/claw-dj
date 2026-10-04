@@ -152,6 +152,34 @@ Trust Ernest's timestamps and the DJ notes over synced lyrics. The *I'm
 Coming Out* lyric file shows singing in an intro that is instrumental to
 0:43.
 
+## Find where a sample comes from (sample-source alignment)
+
+When one record samples, interpolates or remixes another, matching drum counts
+is not enough: two decks blend as "the same instrumental" only when both play
+**the same bar of the same riff at the same moment**. Measure it instead of
+guessing (2026-10-03, Diana Ross *I'm Coming Out* -> *Mo Money Mo Problems*:
+after many count-based attempts failed, this found the blend Ernest kept):
+
+1. Decode both files (analysis only; nothing is played or published).
+2. Compute chroma (which notes sound, drums mostly ignored) with
+   `librosa.feature.chroma_cqt` (hop 512 at 22.05 kHz), normalised per frame.
+3. Take the sampling record's sample-only stretch (e.g. Mo Money's intro,
+   0:00-0:17.5, before the rap) and slide it across the source song.
+4. Try several speed ratios: un-slowed, slowed to the sampling record's BPM, and
+   slowed from the source's *live* local tempo. Old samples were usually slowed
+   turntable-style. The best mean similarity gives **where** (source second for
+   the sample's 0:00) and **how much** it was slowed. Repeats spaced by whole
+   phrases (here every 4 bars) confirm it.
+5. Blend in **unison**: start the sampling record at that point exactly when the
+   source reaches the matched second (quantize off), at the source's live tempo;
+   tune one deck so the riff pitches agree (here the source down 0.5 st, keylock
+   on); then fade the outgoing deck slowly (Ernest liked 40 counts).
+
+Result for this pair: Mo Money's 0:00 = *I'm Coming Out* 175.59 s (2:55.6), her
+reprise at ~110.7 BPM slowed to 104.38 (score 0.953 vs 0.923 un-slowed). Live-drummed
+sources drift from a constant Mixxx grid, so measure the source's live tempo
+(here 110.73 BPM vs the grid's 109.25) and time the blend by it.
+
 ## The loop
 
 1. The agent writes the script, runs `--dry-run`, and gives Ernest the
@@ -181,3 +209,4 @@ Coming Out* lyric file shows singing in an intro that is instrumental to
 | 2026-10-01 | Diana Ross hook over Ariana + Mo Money instrumental (3 decks) | Backbeat one count off; `--ariana-shift -1` fixed it; still dropped. The same shift was carried into the full mix's Ariana layer. |
 | 2026-10-02 | *I'm Coming Out*: 2:55 reprise first, then the 0:00 intro on deck 2, then the song with the trumpet solo skipped | **Kept.** `--handoff-beat 368 --blend-beats 4` after nine rounds; recorded in the song's library note. |
 | 2026-10-02 | Mo Money segment creative pass (Diana Ross bookends, Ariana in segments) | Diana Ross into Mo Money: an 8-bar loop with a filter thin-out did not work; a long 32-beat blend under her chorus was jumbled and jarring. Ariana 12 beats earlier on the instrumental (`--ariana-shift 12`) with the instrumental under verse 1 and chorus 1 alone: good. Full-range instrumental slam at chorus 2: not good. Gambino in-and-out pattern: in progress. |
+| 2026-10-03 | *I'm Coming Out* -> *Mo Money Mo Problems*: riff crossovers, loop-drop, "I'm"-cued 2-deck blends | Did not sound right; loop-drop "sounds terrible" (the 1-bar loop is an effect on its own). **Kept: the unison blend** from sample-source alignment (Mo Money 0:00 = her 2:55.6, 110.73 BPM, her deck -0.5 st, 40-count fade). |
