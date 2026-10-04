@@ -232,3 +232,22 @@ Each accepted change links to an immutable intent event.
 
 > this sounds great! (mix_reprise_first_full.py --start-at diddy) great job! is there a way to generalize this, or make this a user story, or amend our current user story to reflect the work you did here? this just sounds great and a lot better than the skip before. (Context, 2026-10-03: skipping Diddy's verse in Mo Money Mo Problems with an instant beat jump was audible, "you can hear the skip"; Ernest suggested instead blending the current deck into another deck playing the same song cued a little before the start of Biggie's verse. It worked once the second copy was lined up at the same point of the repeated chorus, 96 beats on, measured from the vocal, and the handoff happened late in the first chorus so most of it plays, with a 4-beat blend.)
 <!-- pdd-intent-entry:skip-a-section-by-handing-off-to-the-same-song-o-4a636e8b:end -->
+
+<!-- pdd-intent-entry:find-the-reliable-count-1-from-the-harmony-when--2ec65b5e:start -->
+## Find the reliable count 1 from the harmony when the drums are too syncopated to count
+
+- Intent event: [`docs/intents/intent__find-the-reliable-count-1-from-the-harmony-when--2ec65b5e.md`](intents/intent__find-the-reliable-count-1-from-the-harmony-when--2ec65b5e.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `not stated`
+
+> As a DJ, when records are heavily syncopated or live-drummed, I want claw-dj to stop trusting drum onsets and the grid to find count 1, and instead find the reliable count 1, and the matching bar between two songs, from the harmony.
+> 1. Count 1 within a song: from chroma (which notes sound, drums mostly ignored), find where the song's harmonic loop or phrase restarts and its real local tempo; use that as the bar and phrase grid for cueing and blending instead of a constant Mixxx grid that drifts on live drums.
+> 2. Matching bar between songs: when two songs share harmonic material (a sample, interpolation, remix or cover), cross-correlate their chroma at several speed ratios to find which bar of one plays the same music as which bar of the other, and how much one was slowed.
+> 3. Blend on it: start the incoming song exactly on that matched count 1 at the outgoing song's live tempo, one deck tuned so the shared material agrees in pitch, no quantize snap on that start, and the outgoing deck fading slowly in unison.
+> 4. Human anchor: a count 1 the DJ names by ear (for example a sung word) is cross-checked against the measurement; disagreement is reported, never silently overridden.
+> 5. Remembered: verified count-1 positions, matched bars, live tempos and pitch offsets are written to both songs' DJ notes so any agent harness reuses them.
+> 6. Analysis only: the measurement decodes audio for numbers, never renders audio to play.
+> Example: I'm Coming Out into Mo Money Mo Problems. Count-based blends kept failing; chroma showed Mo Money's 0:00 is her 2:55.6 reprise slowed from her live ~110.7 BPM to 104.4, phrase every 4 bars; starting Mo Money's count 1 on that bar in unison with a 40-count fade was verified great on 2026-10-03.
+<!-- pdd-intent-entry:find-the-reliable-count-1-from-the-harmony-when--2ec65b5e:end -->
