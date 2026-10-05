@@ -182,6 +182,39 @@ reprise at ~110.7 BPM slowed to 104.38 (score 0.953 vs 0.923 un-slowed). Live-dr
 sources drift from a constant Mixxx grid, so measure the source's live tempo
 (here 110.73 BPM vs the grid's 109.25) and time the blend by it.
 
+### Pitch: undo a turntable slowdown with keylock OFF
+
+Mixxx's **keylock** (keep the key when the tempo changes) is on for every deck
+on Ernest's setup. That is right for ordinary tempo changes, and wrong when a
+sampling record is sped back up to its source.
+
+Old samples were usually slowed **turntable-style**: slower *and* lower. Mo Money
+plays *I'm Coming Out*'s reprise slowed from 110.73 to 104.38 BPM, which is
+-1.02 semitones (`12 * log2(104.38 / 110.73)`). Chroma and the files' tuning agree
+on it: the source sits a whole semitone above the sample.
+
+- **With keylock on**, speeding the sampling deck to the source's tempo keeps it
+  a semitone low. A pitch_adjust guess (+0.5 st) left the guitars half a
+  semitone apart. Keylock was also time-stretching *and* pitch-shifting the
+  rhythm guitar, which made it sound tinny.
+- **With keylock off and pitch_adjust 0**, the same speed-up raises the pitch by
+  exactly the amount the slowdown took away. The sample plays the source's riff
+  at its real tempo **and** pitch, with no processing. Run the source deck at
+  100% so it isn't processed either.
+
+Ernest, 2026-10-04, on the Mo Money instrumental -> *I'm Coming Out* reprise
+unison loop: "immediately with the pitch fix, keylock fix, sounds so much
+better." Recipe:
+1. Set keylock to 0 on the sampling deck while it still plays near 100%, so
+   nothing jumps. Save it so it is restored afterwards.
+2. Glide that deck to the source's live tempo. Expect a turntable-style pitch
+   rise; do it where it is the only thing playing.
+3. Start the source at 100% in unison on the matched bar (quantize off).
+4. Nudge the start by ear in milliseconds.
+
+Measure the pitch relation first (beat-synced chroma for the semitone shift,
+`librosa.estimate_tuning` for cents) instead of guessing a pitch_adjust.
+
 ## The loop
 
 1. The agent writes the script, runs `--dry-run`, and gives Ernest the

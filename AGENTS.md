@@ -203,6 +203,18 @@ NOT overwrite live events or originals. Preserve the explicit performance when
 working on generic builders. See docs/SHARED_PERFORMANCE.md. Keep backbeat
 alignment and every source exclusion through loops, skips, fades and pre-roll.
 
+## Keylock off when a sample meets its source
+
+Mixxx keylock is on by default here. When a record that samples another (e.g.
+Mo Money Mo Problems -> Diana Ross *I'm Coming Out*) is sped back up to blend
+with its source, turn **keylock off and pitch_adjust to 0** on the sampling
+deck. Old samples were slowed turntable-style (slower *and* lower), so the
+speed-up restores the source's exact pitch. With keylock on plus a guessed
+pitch_adjust, the riffs were half a semitone apart and sounded tinny (Ernest,
+2026-10-04: with keylock off it "sounds so much better"). Measure the pitch
+relation (chroma semitone shift + tuning cents) before tuning anything. Details:
+`docs/LIVE_MINI_EXPERIMENTS.md`, "Pitch: undo a turntable slowdown with keylock OFF".
+
 ## Gentle channel faders
 
 Unless you are beat juggling (which must be judicious) or making a deliberate
