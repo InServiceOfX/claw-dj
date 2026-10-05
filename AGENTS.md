@@ -203,6 +203,16 @@ NOT overwrite live events or originals. Preserve the explicit performance when
 working on generic builders. See docs/SHARED_PERFORMANCE.md. Keep backbeat
 alignment and every source exclusion through loops, skips, fades and pre-roll.
 
+## Lessons from hand-built live mixes
+
+Before building or editing a live mix, read `docs/LIVE_MIX_LESSONS.md`:
+- how to work with Ernest: audition first, one total-mix script, "don't touch"
+  means unchanged, simulate before handing over;
+- timing: grid vs live tempo, millisecond nudges, count loop passes on the deck;
+- pitch: keylock and turntable-slowed samples;
+- long blends, and stretching short intros;
+- layering: one layer at a time, lined up by harmony per section.
+
 ## Keylock off when a sample meets its source
 
 Mixxx keylock is on by default here. When a record that samples another (e.g.
