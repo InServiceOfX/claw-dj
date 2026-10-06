@@ -1,15 +1,79 @@
 """Model providers: no secrets on disk by claw-dj, clear errors, CLI argv."""
 import os
+import json
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from brain import llm_providers
 
 
 class ProviderTest(TestCase):
+    def test_h_key_alone_enables_the_documented_free_tier_model(self):
+        with patch.dict(os.environ, {"HAI_API_KEY": "synthetic-test-key"}, clear=True):
+            available, detail = llm_providers._status_one(llm_providers.PROVIDERS["hcompany-api"])
+        self.assertTrue(available)
+        self.assertIn("holo3-1-35b-a3b", detail)
+        self.assertNotIn("synthetic-test-key", detail)
+
+    def test_h_api_uses_bearer_auth_and_text_only_chat_with_model_override(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({"choices": [{"message": {"content": '["n0000"]', "reasoning": "ignored"}}]}).encode()
+        for model in (None, "holo4-35b-a3b"):
+            env = {"HAI_API_KEY": "synthetic-test-key"}
+            if model:
+                env["CLAWDJ_HCOMPANY_MODEL"] = model
+            with patch.dict(os.environ, env, clear=True), patch.object(llm_providers, "load_env"), patch("urllib.request.urlopen", return_value=response) as urlopen:
+                self.assertEqual(llm_providers.ask("hcompany-api", "PROMPT", timeout_s=12), '["n0000"]')
+                request = urlopen.call_args.args[0]
+                self.assertEqual(request.full_url, "https://api.hcompany.ai/v1/chat/completions")
+                self.assertEqual(request.get_header("Authorization"), "Bearer synthetic-test-key")
+                body = json.loads(request.data)
+                self.assertEqual(body["model"], model or "holo3-1-35b-a3b")
+                self.assertEqual(body["messages"], [{"role": "user", "content": "PROMPT"}])
+                self.assertFalse(body["chat_template_kwargs"]["enable_thinking"])
+                self.assertNotIn("tools", body)
+
+    def test_refresh_updates_and_removes_file_keys_but_preserves_shell_values(self):
+        with TemporaryDirectory() as tmp, patch.dict(os.environ, {"CLAWDJ_HCOMPANY_MODEL": "shell-model"}, clear=True), patch.dict(llm_providers._ENV_LOADED, {}, clear=True):
+            env = Path(tmp) / ".env"
+            env.write_text("HAI_API_KEY=first\nCLAWDJ_HCOMPANY_MODEL=file-model\n")
+            llm_providers.load_env(env)
+            self.assertEqual(os.environ["HAI_API_KEY"], "first")
+            self.assertEqual(os.environ["CLAWDJ_HCOMPANY_MODEL"], "shell-model")
+            env.write_text("HAI_API_KEY=second\n")
+            llm_providers.load_env(env)
+            self.assertEqual(os.environ["HAI_API_KEY"], "second")
+            env.write_text("")
+            llm_providers.load_env(env)
+            self.assertNotIn("HAI_API_KEY", os.environ)
+            self.assertEqual(os.environ["CLAWDJ_HCOMPANY_MODEL"], "shell-model")
+
+    def test_malformed_empty_and_truncated_api_answers_fail_clearly(self):
+        for payload in ({}, {"choices": []}, {"choices": [{"message": {"content": None}}]}, {"choices": [{"message": {"content": "<think>still thinking"}}]}, {"choices": [{"message": {"content": "[]"}, "finish_reason": "length"}]}):
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+            with self.subTest(payload=payload), patch("urllib.request.urlopen", return_value=response), self.assertRaises(llm_providers.ProviderError):
+                llm_providers._ask_openai_compatible("http://local/v1", None, None, "PROMPT", 1)
+
+    def test_local_inline_reasoning_is_not_treated_as_candidate_ids(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({"choices": [{"message": {"content": '<think>Consider ["n0001"]</think>["n0000"]'}}]}).encode()
+        with patch("urllib.request.urlopen", return_value=response):
+            self.assertEqual(llm_providers._ask_openai_compatible("http://local/v1", None, None, "PROMPT", 1), '["n0000"]')
+
+    def test_status_failure_is_isolated(self):
+        def status(provider):
+            if provider.name == "hcompany-api":
+                raise RuntimeError("do not expose error contents")
+            return True, "ready"
+        with patch.object(llm_providers, "load_env"), patch.object(llm_providers, "_status_one", side_effect=status):
+            rows = llm_providers.status_all()
+        self.assertEqual(sum(row["available"] for row in rows), len(rows)-1)
+        self.assertNotIn("do not expose", str(rows))
+
     def test_every_provider_has_a_way_to_authorize(self) -> None:
         for provider in llm_providers.PROVIDERS.values():
             self.assertTrue(provider.sign_in or provider.env_vars, provider.name)

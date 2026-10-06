@@ -77,6 +77,33 @@
     .picks-actions { margin-top:10px; display:flex; gap:8px; }
     .mix-presets { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
     .mix-presets button.active { background:#deded8; border-color:#85857f; }
+    .mix-builder { margin-top:18px; padding:22px; border:1px solid #bdcfc5; border-radius:12px; background:linear-gradient(135deg,#f3f8f4,#fff 70%); }
+    .builder-head { display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; align-items:start; }
+    .builder-head h3 { margin:0 0 4px; font-size:21px; letter-spacing:-.4px; }
+    .builder-eyebrow { color:var(--green); font-size:11px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; margin-bottom:6px; }
+    .builder-readiness { padding:6px 10px; border-radius:20px; background:#e3f0e8; color:var(--green); font-size:12px; font-weight:650; }
+    .builder-readiness.warn { background:#fff0d4; color:#845711; }
+    .builder-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,1fr); gap:22px; margin-top:22px; }
+    .builder-label { display:block; font-weight:700; margin-bottom:7px; }
+    .mix-builder .mix-presets { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:0; }
+    .mix-builder .mix-presets button { padding:12px; text-align:left; border-radius:8px; font-weight:650; }
+    .mix-builder .mix-presets button small { display:block; margin-top:5px; color:var(--muted); font-size:12px; font-weight:400; }
+    .mix-builder .mix-presets button.active { background:#e7f3eb; border-color:var(--green); box-shadow:inset 0 0 0 1px var(--green); }
+    .model-controls { display:flex; gap:8px; }
+    .model-controls select { width:100%; min-width:0; }
+    .model-controls button { white-space:nowrap; }
+    .builder-brief { margin-top:22px; }
+    .builder-brief textarea { display:block; width:100%; min-height:90px; resize:vertical; border:1px solid var(--line); border-radius:8px; padding:12px; font:inherit; background:white; }
+    .builder-footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; margin-top:14px; }
+    #build-mix { min-height:46px; padding:11px 24px; border-radius:8px; font-size:15px; }
+    .builder-safeguards { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:16px; color:var(--green); font-size:12px; }
+    .builder-advanced { margin-top:18px; border-top:1px solid #dce6df; padding-top:14px; }
+    .builder-advanced summary { color:var(--muted); font-weight:650; cursor:pointer; }
+    .builder-advanced .mix-form { grid-template-columns:minmax(220px,320px) minmax(0,1fr); }
+    .notes-action { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:16px; }
+    #provider-detail { margin-top:7px; font-size:12px; }
+    @media (max-width:1000px) { .builder-grid { grid-template-columns:1fr; } }
+    @media (max-width:600px) { .mix-builder { padding:16px; } .mix-builder .mix-presets { grid-template-columns:1fr; } .builder-advanced .mix-form { grid-template-columns:1fr; } .builder-footer #build-mix { width:100%; } .preview-dock { position:static; grid-template-columns:auto minmax(0,1fr); } .preview-dock audio { grid-column:1 / -1; } }
     .mix-summary { margin-top:10px; border-top:1px solid var(--line); padding-top:10px; }
     .mix-summary[hidden] { display:none; }
     .mix-stats { display:flex; flex-wrap:wrap; gap:10px 18px; margin-bottom:8px; color:var(--muted); font-variant-numeric:tabular-nums; }
@@ -214,18 +241,17 @@
         <div class="ingest-detail">Describe the set you want; an agent picks candidates. <strong>New music</strong> only searches the latest scan's additions; <strong>whole library</strong> searches everything (keyword pre-filtered, for briefs about music that's been here a while — eras, styles, genres). You review before anything is added. <strong>Suggest blends</strong> also lands results here.</div>
         <div class="brain-form">
           <input id="brief" type="text" placeholder="e.g. 90s West Coast G-funk, Chronic/Doggystyle era" aria-label="Brief for the agent">
-          <select id="engine" aria-label="Agent engine">
-            <option value="both">Both engines</option>
-            <option value="nemoclaw">NemoClaw · Nemotron</option>
-            <option value="h-agent">H Company · Holo</option>
-            <option value="generic">Generic LLM (xAI/local — set CLAWDJ_LLM_* env vars)</option>
-          </select>
+          <select id="engine" aria-label="Model for Ask the DJ brain"><option value="" disabled>Checking models…</option></select>
           <select id="pool" aria-label="Candidate pool">
             <option value="library" selected>Whole library</option>
             <option value="new">New music only</option>
           </select>
           <input id="pick-count" type="number" min="3" max="50" value="20" aria-label="How many picks">
-          <button id="ask" class="primary">Ask</button>
+          <button id="ask" class="primary" disabled>Ask</button>
+        </div>
+        <div class="model-controls" style="margin-top:8px;align-items:center">
+          <span id="brain-provider-detail" class="ingest-detail" aria-live="polite">Checking model availability…</span>
+          <button type="button" id="refresh-brain-providers">Refresh models</button>
         </div>
         <div class="brain-detail" id="brain-detail"></div>
         <div class="picks" id="picks" hidden></div>
@@ -287,26 +313,36 @@
           <div class="finalized-rows" id="finalized-rows"></div>
         </div>
         <div class="banner" id="plan-stale-banner" hidden>The dry-run plan below is <strong>stale</strong> — it does not match the current finalized set (e.g. you added a track). Rebuild the mix plan.</div>
-        <div class="ingest-detail" style="margin-top:10px"><strong>Mix feel</strong> — pacing and performance density</div>
-        <div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div>
-        <div class="mix-form" style="grid-template-columns:240px minmax(260px,1fr);align-items:center">
-          <label>
-            <span class="ingest-detail"><strong>DJ transition format</strong></span>
-            <select id="dj-format" aria-label="DJ transition format"></select>
-          </label>
-          <div class="ingest-detail" id="dj-format-detail">No expert transition grammar selected.</div>
-        </div>
-        <div class="mix-form" style="grid-template-columns:minmax(200px,1fr) 170px auto auto">
-          <input id="mix-brief" type="text" placeholder='e.g. put Parce Que Tu Crois next to What&apos;s The Difference in the first half; smooth, no tricks' aria-label="Free-text mix description">
-          <select id="order-engine" aria-label="Model that reviews the mix order" title="The graph optimizer always orders the whole set for the best blends. A model, if chosen, reads your brief and reviews that order like a DJ; its changes are kept only if they keep the snare/backbeat and blend rules.">
-            <option value="none">No model · graph optimizer</option>
-          </select>
-          <button id="build-mix" class="primary">Build mix plan</button>
-        </div>
-        <div class="ingest-detail" id="provider-detail" style="margin-top:6px"></div>
-        <div class="mix-form" style="grid-template-columns:170px auto;margin-top:6px">
-          <select id="directives-engine" aria-label="Model for DJ-note edits"></select>
-          <button id="interpret-directives" title="Turn the brief above into specific dj_notes edits (verse landings, cue points, reordering) grounded in each track's real lyrics — always previewed before anything is written">Interpret as DJ notes…</button>
+        <div class="mix-builder" aria-label="Build a mix plan">
+          <div class="builder-head">
+            <div><div class="builder-eyebrow">Shape the set</div><h3>Build your mix</h3><div class="ingest-detail">Choose a feel, describe your direction, then review the plan.</div></div>
+            <span id="builder-readiness" class="builder-readiness" role="status">Checking finalized set…</span>
+          </div>
+          <div class="builder-grid">
+            <div><span class="builder-label">Mix feel</span><div class="mix-presets" id="mix-presets" role="group" aria-label="Mix profile"></div></div>
+            <div>
+              <label class="builder-label" for="order-engine">DJ brain</label>
+              <div class="model-controls">
+                <select id="order-engine" aria-label="Model for mix planning and DJ notes" aria-describedby="provider-detail"><option value="none">Optimizer only</option></select>
+                <button type="button" id="refresh-providers" title="Recheck CLI sign-in, .env keys and the local server">Refresh models</button>
+              </div>
+              <div class="ingest-detail" id="provider-detail" aria-live="polite"></div>
+            </div>
+          </div>
+          <div class="builder-brief">
+            <label class="builder-label" for="mix-brief">Direction for the mix <span class="meta">· optional</span></label>
+            <textarea id="mix-brief" placeholder="e.g. Smooth R&amp;B, let the verses breathe. Put the original before its sample. Keep the opening gentle." aria-label="Free-text mix description"></textarea>
+          </div>
+          <div class="builder-footer"><span class="ingest-detail">Optimizes the whole set, applies DJ notes, and checks the dry-run.</span><button id="build-mix" class="primary">Build mix plan</button></div>
+          <div class="builder-safeguards" aria-label="Mix safeguards"><span>✓ Backbeat alignment</span><span>✓ Gentle fades</span><span>✓ Verse &amp; phrase boundaries</span><span>✓ Tempo &amp; key compatibility</span><span>✓ Stem layering checks</span><span>✓ DJ notes &amp; source limits</span></div>
+          <details class="builder-advanced" id="mix-advanced">
+            <summary>Advanced · transition formats &amp; DJ-note edits</summary>
+            <div class="mix-form">
+              <label><span class="builder-label">DJ transition format</span><select id="dj-format" aria-label="DJ transition format"></select></label>
+              <div class="ingest-detail" id="dj-format-detail">Use the selected mix profile and per-track DJ notes.</div>
+            </div>
+            <div class="notes-action"><button id="interpret-directives" disabled title="Preview specific DJ-note edits grounded in the track's real lyrics, using the DJ brain selected above">Preview DJ-note edits…</button><span class="ingest-detail">Uses the same DJ brain. Review changes before applying.</span></div>
+          </details>
         </div>
         <div class="brain-detail" id="directives-detail"></div>
         <div class="mix-summary" id="directives-preview" hidden>
@@ -517,7 +553,8 @@
       }catch(error){button.textContent='Finalize failed';el('notice').textContent=error.message;}
       setTimeout(()=>{button.textContent=original;button.disabled=false;},4000);
     });
-    const ENGINE_NAMES = {'nemoclaw':'NemoClaw · Nemotron','h-agent':'H Company · Holo','generic':'Generic LLM','mix-graph':'Mix-graph (deterministic)','both':'both engines'};
+    const ENGINE_NAMES = {'mix-graph':'Blend suggestions'};
+    function providerLabel(name) { return providerState.list.find(p => p.name === name)?.label || ENGINE_NAMES[name] || name; }
     function pickRow(pick) {
       const already = pick.enabled ? ' <span class="already">already in set</span>' : '';
       const excluded = pick.excluded ? ' <span class="already">you removed this earlier</span>' : '';
@@ -538,26 +575,34 @@
       }
       el('picks').innerHTML = engines.map(engine => {
         const data = results[engine];
-        const head = `<div class="pick" style="border-bottom:2px solid var(--line)"><span></span><span><span class="title">${esc(ENGINE_NAMES[engine] || engine)}</span> <span class="artist">— ${(data.picks||[]).length} picks · “${esc(data.brief || '')}”</span></span></div>`;
+        const head = `<div class="pick" style="border-bottom:2px solid var(--line)"><span></span><span><span class="title">${esc(providerLabel(engine))}</span> <span class="artist">— ${(data.picks||[]).length} picks · “${esc(data.brief || '')}”</span></span></div>`;
         return head + (data.picks || []).map(pickRow).join('');
       }).join('');
     }
     async function pollBrain() {
       const data = await api('/api/brain');
-      if (data.running) { el('brain-detail').textContent = `Asking ${ENGINE_NAMES[data.engine] || data.engine}… (each agent turn takes 1–7 minutes)`; return data; }
+      brainRunning = Boolean(data.running);
+      updateModelActions();
+      if (data.running) { el('brain-detail').textContent = `Asking ${providerLabel(data.engine)}…`; return data; }
       const total = Object.values(data.results || {}).reduce((n, d) => n + (d.picks || []).length, 0);
       el('brain-detail').textContent = data.error ? `Agent call failed: ${data.error}` : (total ? 'Latest agent results below (cached across restarts). Uncheck anything you don\'t want, then add.' : '');
       renderResults(data.results);
-      el('ask').disabled = false;
+      updateModelActions();
       return data;
     }
     el('ask').addEventListener('click',async()=>{
       const brief = el('brief').value.trim();
       if (!brief) { el('brain-detail').textContent = 'Write a brief first — what kind of set do you want?'; return; }
-      el('ask').disabled = true; el('picks').hidden = el('picks-actions').hidden = true;
-      await api('/api/brain/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief,engine:el('engine').value,pool:el('pool').value,count:Number(el('pick-count').value)||20})});
-      const poll = setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);
-      await pollBrain();
+      if (!modelAvailable(el('engine').value)) { describeBrainProvider(); return; }
+      brainRunning = true; updateModelActions();
+      el('picks').hidden = el('picks-actions').hidden = true;
+      try {
+        await api('/api/brain/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief,engine:el('engine').value,pool:el('pool').value,count:Number(el('pick-count').value)||20})});
+        const poll = setInterval(async()=>{try { const status=await pollBrain(); if(!status.running)clearInterval(poll); } catch(error) { clearInterval(poll); brainRunning=false; updateModelActions(); el('brain-detail').textContent=error.message; }},2000);
+        await pollBrain();
+      } catch(error) {
+        brainRunning=false; updateModelActions(); el('brain-detail').textContent=error.message;
+      }
     });
     el('apply-picks').addEventListener('click',async()=>{
       const ids=[...document.querySelectorAll('#picks input[data-pick]:checked')].map(box=>box.dataset.pick);
@@ -619,12 +664,14 @@
     });
 
     // --- Create the mix ---
-    const mixState = { profile: 'dj-showcase', djFormat: 'none', pollTimer: null };
+    const mixState = { profile: 'dj-showcase', profilePicked: false, djFormat: 'none', pollTimer: null, busy: false, ready: false, missing: 0 };
+    let brainRunning = false, directivesRunning = false;
     const PROFILE_LABELS = {
       'dj-showcase': 'DJ showcase',
       'club-set': 'Club set',
       'mix-to-listen': 'Mix to listen',
     };
+    const PROFILE_HINTS = {'dj-showcase':'Varied phrases & selective moves', 'club-set':'Longer rides, steady momentum', 'mix-to-listen':'Most of each song, room for verses'};
     function renderPresets(profiles) {
       const list = profiles && profiles.length ? profiles : [
         {name:'dj-showcase', description:'Short varied segments, frequent flourishes'},
@@ -632,7 +679,7 @@
         {name:'mix-to-listen', description:'A listening mix, not a performance'},
       ];
       el('mix-presets').innerHTML = list.map(p =>
-        `<button type="button" data-profile="${esc(p.name)}" title="${esc(p.description || '')}" class="${p.name===mixState.profile?'active':''}">${esc(PROFILE_LABELS[p.name] || p.name)}</button>`
+        `<button type="button" data-profile="${esc(p.name)}" title="${esc(p.description || '')}" class="${p.name===mixState.profile?'active':''}" aria-pressed="${p.name===mixState.profile}">${esc(PROFILE_LABELS[p.name] || p.name)}<small>${esc(PROFILE_HINTS[p.name] || p.description || '')}</small></button>`
       ).join('');
     }
     function renderDjFormats(formats) {
@@ -739,51 +786,68 @@
       const cls = blend.status === 'unverified' ? ' style="color:#b45309;font-weight:600"' : '';
       return `<span${cls} title="${esc(hint + (blend.reason ? ' · ' + blend.reason : ''))}">${esc(label)}</span>`;
     }
-    const providerState = { list: [], loaded: false };
-    function fillProviderSelect(select, { includeNone }) {
-      const current = select.value;
-      const options = (includeNone ? ['<option value="none">No model · graph optimizer</option>'] : [])
+    const providerState = { list: [], loaded: false, pending: null };
+    function modelAvailable(name) { return providerState.loaded && providerState.list.some(p => p.name === name && p.available); }
+    function savedProvider(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+    function rememberProvider(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
+    function fillProviderSelect(select, { includeNone, preference }) {
+      const current = savedProvider(preference) || select.value;
+      const options = (includeNone ? ['<option value="none">Optimizer only · no model</option>'] : [])
         .concat(providerState.list.map(p =>
-          `<option value="${esc(p.name)}"${p.available ? '' : ' disabled'}>${esc(p.label)}${p.available ? '' : ' — ' + esc(p.detail)}</option>`));
-      select.innerHTML = options.join('') || '<option value="" disabled>No model available</option>';
-      const still = providerState.list.find(p => p.name === current && p.available);
-      if (current === 'none' && includeNone) select.value = 'none';
-      else if (still) select.value = current;
-      else if (!includeNone) {
-        const first = providerState.list.find(p => p.available);
-        if (first) select.value = first.name;
-      }
+          `<option value="${esc(p.name)}"${p.available ? '' : ' disabled'}>${esc(p.label)}${p.available ? '' : ' — unavailable'}</option>`));
+      if (!includeNone && !providerState.list.some(p => p.available)) options.unshift('<option value="" disabled>No model available</option>');
+      select.innerHTML = options.join('');
+      if (providerState.list.some(p => p.name === current) || (includeNone && current === 'none')) select.value = current;
+      else select.value = includeNone ? 'none' : (providerState.list.find(p => p.available)?.name || '');
+    }
+    function updateModelActions() {
+      el('ask').disabled = brainRunning || !modelAvailable(el('engine').value);
+      el('interpret-directives').disabled = directivesRunning || mixState.busy || !mixState.ready || !modelAvailable(el('order-engine').value);
+      el('build-mix').disabled = mixState.busy || directivesRunning || !mixState.ready || mixState.missing > 0
+        || (el('order-engine').value !== 'none' && !modelAvailable(el('order-engine').value));
+    }
+    function describeBrainProvider() {
+      const p = providerState.list.find(item => item.name === el('engine').value);
+      el('brain-provider-detail').textContent = p ? `${p.label}: ${p.detail}. Picks stay here for your review.`
+        : 'No model available. Sign in with a supported CLI, configure an API key in .env, or start llama-server, then refresh models.';
+      updateModelActions();
     }
     function describeProvider() {
       const name = el('order-engine').value;
       const p = providerState.list.find(item => item.name === name);
-      if (!p) {
-        const missing = providerState.list.filter(item => !item.available && item.sign_in)
-          .map(item => `${item.label.replace(' (signed-in CLI)', '')}: run \`${item.sign_in}\``);
-        el('provider-detail').textContent = 'Graph optimizer only: orders the whole set for the best blends, snare-verifiable pairs preferred.'
-          + (missing.length ? ' To add a model, sign in once in a terminal — ' + missing.join(' · ') + ', or put API keys in .env (see .env.example).' : '');
-        return;
-      }
-      el('provider-detail').textContent = `${p.label}: ${p.detail}. The optimizer builds the order; the model reviews it and its changes are kept only if they keep the backbeat and blend rules.`
-        + (mixState.profile === 'dj-showcase' ? ' In DJ showcase the model also choreographs each blend\'s move (✦ in Transitions).' : '');
+      el('provider-detail').textContent = p ? `${p.detail}. ${mixState.profile === 'dj-showcase' ? 'Reviews the order and proposes transition moves.' : 'Reviews the optimized order.'}`
+        : 'Whole-set ordering with the local optimizer. Choose a model to interpret your brief and review the order.';
+      updateModelActions();
     }
-    async function loadProviders(refresh) {
-      try {
-        const data = await api('/api/providers' + (refresh ? '?refresh=1' : ''));
-        providerState.list = data.providers || [];
-        providerState.loaded = true;
-        fillProviderSelect(el('order-engine'), { includeNone: true });
-        fillProviderSelect(el('directives-engine'), { includeNone: false });
-        describeProvider();
-      } catch (error) {
-        el('provider-detail').textContent = 'Could not check model providers: ' + error.message;
-      }
+    async function loadProviders(refresh = false) {
+      if (providerState.pending) return providerState.pending;
+      providerState.pending = (async () => {
+        el('refresh-providers').disabled = el('refresh-brain-providers').disabled = true;
+        try {
+          const data = await api('/api/providers' + (refresh ? '?refresh=1' : ''));
+          providerState.list = data.providers || [];
+          providerState.loaded = true;
+          fillProviderSelect(el('order-engine'), { includeNone: true, preference: 'clawdj.mixProvider' });
+          fillProviderSelect(el('engine'), { includeNone: false, preference: 'clawdj.curateProvider' });
+          describeProvider(); describeBrainProvider();
+        } catch (error) {
+          providerState.loaded = false;
+          el('provider-detail').textContent = el('brain-provider-detail').textContent = 'Could not check models: ' + error.message;
+          updateModelActions();
+        } finally {
+          el('refresh-providers').disabled = el('refresh-brain-providers').disabled = false;
+        }
+      })();
+      try { await providerState.pending; } finally { providerState.pending = null; }
     }
-    el('order-engine').addEventListener('change', describeProvider);
+    el('order-engine').addEventListener('change', () => { rememberProvider('clawdj.mixProvider', el('order-engine').value); describeProvider(); });
+    el('engine').addEventListener('change', () => { rememberProvider('clawdj.curateProvider', el('engine').value); describeBrainProvider(); });
+    el('refresh-providers').addEventListener('click', () => loadProviders(true));
+    el('refresh-brain-providers').addEventListener('click', () => loadProviders(true));
     async function pollMix() {
-      if (!providerState.loaded) loadProviders(false);
+      if (!providerState.loaded) await loadProviders(false);
       const data = await api('/api/mix');
-      if (data.profile) mixState.profile = data.profile;
+      if (data.profile && (!mixState.profilePicked || data.building)) mixState.profile = data.profile;
       // Only adopt the server's dj_format while a build is in flight (it
       // mirrors the request). Idle polls must not re-select the last plan's
       // experimental format over the "No expert format" default.
@@ -795,7 +859,15 @@
       renderFinalized(data.finalized, data.enrichment);
       el('plan-stale-banner').hidden = !data.plan_stale;
       const busy = Boolean(data.building) || Boolean(data.running) || Boolean(data.enriching);
-      el('build-mix').disabled = busy || !data.playlist_ready;
+      mixState.busy = busy;
+      mixState.ready = Boolean(data.playlist_ready);
+      mixState.missing = data.finalized?.missing_bpm_count || 0;
+      const readiness = el('builder-readiness');
+      readiness.textContent = busy ? (data.building ? 'Building…' : data.enriching ? 'Analyzing…' : 'Mix running')
+        : !mixState.ready ? 'Finalize a set first' : mixState.missing ? `${mixState.missing} tracks need analysis`
+        : `${data.finalized?.count || 0} tracks ready`;
+      readiness.classList.toggle('warn', !mixState.ready || mixState.missing > 0);
+      describeProvider();
       el('enrich-set').disabled = busy || !data.playlist_ready;
       el('sync-mixxx').disabled = busy;
       el('refresh-finalized').disabled = busy;
@@ -839,7 +911,7 @@
       } else {
         const miss = data.finalized?.missing_bpm_count || 0;
         el('mix-detail').textContent = miss
-          ? `Ready to build from ${data.finalized.count} finalized tracks (${miss} without BPM/key will be skipped until you Analyze & enrich).`
+          ? `Ready to build from ${data.finalized.count} finalized tracks (${miss} need Analyze & enrich before building).`
           : `Ready to build from ${data.finalized.count} finalized tracks. Pick a profile and build.`;
       }
       renderMixSummary(data.summary, { stale: data.plan_stale });
@@ -921,7 +993,8 @@
       const button = event.target.closest('button[data-profile]');
       if (!button) return;
       mixState.profile = button.dataset.profile;
-      el('mix-presets').querySelectorAll('button').forEach(b => b.classList.toggle('active', b === button));
+      mixState.profilePicked = true;
+      el('mix-presets').querySelectorAll('button').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); });
       if (providerState.loaded) describeProvider();
     });
     el('dj-format').addEventListener('change', event => {
@@ -957,6 +1030,7 @@
       const box = el('directives-preview');
       if (!preview || (!preview.notes.length && !preview.reorder)) { box.hidden = true; return; }
       box.hidden = false;
+      el('mix-advanced').open = true;
       el('directives-notes').innerHTML = preview.notes.length ? '<strong>dj_notes changes:</strong>' + preview.notes.map(n =>
         `<div class="pick"><span></span><span><span class="title">${esc(n.artist)} — ${esc(n.title)}</span><br>`
         + `<span class="artist">was: ${esc(n.old || '(none)')}</span><br>`
@@ -968,7 +1042,8 @@
     }
     async function pollDirectives() {
       const data = await api('/api/directives');
-      el('interpret-directives').disabled = !!data.running;
+      directivesRunning = Boolean(data.running);
+      updateModelActions();
       if (data.running) {
         el('directives-detail').textContent = `Interpreting with ${data.engine}… (grounding against real lyrics, can take a minute or two)`;
         return data;
@@ -980,19 +1055,20 @@
     el('interpret-directives').addEventListener('click', async () => {
       const brief = el('mix-brief').value.trim();
       if (!brief) { el('directives-detail').textContent = 'Write a brief above first — e.g. "land Regulate on Warren G\'s first verse, skip the monologue".'; return; }
-      el('interpret-directives').disabled = true;
+      if (!modelAvailable(el('order-engine').value)) { el('directives-detail').textContent = 'Choose an available DJ brain above to preview note edits.'; return; }
+      directivesRunning = true; updateModelActions();
       el('directives-preview').hidden = true;
       try {
         await api('/api/directives/ask', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({brief, engine: el('directives-engine').value}),
+          body: JSON.stringify({brief, engine: el('order-engine').value}),
         });
         const poll = setInterval(async () => { const status = await pollDirectives(); if (!status.running) clearInterval(poll); }, 2000);
         await pollDirectives();
       } catch (error) {
         el('directives-detail').textContent = error.message;
-        el('interpret-directives').disabled = false;
+        directivesRunning = false; updateModelActions();
       }
     });
     el('apply-directives').addEventListener('click', async () => {
@@ -1039,7 +1115,7 @@
     });
 
     (async()=>{
-      await Promise.all([loadMeta(),loadIngest()]);
+      await Promise.all([loadMeta(),loadIngest(),loadProviders(true)]);
       await Promise.all([loadLibrary(),loadSelected()]);
       const brain=await pollBrain();
       if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}

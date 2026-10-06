@@ -23,7 +23,7 @@ dj_notes write made seconds ago).
 
 Usage:
     uv run python -m brain.mix_directives --brief "..."
-    uv run python -m brain.mix_directives --brief "..." --engine generic --apply
+    uv run python -m brain.mix_directives --brief "..." --engine llama-server --apply
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from brain.pick_candidates import ENGINES, ask_h_agent
+from brain.llm_providers import PROVIDERS, ask
 from brain.playlist import DEFAULT_PLAYLIST_JSON, DEFAULT_SELECTION, normalize
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -360,10 +360,7 @@ def run(
     prompt = build_prompt(tracks, brief, db_path)
 
     print(f"engine={engine}: interpreting brief against {len(tracks)} tracks…")
-    if engine == "h-agent":
-        reply = ask_h_agent(prompt)
-    else:
-        reply = ENGINES[engine](prompt)
+    reply = ask(engine, prompt)
 
     notes, reorder = parse_directives(reply, tracks)
     print_diff(tracks, notes, reorder)
@@ -388,7 +385,7 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--brief", required=True, help="free-text DJ instruction")
-    parser.add_argument("--engine", choices=("nemoclaw", "h-agent", "generic"), default="nemoclaw")
+    parser.add_argument("--engine", choices=tuple(PROVIDERS), default="claude-cli")
     parser.add_argument("--apply", action="store_true", help="write changes (default: dry-run diff only)")
     parser.add_argument("--playlist", type=Path, default=DEFAULT_PLAYLIST_JSON)
     args = parser.parse_args()

@@ -288,3 +288,30 @@ Each accepted change links to an immutable intent event.
 > 6. A same-beat lineage over its own instrumental may keep a continuous bed (existing full-mix layering story); a different song gets selective layers.
 > Example: Mo Money Mo Problems instrumental under Ariana Grande's Break Your Heart Right Back, 2026-10-04: two instrumentals and the instrumental's bass under her second chorus were "too much" and "muddled"; one layer with the bass cut at fader 0.85 under the chorus, and per-section offsets (instrumental beat = her beat + 8 mod 16 before the break, + 4 after), were accepted.
 <!-- pdd-intent-entry:when-i-layer-another-record-under-a-song-one-lay-3090ed69:end -->
+
+<!-- pdd-intent-entry:shared-dj-brain-providers-and-streamlined-mix-bu-59a37e5d:start -->
+## Shared DJ brain providers and streamlined mix builder
+
+- Original request: [intent event](intents/intent__shared-dj-brain-providers-and-streamlined-mix-bu-59a37e5d.md).
+- Scope: existing Python/JavaScript browser workflow; llama.cpp is an optional
+  inference service, not a requested C++ implementation.
+- Curation, mix review and note interpretation share signed-in Claude/Codex/Grok
+  CLIs, API-key providers, and local llama-server. Retire NemoClaw, generic
+  curation configuration and H's managed planning agent; add H's direct Models
+  API using HAI_API_KEY from ignored .env and an optional model override.
+- Keep .env.example versionable and secrets out of Git, browser payloads and plans.
+- Create the mix uses one model selector, clear feel choices, a multiline brief
+  and one primary Build action. Experimental transition formats and previewed
+  note edits remain available under Advanced. Picks and notes are reviewed;
+  Start mix stays a separate explicit action.
+- Preserve effective DJ notes, exclusions, phrase/verse safety, stem layering,
+  tempo/key compatibility, backbeat labels, gentle fades, guarded optimization
+  and authored-performance protection. Missing BPM requires analysis before Build.
+- Follow-up advice: first consider same-song skip/re-entry handoffs and measured
+  short-intro extension; sample/source unison needs measured alignment; sustained
+  third-deck support needs validated allocation and monitoring. These are future
+  implementation candidates, not new automatic features in this refactor.
+
+Acceptance: [shared workflow story](../user_stories/story__shared_dj_brain_providers_and_simple_mix_build.md).
+Research: [H Company API](H_COMPANY_MODELS_API.md).
+<!-- pdd-intent-entry:shared-dj-brain-providers-and-streamlined-mix-bu-59a37e5d:end -->

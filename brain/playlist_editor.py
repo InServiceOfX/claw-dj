@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from brain import collection_registry, library_index
+from brain.llm_providers import PROVIDERS
 from brain.library import DEFAULT_CRATE_CACHE, Energy, Track, load_crate
 from brain.track_preview import PreviewError, content_type, parse_byte_range, resolve_preview_path
 from brain.library_index import configured_roots, export_records, scan_status
@@ -33,7 +34,7 @@ from brain.playlist import (
     track_record,
 )
 
-BRAIN_CACHE = {engine: DATA_DIR / f"brain_picks_{engine}.json" for engine in ("nemoclaw", "h-agent", "generic")}
+BRAIN_CACHE = {engine: DATA_DIR / f"brain_picks_{engine}.json" for engine in PROVIDERS}
 MIX_PLAN_PATH = DATA_DIR / "mix_plan.json"
 DEFAULT_PLAYLIST_JSON = DATA_DIR / "playlist.json"
 
@@ -349,17 +350,19 @@ class PlaylistApp:
         return status
 
     def ask_brain(self, brief: str, engine: str, count: int, pool: str = "new") -> dict:
-        """Run agent candidate-picking (one engine or both) in the background.
+        """Run candidate-picking with one shared model provider in the background.
 
         pool="library" scopes candidates to the whole crate (keyword
         pre-filtered) instead of just the newest scan batch — needed for
         briefs about music that's been in the library for a while, since
         "new" pool can only ever see the most recent scan's delta.
         """
-        engines = ("nemoclaw", "h-agent") if engine == "both" else (engine,)
-        for name in engines:
-            if name not in BRAIN_CACHE:
-                raise ValueError(f"unknown engine {name!r}")
+        if engine not in PROVIDERS:
+            raise ValueError(f"unknown or retired engine {engine!r}; choose a model provider")
+        if pool not in ("new", "library"):
+            raise ValueError("pool must be new or library")
+        if not 1 <= count <= 50:
+            raise ValueError("count must be between 1 and 50")
         if not brief.strip():
             raise ValueError("brief is empty — say what kind of set you want")
         if self.brain_thread and self.brain_thread.is_alive():
@@ -367,29 +370,19 @@ class PlaylistApp:
         self.brain_state = {"running": 1, "error": None, "results": {},
                             "brief": brief, "engine": engine}
 
-        # "count" is the user's total-picks budget, not a per-engine one —
-        # split it across engines when running both, so asking for 50 with
-        # "both" selected doesn't silently mean "up to 50 from EACH" (up to
-        # 100 total). Each engine may still return fewer than its share;
-        # the LLM's own count isn't hard-truncated downstream either.
-        engine_counts = {
-            name: count // len(engines) + (1 if i < count % len(engines) else 0)
-            for i, name in enumerate(engines)
-        }
-
         def work() -> None:
-            errors = []
-            for name in engines:
-                try:
-                    from brain.pick_candidates import run_pick
+            try:
+                from brain.pick_candidates import run_pick
 
-                    picks = run_pick(engine=name, brief=brief, count=engine_counts[name], pool=pool)
-                    result = {"brief": brief, "engine": name, "pool": pool, "picks": picks}
-                    self.brain_state["results"][name] = result
-                    BRAIN_CACHE[name].write_text(json.dumps(result, indent=1) + "\n")
-                except Exception as error:  # surfaced in the local UI
-                    errors.append(f"{name}: {error}")
-            self.brain_state.update(running=0, error="; ".join(errors) or None)
+                picks = run_pick(engine=engine, brief=brief, count=count, pool=pool)
+                result = {"brief": brief, "engine": engine, "pool": pool, "picks": picks}
+                self.brain_state["results"][engine] = result
+                cache = BRAIN_CACHE[engine]
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_text(json.dumps(result, indent=1) + "\n")
+                self.brain_state.update(running=0, error=None)
+            except Exception as error:  # surfaced in the local UI
+                self.brain_state.update(running=0, error=f"{engine}: {error}")
 
         self.brain_thread = threading.Thread(target=work, daemon=True)
         self.brain_thread.start()
@@ -404,10 +397,8 @@ class PlaylistApp:
         the LLM call can take a while. Only builds a preview; nothing is
         written until apply_directives() confirms it."""
         from brain.llm_providers import PROVIDERS
-        from brain.pick_candidates import ENGINES
-
-        if engine not in PROVIDERS and engine not in ENGINES and engine != "h-agent":
-            raise ValueError(f"unknown engine {engine!r}")
+        if engine not in PROVIDERS:
+            raise ValueError(f"unknown or retired engine {engine!r}; choose a model provider")
         if not brief.strip():
             raise ValueError("brief is empty — say what you want changed")
         if self.directives_thread and self.directives_thread.is_alive():
@@ -418,17 +409,13 @@ class PlaylistApp:
         def work() -> None:
             try:
                 from brain.mix_directives import build_prompt, load_playlist, parse_directives
-                from brain.pick_candidates import ask_h_agent
                 from brain.library_index import current_index_path
 
                 tracks = load_playlist(DEFAULT_PLAYLIST_JSON)
                 prompt = build_prompt(tracks, brief, current_index_path())
-                if engine in PROVIDERS:
-                    from brain.llm_providers import ask
+                from brain.llm_providers import ask
 
-                    reply = ask(engine, prompt)
-                else:
-                    reply = ask_h_agent(prompt) if engine == "h-agent" else ENGINES[engine](prompt)
+                reply = ask(engine, prompt)
                 notes, reorder = parse_directives(reply, tracks)
                 by_id = {t["track_id"]: t for t in tracks}
                 preview = {
@@ -1269,6 +1256,11 @@ class PlaylistApp:
         if not playlist_path.exists():
             raise ValueError("no finalized playlist yet — click Finalize for Mixxx first")
 
+        rows = json.loads(playlist_path.read_text())
+        missing = [row for row in rows if not row.get("bpm") or float(row["bpm"]) <= 0]
+        if missing:
+            raise ValueError(f"{len(missing)} finalized tracks need BPM analysis; run Analyze & enrich before building")
+
         engine = order_engine
 
         if self.enrich_thread and self.enrich_thread.is_alive():
@@ -1663,7 +1655,7 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     self._json(
                         app.ask_brain(
                             str(payload.get("brief", "")),
-                            str(payload.get("engine", "nemoclaw")),
+                            str(payload.get("engine", "claude-cli")),
                             int(payload.get("count", 20)),
                             str(payload.get("pool", "library")),
                         ),

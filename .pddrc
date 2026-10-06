@@ -370,3 +370,10 @@ contexts:
     defaults:
       prompts_dir: "prompts/"
       generate_output_path: "brain/"
+
+  dj_brain_workflow:
+    paths: ["*dj_brain_workflow*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/pick_candidates.py"

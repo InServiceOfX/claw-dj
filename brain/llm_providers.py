@@ -10,6 +10,7 @@ One text-in / text-out call, many ways to reach a model:
     anthropic-api  ANTHROPIC_API_KEY   (+ optional CLAWDJ_ANTHROPIC_MODEL)
     openai-api     OPENAI_API_KEY      + CLAWDJ_OPENAI_MODEL
     xai-api        XAI_API_KEY         + CLAWDJ_XAI_MODEL
+    hcompany-api   HAI_API_KEY         (+ optional CLAWDJ_HCOMPANY_MODEL)
   Local:
     llama-server   LLAMA_SERVER_URL (default http://127.0.0.1:8080)
 
@@ -21,9 +22,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -33,6 +36,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = REPO_ROOT / ".env"
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5"
 DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080"
+DEFAULT_HCOMPANY_MODEL = "holo3-1-35b-a3b"
+HCOMPANY_BASE_URL = "https://api.hcompany.ai/v1"
+_ENV_LOADED: dict[str, str] = {}
+_ENV_LOCK = threading.RLock()
 NONE = "none"
 
 
@@ -54,6 +61,7 @@ PROVIDERS: dict[str, Provider] = {
         Provider("anthropic-api", "Claude API key", "api", env_vars=("ANTHROPIC_API_KEY",)),
         Provider("openai-api", "OpenAI API key", "api", env_vars=("OPENAI_API_KEY", "CLAWDJ_OPENAI_MODEL")),
         Provider("xai-api", "xAI Grok API key", "api", env_vars=("XAI_API_KEY", "CLAWDJ_XAI_MODEL")),
+        Provider("hcompany-api", "H Company Holo API key", "api", env_vars=("HAI_API_KEY",)),
         Provider("llama-server", "llama.cpp llama-server (local)", "local", env_vars=("LLAMA_SERVER_URL",)),
     )
 }
@@ -64,14 +72,26 @@ class ProviderError(RuntimeError):
 
 
 def load_env(path: Path = ENV_PATH) -> None:
-    """Load `.env` without overriding variables already in the environment."""
-    if not path.exists():
-        return
+    """Refresh file-owned values; shell-owned environment always wins."""
     try:
-        from dotenv import load_dotenv
+        from dotenv import dotenv_values
     except ImportError:  # python-dotenv is a declared dependency; be defensive
         return
-    load_dotenv(path, override=False)
+    with _ENV_LOCK:
+        values = dotenv_values(path) if path.exists() else {}
+        for key, previous in list(_ENV_LOADED.items()):
+            if os.environ.get(key) == previous:
+                value = values.get(key)
+                if value is not None:
+                    os.environ[key] = value
+                    _ENV_LOADED[key] = value
+                    continue
+                os.environ.pop(key, None)
+            _ENV_LOADED.pop(key, None)
+        for key, value in values.items():
+            if value is not None and key not in os.environ:
+                os.environ[key] = value
+                _ENV_LOADED[key] = value
 
 
 def _run(cmd: list[str], *, stdin: str | None = None, timeout_s: float = 30.0) -> subprocess.CompletedProcess:
@@ -120,6 +140,7 @@ def _status_one(provider: Provider) -> tuple[bool, str]:
             "anthropic-api": os.environ.get("CLAWDJ_ANTHROPIC_MODEL") or DEFAULT_ANTHROPIC_MODEL,
             "openai-api": os.environ.get("CLAWDJ_OPENAI_MODEL"),
             "xai-api": os.environ.get("CLAWDJ_XAI_MODEL"),
+            "hcompany-api": os.environ.get("CLAWDJ_HCOMPANY_MODEL") or DEFAULT_HCOMPANY_MODEL,
         }[provider.name]
         return True, f"key set · model {model}"
     url = _llama_url()
@@ -133,10 +154,16 @@ def _status_one(provider: Provider) -> tuple[bool, str]:
 
 def status_all() -> list[dict]:
     """Every provider with availability, for the GUI. Never raises."""
-    load_env()
+    try:
+        load_env()
+    except OSError:
+        return [{**asdict(p), "available": False, "detail": "could not read .env; check file access"} for p in PROVIDERS.values()]
     rows = []
     for provider in PROVIDERS.values():
-        available, detail = _status_one(provider)
+        try:
+            available, detail = _status_one(provider)
+        except Exception:
+            available, detail = False, "availability check failed; refresh to retry"
         rows.append({**asdict(provider), "available": available, "detail": detail})
     return rows
 
@@ -212,6 +239,8 @@ def _ask_openai_compatible(base_url: str, api_key: str | None, model: str | None
     body: dict = {"messages": [{"role": "user", "content": prompt}]}
     if model:
         body["model"] = model
+    if base_url.rstrip("/") == HCOMPANY_BASE_URL:
+        body.update(max_tokens=8192, temperature=0.2, chat_template_kwargs={"enable_thinking": False})
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -222,10 +251,26 @@ def _ask_openai_compatible(base_url: str, api_key: str | None, model: str | None
         with urllib.request.urlopen(request, timeout=timeout_s) as response:
             payload = json.loads(response.read())
     except urllib.error.HTTPError as error:
-        raise ProviderError(f"{base_url} HTTP {error.code}: {error.read()[:400]!r}") from error
+        raise ProviderError(f"{base_url} HTTP {error.code}; check API access, model and account limits") from error
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ProviderError(f"{base_url} returned an invalid JSON response") from error
     except (urllib.error.URLError, OSError) as error:
         raise ProviderError(f"{base_url} unreachable: {error}") from error
-    return payload["choices"][0]["message"]["content"]
+    try:
+        choice = payload["choices"][0]
+        content = choice["message"]["content"]
+    except (KeyError, IndexError, TypeError) as error:
+        raise ProviderError(f"{base_url} returned no answer text") from error
+    if not isinstance(content, str):
+        raise ProviderError(f"{base_url} returned no answer text")
+    if choice.get("finish_reason") == "length":
+        raise ProviderError(f"{base_url} reached its output limit; narrow the brief or use a model with more output capacity")
+    # Some local chat templates include reasoning inline instead of a separate
+    # reasoning_content field. Downstream JSON parsers must see only the answer.
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    if not content or content.startswith("<think>"):
+        raise ProviderError(f"{base_url} returned no answer text (reasoning may have exhausted the output limit)")
+    return content
 
 
 def ask(provider: str, prompt: str, *, timeout_s: float = 600.0) -> str:
@@ -258,6 +303,15 @@ def ask(provider: str, prompt: str, *, timeout_s: float = 600.0) -> str:
         if not key or not model:
             raise ProviderError("set XAI_API_KEY and CLAWDJ_XAI_MODEL in .env")
         return _ask_openai_compatible("https://api.x.ai/v1", key, model, prompt, timeout_s)
+    if provider == "hcompany-api":
+        key = os.environ.get("HAI_API_KEY")
+        if not key:
+            raise ProviderError("set HAI_API_KEY in .env")
+        return _ask_openai_compatible(
+            HCOMPANY_BASE_URL, key,
+            os.environ.get("CLAWDJ_HCOMPANY_MODEL") or DEFAULT_HCOMPANY_MODEL,
+            prompt, timeout_s,
+        )
     return _ask_openai_compatible(
         _llama_url() + "/v1", None, os.environ.get("LLAMA_SERVER_MODEL"), prompt, timeout_s
     )

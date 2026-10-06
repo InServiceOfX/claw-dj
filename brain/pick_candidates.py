@@ -6,17 +6,10 @@ get back candidate ids, resolve them locally. The agent never sees file
 paths and cannot invent tracks — ids it returns that aren't in the view are
 dropped.
 
-Engines:
-  nemoclaw — NemoClaw sandbox (NVIDIA Nemotron) via its OpenAI-compatible API.
-             Needs Docker Desktop running, a live sandbox (default name on this
-             machine: `nemoclaw-hermes`, override with CLAWDJ_NEMOCLAW_SANDBOX),
-             and `openshell forward start --background 8642 <sandbox>`.
-  h-agent  — H Company Agent Platform via hai_agents (planning-only task,
-             no GUI). Needs holo/hai login credentials on this machine.
-  generic  — any OpenAI-chat-compatible endpoint: xAI/Grok, a local
-             Ollama/LM Studio server, OpenAI itself. Configured via env
-             vars CLAWDJ_LLM_BASE_URL / CLAWDJ_LLM_API_KEY /
-             CLAWDJ_LLM_MODEL — see ask_generic()'s docstring.
+Providers:
+  Uses brain.llm_providers: signed-in Claude/Codex/Grok CLIs, API keys
+  from the gitignored .env (including H Company's direct Models API),
+  and a local llama-server. No sandbox or computer-use agent is launched.
 
 Candidate pool (--pool):
   new     — (default) the latest scan's new-music batch only.
@@ -26,103 +19,31 @@ Candidate pool (--pool):
             see those, it only ever holds the most recent scan's delta.
 
 Usage:
-    uv run python -m brain.pick_candidates --engine nemoclaw \\
+    uv run python -m brain.pick_candidates --engine claude-cli \\
         --brief "recognizable hits that mix well with a hip-hop/R&B showcase"
-    uv run python -m brain.pick_candidates --engine h-agent --count 15
-    uv run python -m brain.pick_candidates --engine generic --pool library \\
+    uv run python -m brain.pick_candidates --engine hcompany-api --count 15
+    uv run python -m brain.pick_candidates --engine llama-server --pool library \\
         --brief "90s West Coast G-funk, Chronic/Doggystyle era"
     # then: review brain/data/new_music_picks.json, optionally
-    uv run python -m brain.pick_candidates --engine nemoclaw --add-to-selection
+    uv run python -m brain.pick_candidates --engine claude-cli --add-to-selection
 """
 from __future__ import annotations
 
 import argparse
 import json
 import re
-import subprocess
-import urllib.request
 from collections import defaultdict
+
+from brain.llm_providers import PROVIDERS, ask
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_VIEW = DATA_DIR / "new_music_agent.json"
 DEFAULT_ID_MAP = DATA_DIR / "new_music_ids.json"
 DEFAULT_OUT = DATA_DIR / "new_music_picks.json"
-NEMOCLAW_URL = "http://127.0.0.1:8642/v1/chat/completions"
-# Historical docs used sandbox name "hermes"; current NemoClaw registers
-# "nemoclaw-hermes". Prefer CLAWDJ_NEMOCLAW_SANDBOX, then discovery, then
-# these fallbacks in order.
-NEMOCLAW_SANDBOX_FALLBACKS = ("nemoclaw-hermes", "hermes")
-
 NEUTRAL_BRIEF = (
     "recognizable songs that would mix well into a hip-hop/R&B DJ showcase"
 )
-
-
-def _nemoclaw_sandbox_name() -> str:
-    """Resolve the NemoClaw sandbox that exposes the chat API on this machine."""
-    import os
-    import re
-
-    configured = (os.environ.get("CLAWDJ_NEMOCLAW_SANDBOX") or "").strip()
-    if configured:
-        return configured
-    try:
-        listed = subprocess.run(
-            ["nemoclaw", "list"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return NEMOCLAW_SANDBOX_FALLBACKS[0]
-    text = (listed.stdout or "") + "\n" + (listed.stderr or "")
-    # Prefer the default-marked sandbox, else any hermes-ish name.
-    default_match = re.search(r"^\s*(\S+)\s+\*", text, flags=re.MULTILINE)
-    if default_match:
-        return default_match.group(1)
-    for candidate in NEMOCLAW_SANDBOX_FALLBACKS:
-        if re.search(rf"^\s*{re.escape(candidate)}\b", text, flags=re.MULTILINE):
-            return candidate
-    names = re.findall(r"^\s{2,}([a-zA-Z0-9][\w.-]+)\b", text, flags=re.MULTILINE)
-    for name in names:
-        if "hermes" in name.lower():
-            return name
-    return NEMOCLAW_SANDBOX_FALLBACKS[0]
-
-
-def _nemoclaw_gateway_token(sandbox: str) -> str:
-    try:
-        completed = subprocess.run(
-            ["nemoclaw", sandbox, "gateway-token", "--quiet"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except FileNotFoundError as error:
-        raise RuntimeError(
-            "nemoclaw CLI not found on PATH — install/configure NemoClaw, "
-            "or use engine h-agent / generic instead"
-        ) from error
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError(
-            f"nemoclaw {sandbox} gateway-token timed out — is Docker Desktop running?"
-        ) from error
-    token = (completed.stdout or "").strip()
-    if completed.returncode == 0 and token:
-        return token
-    detail = (completed.stderr or completed.stdout or "").strip() or f"exit {completed.returncode}"
-    raise RuntimeError(
-        f"nemoclaw gateway-token failed for sandbox {sandbox!r}.\n"
-        "NemoClaw needs: (1) Docker Desktop running, "
-        f"(2) sandbox up — try `nemoclaw {sandbox} start` or `nemoclaw status`, "
-        f"(3) API forward — `openshell forward start --background 8642 {sandbox}`.\n"
-        "Until then, switch the DJ brain engine to **h-agent** or **generic** "
-        "(CLAWDJ_LLM_* env vars).\n"
-        f"Detail: {detail}"
-    )
 
 
 def condensed_view(view: dict, per_artist: int = 12) -> str:
@@ -152,8 +73,8 @@ def condensed_view(view: dict, per_artist: int = 12) -> str:
 def build_prompt(view: dict, brief: str, count: int) -> str:
     return f"""You are the crate-digging Brain of claw-dj, an autonomous hip-hop/R&B DJ.
 
-New music just landed in the user's library. Below is the complete list of
-new tracks, one per line as `id  artist — title`. These are the ONLY songs
+Below is the candidate pool selected by the user. It may be the latest scan
+or a keyword-prefiltered view of the whole library. These candidate tracks, one per line as `id  artist — title`. These are the ONLY songs
 that exist; do not invent titles, do not assume albums have other tracks.
 
 Brief: {brief}
@@ -166,7 +87,7 @@ fewer than {count} if the material is thin.
 Respond with EXACTLY one JSON array of the chosen ids and nothing else,
 e.g. ["n0012", "n0431"].
 
-New tracks:
+Candidate tracks:
 {condensed_view(view)}
 """
 
@@ -181,172 +102,13 @@ def parse_pick_ids(text: str, allowed: set[str]) -> list[str]:
         if not isinstance(value, list):
             continue
         ids = [item for item in value if isinstance(item, str) and item in allowed]
-        if ids:
+        if ids or not value:
             return list(dict.fromkeys(ids))
     # fallback: bare ids scattered in prose
     loose = [m for m in re.findall(r"n\d{4}", text) if m in allowed]
     if loose:
         return list(dict.fromkeys(loose))
     raise ValueError(f"agent returned no usable ids: {text[:500]}")
-
-
-def ask_nemoclaw(prompt: str, *, timeout_s: float = 600.0) -> str:
-    sandbox = _nemoclaw_sandbox_name()
-    token = _nemoclaw_gateway_token(sandbox)
-    payload = json.dumps(
-        {
-            "model": "hermes-agent",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
-        }
-    ).encode()
-    request = urllib.request.Request(
-        NEMOCLAW_URL,
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_s) as response:
-            body = json.loads(response.read())
-    except OSError as error:
-        raise RuntimeError(
-            f"NemoClaw chat API not reachable at {NEMOCLAW_URL} "
-            f"(sandbox {sandbox!r}). After Docker + sandbox are up, run: "
-            f"`openshell forward start --background 8642 {sandbox}`. "
-            f"Or use engine h-agent / generic. Underlying error: {error}"
-        ) from error
-    return body["choices"][0]["message"]["content"]
-
-
-def ask_generic(prompt: str, *, timeout_s: float = 300.0) -> str:
-    """Any OpenAI-chat-compatible endpoint — xAI/Grok, a local Ollama/LM
-    Studio server, OpenAI itself, or anything else speaking the same wire
-    format. Configured entirely by env vars so no provider-specific code is
-    needed here:
-
-      CLAWDJ_LLM_BASE_URL   e.g. https://api.x.ai/v1  or  http://localhost:11434/v1
-      CLAWDJ_LLM_API_KEY    provider key (local servers often ignore this — pass "ollama" or similar placeholder)
-      CLAWDJ_LLM_MODEL      e.g. grok-4  or  llama3.1  (whatever the endpoint serves)
-
-    xAI's API is documented as OpenAI-compatible at api.x.ai/v1 — set
-    CLAWDJ_LLM_BASE_URL=https://api.x.ai/v1, CLAWDJ_LLM_API_KEY=<your xai key>,
-    CLAWDJ_LLM_MODEL=grok-4 (check x.ai for the current model name).
-    """
-    import os
-
-    base_url = os.environ.get("CLAWDJ_LLM_BASE_URL")
-    api_key = os.environ.get("CLAWDJ_LLM_API_KEY")
-    model = os.environ.get("CLAWDJ_LLM_MODEL")
-    missing = [
-        name for name, value in (
-            ("CLAWDJ_LLM_BASE_URL", base_url),
-            ("CLAWDJ_LLM_API_KEY", api_key),
-            ("CLAWDJ_LLM_MODEL", model),
-        ) if not value
-    ]
-    if missing:
-        raise RuntimeError(
-            f"generic engine needs env vars: {', '.join(missing)} "
-            "(see ask_generic docstring in brain/pick_candidates.py)"
-        )
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
-        }
-    ).encode()
-    request = urllib.request.Request(
-        base_url.rstrip("/") + "/chat/completions",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=timeout_s) as response:
-        body = json.loads(response.read())
-    return body["choices"][0]["message"]["content"]
-
-
-# H Company Agent Platform rejects agents with environments=[] unless they
-# declare subagents (pure orchestrators). Planning does not need a desktop
-# bridge (that is brain.agent.Brain), so we attach a cloud *web* environment in
-# text mode: satisfies the API, does not start hai_agents_local, and keeps
-# Mixxx GUI control out of this path.
-H_PLANNING_AGENT_NAME = "claw-dj-planning"
-H_PLANNING_ENVIRONMENTS = (
-    {
-        "id": "planning-web",
-        "kind": "web",
-        "host": "cloud",
-        "mode": {"type": "text"},
-    },
-)
-H_PLANNING_INSTRUCTIONS = (
-    "Answer planning questions in text only. Do not browse the web, open URLs, "
-    "click, type, use desktop tools, or control any GUI unless the user "
-    "explicitly asks for live web research."
-)
-
-
-def ask_h_agent(prompt: str) -> str:
-    """Run an H Company planning agent without a local desktop bridge.
-
-    Ordering / candidate picking is a text judgment call. We deliberately do
-    **not** use ``brain.agent.Brain``'s desktop environment. The platform now
-    requires at least one environment (or subagents); a cloud web env in text
-    mode meets that rule without starting the local desktop bridge.
-    """
-    import asyncio
-    import os
-
-    from dotenv import dotenv_values
-    from hai_agents import AsyncClient
-    from hai_agents.core.api_error import ApiError
-
-    def api_key() -> str | None:
-        if key := os.environ.get("HAI_API_KEY"):
-            return key
-        config_home = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
-        for path in (config_home / "hai" / ".env", Path.home() / ".holo" / ".env"):
-            if path.exists() and (key := dotenv_values(path).get("HAI_API_KEY")):
-                return str(key)
-        return None
-
-    async def run() -> str:
-        client = AsyncClient(api_key=api_key())
-        try:
-            agent = await client.agents.create_agent(
-                name=H_PLANNING_AGENT_NAME,
-                description="Text-only planning for claw-dj; never controls a desktop.",
-                environments=list(H_PLANNING_ENVIRONMENTS),
-                instructions=H_PLANNING_INSTRUCTIONS,
-            )
-        except ApiError as error:
-            if error.status_code != 409:
-                raise
-            agent = await client.agents.get_agent(H_PLANNING_AGENT_NAME)
-        result = await client.run_session(
-            agent=agent,
-            messages=(
-                "This is planning-only: do not click, type, open apps, browse "
-                "the web, or use desktop tools. Answer in text.\n\n" + prompt
-            ),
-            timeout_seconds=240,
-        )
-        if result.error:
-            raise RuntimeError(f"hai-agents planning task failed: {result.error}")
-        answer = result.answer
-        return json.dumps(answer) if isinstance(answer, (dict, list)) else str(answer)
-
-    return asyncio.run(run())
-
-
-ENGINES = {"nemoclaw": ask_nemoclaw, "generic": ask_generic}
 
 
 def build_whole_library_view(brief: str, *, max_tracks: int = 700) -> tuple[dict, dict[str, str]]:
@@ -405,6 +167,12 @@ def run_pick(
     batch; pool="library" searches the whole crate instead (keyword
     pre-filtered — see build_whole_library_view).
     """
+    if engine not in PROVIDERS:
+        raise ValueError(f"unknown or retired engine {engine!r}; choose a model provider")
+    if pool not in ("new", "library"):
+        raise ValueError("pool must be new or library")
+    if not 1 <= count <= 50:
+        raise ValueError("count must be between 1 and 50")
     if pool == "library":
         view, id_to_path = build_whole_library_view(brief)
     else:
@@ -412,10 +180,7 @@ def run_pick(
         id_to_path = {v: k for k, v in json.loads(id_map_path.read_text()).items()}
     by_id = {t["id"]: t for t in view["tracks"]}
     prompt = build_prompt(view, brief, count)
-    if engine == "h-agent":
-        answer = ask_h_agent(prompt)
-    else:
-        answer = ENGINES[engine](prompt)
+    answer = ask(engine, prompt)
     return [
         {
             "id": pick_id,
@@ -423,13 +188,13 @@ def run_pick(
             "title": by_id[pick_id]["title"],
             "track_id": id_to_path[pick_id],
         }
-        for pick_id in parse_pick_ids(answer, set(by_id))
+        for pick_id in parse_pick_ids(answer, set(by_id))[:count]
     ]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", choices=("nemoclaw", "h-agent", "generic"), default="nemoclaw")
+    parser.add_argument("--engine", choices=tuple(PROVIDERS), default="claude-cli")
     parser.add_argument(
         "--pool", choices=("new", "library"), default="new",
         help="new = latest scan's new-music batch; library = whole crate, keyword pre-filtered",

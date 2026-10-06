@@ -1,0 +1,56 @@
+% Goal
+
+Maintain the brownfield DJ brain workflow in brain/pick_candidates.py,
+brain/mix_directives.py, brain/playlist_editor.py and brain/web/playlist.html.
+Use the established provider registry for curation and notes; simplify the
+mix builder without rewriting its musical planning or deterministic execution.
+
+% Interface
+
+run_pick(*, engine, brief, count=20, view_path, id_map_path, pool="new") -> list[dict].
+PlaylistApp.ask_brain(brief, engine, count, pool="new") -> background job status.
+Existing /api/brain, /api/brain/ask, /api/brain/apply, /api/directives and
+/api/mix/build payloads remain compatible for provider-based requests.
+
+<vocabulary>
+duplicate: a candidate ID already accepted earlier in the same model response;
+only its first occurrence is kept.
+</vocabulary>
+
+<contract_rules>
+R1 (MUST): Curation and DJ-note interpretation use only brain.llm_providers;
+reject nemoclaw, h-agent, generic and both with a clear retired-engine reason.
+R2 (MUST NOT): Start Docker, NemoClaw, a desktop agent, web agent or GUI
+bridge for curation, notes or model review.
+R3 (MUST): Preserve New music's latest-scan scope and Whole library's keyword
+prefilter; expose only synthetic candidate IDs to the model. Resolve IDs locally,
+ignore unknown/duplicate IDs, and cap accepted picks to the requested count.
+R4 (MUST NOT): Asking adds songs, finalizes a set, writes DJ notes or starts
+playback. Picks and notes remain previews requiring the existing explicit action.
+R5 (MUST): The GUI fills curation and mix provider choices from /api/providers,
+disables unavailable providers and model-required actions when none is available,
+and provides an explicit refresh for keys or a newly started local server.
+R6 (MUST): The mix panel has one provider selector shared by Build and note
+interpretation. Optimizer-only remains available, disables note interpretation,
+and never sends a retired or unknown provider. Build consumes the brief once
+through the established optimizer/review/choreography pipeline.
+R7 (MUST): Preserve mix profiles, experimental-format accessibility under an
+Advanced disclosure, candidate playback order, per-blend backbeat labels,
+dry run warnings, analysis logs and separate Start mix confirmation. Idle polling
+must not reset the user's profile, provider or transition-format choice.
+R8 (MUST NOT): Claim a pleasant mix is proven by a dry run, or suggest that
+unsupported same-song handoffs, harmonic count-1 detection, sustained 3-deck
+support or measured sample pitch recovery are automatic features. Preserve
+explicit authored performance plans rather than replacing them with Generic Build.
+R9 (MUST): Build preserves the existing hard rules: effective DJ notes, source
+exclusions, verse safety, phrase cues, stem layering, backbeat alignment, tempo/key
+compatibility, gentle fades, exact-once track integrity and model-failure fallback.
+</contract_rules>
+
+% Verification
+
+Synthetic fixtures exercise every provider through candidate picking and note
+preview, retired-engine rejection before a worker starts, scope and count limits,
+H API auth/model and .env refresh without leaking credentials, browser selection
+retention, unavailable-provider handling, one shared model selection, and the
+existing optimizer/notes/gentle-fader/source-boundary/performance tests.

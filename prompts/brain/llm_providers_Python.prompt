@@ -1,4 +1,4 @@
-<pdd-reason>Build mix plan needs a model it can actually reach on Ernest's machine. NemoClaw (Docker sandbox + port forward) was too hard to deploy and keep up, and H Company's planning model is not the right fit. Claude, Codex and Grok are already installed and signed in as CLIs, and llama-server runs locally.</pdd-reason>
+<pdd-reason>Curation, notes and mix planning share reachable text providers. NemoClaw and the H agent runtime are retired; H Company remains available through its direct Models API. Vendor CLIs own sign-in, keys stay in the ignored .env, and llama-server runs locally.</pdd-reason>
 <pdd-interface>
 {
   "type": "module",
@@ -18,12 +18,12 @@
 One text-in / text-out call to a language model, reachable in the ways a local DJ app can legitimately use:
 
 - Signed-in vendor CLI (the user's subscription; the vendor CLI owns its browser login): `claude-cli`, `codex-cli`, `grok-cli`.
-- API key kept in the repository's gitignored `.env`: `anthropic-api` (ANTHROPIC_API_KEY, optional CLAWDJ_ANTHROPIC_MODEL, default `claude-opus-5-5`), `openai-api` (OPENAI_API_KEY + CLAWDJ_OPENAI_MODEL), `xai-api` (XAI_API_KEY + CLAWDJ_XAI_MODEL).
+- API key kept in the repository's gitignored `.env`: `anthropic-api` (ANTHROPIC_API_KEY, optional CLAWDJ_ANTHROPIC_MODEL, default `claude-opus-5-5`), `openai-api` (OPENAI_API_KEY + CLAWDJ_OPENAI_MODEL), `xai-api` (XAI_API_KEY + CLAWDJ_XAI_MODEL), `hcompany-api` (HAI_API_KEY, optional CLAWDJ_HCOMPANY_MODEL, default `holo3-1-35b-a3b`).
 - Local llama.cpp `llama-server` (OpenAI-compatible; LLAMA_SERVER_URL, default http://127.0.0.1:8080).
 
 % Requirements
 
-1. `PROVIDERS` lists exactly the seven providers above with a human label, kind (`cli` | `api` | `local`), the one-time terminal sign-in command for CLI providers (`claude auth login`, `codex login`, `grok login --oauth`), and the env vars for API/local providers.
+1. `PROVIDERS` lists exactly the eight providers above with a human label, kind (`cli` | `api` | `local`), the one-time terminal sign-in command for CLI providers (`claude auth login`, `codex login`, `grok login --oauth`), and the env vars for API/local providers.
 2. `status_all()` reports availability and a one-line human detail for every provider without raising: CLI installed and signed in; API key (and model where required) set; llama-server answering `/health`.
 3. `ask()` sends one prompt and returns only the model's answer text. CLI providers run non-interactively with no tools, no web access and no persisted session; the prompt is passed on stdin or a temporary file, never in a shell string.
 4. `.env` is loaded without overriding variables already set in the process environment.
@@ -36,6 +36,24 @@ R3 (MUST): an unknown provider name, including the retired `nemoclaw` and `h-age
 R4 (MUST): `status_all()` never raises and never prompts.
 R5 (MUST NOT): a provider being unavailable blocks any caller that can work without a model.
 </contract_rules>
+
+% Shared DJ brain providers (2026-10-05)
+
+The provider registry serves curation, DJ-note interpretation and mix planning.
+Add `hcompany-api` (label H Company Holo API key), enabled by `HAI_API_KEY`
+alone, calling https://api.hcompany.ai/v1/chat/completions with bearer auth.
+The configuration example recommends current flagship `holo4-27b` with funded
+access; document `holo4-35b-a3b` as the faster Holo4 alternative. Keep the
+key-only default free-tier model; never silently upgrade a configured account.
+`CLAWDJ_HCOMPANY_MODEL` optionally overrides `holo3-1-35b-a3b` (free-tier
+model documented by H); never use hai-agents, cloud environments or desktop
+tools for these text calls. Status indicates configuration, not proven account
+entitlement or DJ quality. No private credential file outside this repo is read.
+Refresh file-owned env values when .env changes without replacing shell-owned
+values. Removing a file-owned key disables the provider on the next refresh.
+Validate nonempty text responses; malformed responses and local reasoning-only
+output become ProviderError. Never include credentials or HTTP response bodies
+in status/error messages. Status failures are isolated to the failing provider.
 
 % Verification
 

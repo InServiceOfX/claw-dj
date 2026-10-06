@@ -1,5 +1,56 @@
 # Handoff / continuation notes
 
+## DJ brain provider unification and mix controls (2026-10-06)
+
+`feat/shared-dj-brain-providers` starts from latest master `e589b06`, not the
+old `feat/build-mix-plan-refactor` checkout. Curation and DJ-note interpretation
+now call `brain.llm_providers.ask`; no NemoClaw, generic endpoint or H managed
+planning agent is launched. The direct H Models API is the new `hcompany-api`
+provider (HAI_API_KEY in ignored .env; optional CLAWDJ_HCOMPANY_MODEL, default
+holo3-1-35b-a3b). See `H_COMPANY_MODELS_API.md` for official sources and limits.
+No key is currently set here, and H's actual DJ quality/account access remains
+untested. Local llama-server passed a synthetic text curation call.
+
+The two mix selectors previously chose independent providers for order review
+and DJ-note interpretation. `#order-engine` is now the single shared choice;
+`#directives-engine` was removed. `#engine` on Curate has the same provider
+options from `/api/providers`. Both pages offer Refresh models; .env reload
+updates/removes file-owned values while preserving shell settings. Keys never
+enter status payloads. Optimizer-only disables note interpretation, and no
+available model disables Ask without blocking deterministic Build.
+
+Mix controls now form a responsive panel: feel cards, model, multiline brief,
+readiness, primary Build action and the existing musical protections. Advanced
+contains experimental formats and review-only note edits. Idle polls preserve
+the selected feel. A missing-BPM finalized track stops Build before model calls
+or plan writes. This refactor preserves the existing optimizer, effective notes,
+phrase/verse/stem/backbeat/gentle-fade/source-limit code and authored performance
+protection; it does not turn unimplemented advanced techniques into automatic
+planning options. Candidate order, warnings and confirmed Start remain separate.
+
+Verification: `python tests/run_dj_workflow_checks.py` isolates the mounted
+library for 228 passing focused checks. The Playwright fixture under
+`tests/browser/dj_brain_workflow.cjs` uses synthetic songs and mocked HTTP,
+checks desktop/mobile layout, shared requests, no Apply/Start side effects,
+profile/provider persistence, refresh and errors. Use a temporary Playwright
+installation and Google Chrome; no browser dependency was added to the app.
+Extended performance verification has one environment failure: FFmpeg has no
+soxr resampler. Strict contracts pass on the three affected prompts. PDD's
+architecture inference failed to reach sandboxed localhost; source/manifest
+changes were made by hand, with no generation or semantic-certification claim.
+
+The original request is durably recorded by `pdd intent apply`; Product Intent
+and `story__shared_dj_brain_providers_and_simple_mix_build.md` describe current
+meaning. The follow-up about advanced techniques was answered with a staged
+recommendation, not treated as implementation authorization. No commit/push/merge
+or private-library mix build was performed during this refactor.
+
+The idle editor was restarted with the updated backend on 127.0.0.1:8787,
+Mixxx control port 9995. Its existing plan remained ready, with no running mix.
+Read-only live Chrome checks passed on Mix and Curate: eight shared providers,
+optimizer-only as the ninth mix choice, no old note selector and no page errors.
+Reload the already-open browser page to use the revised panel.
+
 ## Same-beat measurement tools and EQ controls (Opus 5.5, 2026-09-27)
 
 Any harness can now measure, author and verify a one-beat continuous mix from

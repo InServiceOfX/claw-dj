@@ -1,5 +1,46 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Shared DJ brain providers and mix-panel redesign (2026-10-06)
+
+- Branch `feat/shared-dj-brain-providers`, based on master `e589b06` so the
+  latest gentle-fader/source-boundary/performance safeguards remain present.
+  No commit, push or merge. Seven pre-existing untracked notes are preserved.
+- Curate and DJ-note previews now use `brain.llm_providers`. Removed the
+  NemoClaw/generic/H managed-agent helpers and obsolete sandbox tests; the
+  legacy order-engine aliases still fall back to the optimizer as before.
+- Added `hcompany-api`: ignored `.env` HAI_API_KEY; optional
+  CLAWDJ_HCOMPANY_MODEL; default `holo3-1-35b-a3b` for documented free-tier
+  access. Research: `docs/H_COMPANY_MODELS_API.md`. Key is not configured here;
+  no live H completion was tested. Local llama-server synthetic curation passed.
+- Create the mix: feel cards, one model selector, multiline brief, primary
+  Build action, readiness and musical safeguards. Note previews use that same
+  selection; experimental formats and note actions live under Advanced.
+  Provider refresh notices added/removed keys and a newly started local server;
+  preferences and selected feel survive idle polling. Missing BPM now stops
+  Build with an Analyze & enrich instruction instead of dropping tracks.
+- Check: `.venv/bin/python tests/run_dj_workflow_checks.py` — 228 tests pass
+  against temporary library data (localhost fixtures require socket access).
+  `NODE_PATH=<temporary-playwright-install>/node_modules node
+  tests/browser/dj_brain_workflow.cjs` — synthetic desktop/mobile Chrome checks
+  pass; no real plan writes or live playback. Three prompt contracts pass strict
+  checks. Extended performance tests: 23 pass, one unrelated decoder test fails
+  because installed FFmpeg lacks `soxr`; no renderer changes made.
+- PDD recorded exact intent event `shared-dj-brain-providers-and-streamlined-mix-bu-59a37e5d`;
+  its architecture inference failed on sandboxed localhost access, with no
+  provider fallback. Prompts, workflow story and manifests were updated by
+  hand and deterministically checked; no automatic regeneration/semantic
+  certification is claimed. Planner inferred `cpp` from "llama.cpp"; the
+  current Product Intent correctly specifies Python/JavaScript.
+- Advanced-technique recommendation only: promote proven same-song skip/re-entry
+  handoffs and short-intro extension first, then measured source/sample unison;
+  sustained third-deck support needs allocation/monitoring work. Not implemented
+  by this UI/provider change. Authored performance plans retain their existing
+  generic-Build protection. No new mix has been built or audibly validated.
+- Restarted only the idle editor on 127.0.0.1:8787, preserving Mixxx control
+  port 9995 and the ready existing plan. Live read-only Chrome checks see eight
+  Curate providers, nine mix options including optimizer-only, no duplicate
+  note selector and no page errors. H remains unavailable until configured.
+
 ## Gentle faders enforced in code (Opus 5.5, 2026-10-03, branch `feat/gentle-fader-enforcement`)
 
 Ernest: agents move the channel faders "TOO FAST ... STOP doing that". The rule

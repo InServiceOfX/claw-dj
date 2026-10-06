@@ -2702,8 +2702,8 @@
     ]}}
   },
   {
-    "reason": "NemoClaw was too hard to deploy and keep up and H Company's model is not the right fit; Ernest wants Claude, Codex, Grok or llama-server.",
-    "description": "Model providers for Build mix plan: Claude, Codex and Grok through their signed-in CLIs, Claude/OpenAI/xAI through API keys in the gitignored .env, and a local llama-server. One ask(provider, prompt) -> text call and a never-raising status_all() for the GUI. claw-dj never runs OAuth or stores credentials.",
+    "reason": "Curation, notes and mix planning share signed-in CLIs, repo .env API keys and local inference; H Company uses its direct Models API instead of the retired agent runtime.",
+    "description": "Shared text providers for curation, DJ-note previews and mix planning: Claude/Codex/Grok signed-in CLIs, Claude/OpenAI/xAI/H Company API keys in ignored .env, and local llama-server. API keys never reach browser responses or plan files. Refresh .env file-owned keys while preserving shell overrides. H uses HAI_API_KEY and optional CLAWDJ_HCOMPANY_MODEL (default holo3-1-35b-a3b) at https://api.hcompany.ai/v1/chat/completions. No desktop, managed agent, sandbox or OAuth flow is launched.",
     "dependencies": [],
     "priority": 44,
     "filename": "brain/llm_providers_Python.prompt",
@@ -2895,6 +2895,35 @@
               "stop(deck)",
               "recording()"
             ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Replace retired curation engines and duplicate mix model selectors with one shared provider workflow while retaining review and musical safeguards.",
+    "description": "Brownfield workflow contract across pick_candidates.py, mix_directives.py, playlist_editor.py and web/playlist.html: provider-based curation with latest-scan/library scope and bounded synthetic IDs; review-only note edits; one model selector in the mix panel; explicit provider refresh, preference retention and analysis readiness; Advanced disclosure for experimental formats. Never starts playback or replaces authored performances.",
+    "dependencies": [
+      "brain/llm_providers_Python.prompt",
+      "brain/plan_mix_build_Python.prompt"
+    ],
+    "priority": 49,
+    "filename": "brain/dj_brain_workflow_Python.prompt",
+    "filepath": "brain/pick_candidates.py",
+    "tags": [
+      "backend",
+      "frontend",
+      "curation",
+      "workflow"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "run_pick",
+            "signature": "run_pick(*, engine: str, brief: str, count: int = 20, view_path, id_map_path, pool: str = \"new\") -> list[dict]"
           }
         ]
       }

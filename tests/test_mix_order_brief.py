@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -53,37 +52,12 @@ class MixOrderBriefTest(TestCase):
                 ask=lambda _prompt: json.dumps({"opener_id": "t999"}),
             )
 
-    def test_h_planning_uses_no_desktop_environment(self) -> None:
-        from brain.pick_candidates import (
-            H_PLANNING_ENVIRONMENTS,
-            ask_h_agent,
-        )
-
-        seen: dict = {}
-
-        class FakeAgents:
-            async def create_agent(self, **kwargs):
-                seen.update(kwargs)
-                return "planning-agent"
-
-        class FakeClient:
-            def __init__(self, **_kwargs):
-                self.agents = FakeAgents()
-
-            async def run_session(self, **_kwargs):
-                return SimpleNamespace(answer="{}", error=None)
-
-        with patch("hai_agents.AsyncClient", FakeClient), patch.dict(
-            "os.environ", {"HAI_API_KEY": "test"}
-        ):
-            self.assertEqual(ask_h_agent("plan"), "{}")
-        # Platform requires ≥1 environment (or subagents). Planning must not
-        # attach a local desktop bridge — only a cloud web env is allowed.
-        self.assertEqual(seen["environments"], list(H_PLANNING_ENVIRONMENTS))
-        self.assertTrue(seen["environments"], "planning agent needs an environment")
-        for env in seen["environments"]:
-            self.assertNotEqual(env.get("kind"), "desktop")
-            self.assertNotEqual(env.get("host"), "user_device")
+    def test_h_models_api_is_a_text_provider_for_ordering(self) -> None:
+        with patch("brain.llm_providers.ask", return_value='{}') as ask:
+            ordered, notes, _ = order_from_brief(_rows(3), "smooth", engine="hcompany-api")
+        self.assertEqual(len(ordered), 3)
+        self.assertTrue(ask.called)
+        self.assertTrue(all(call.args[0] == "hcompany-api" for call in ask.call_args_list))
 
     def test_force_adjacent_and_region(self) -> None:
         order = [f"t{i:03d}" for i in range(10)]
