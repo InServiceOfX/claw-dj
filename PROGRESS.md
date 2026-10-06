@@ -1,5 +1,37 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Advanced generic builder, completed measured-set stages (2026-10-06)
+
+- Stage one 6738000 / advanced-builder-stage1-v1: same-song handoffs/re-entry and
+  approved short-intro extension. Stage two addbb34 / advanced-builder-stage2-v1:
+  measured sample/source unison and turntable-style rate/pitch restoration.
+- Stage three adds one continuous instrumental bed beneath one/consecutive full
+  mixes. Independent source/hash/current effective notes, exact measured loop,
+  whole-body phase/pitch coverage and calibrated complementary EQ are required.
+  Uses the existing native source runner's deck allocation, source preflight,
+  drift/stop monitor and cleanup. Explicit styles/formats/overrides remain on
+  the conventional route. No provider/model can invent approval or evidence.
+- This is opt-in measured-set mode via ignored plan-local advanced_mix.json:
+  every foreground needs compatible evidence for a common clock. Missing or
+  conflicting recipes retain the ordinary plan with a reason. Generic-generated
+  performances can rebuild; authored performances remain protected. UI shows
+  measured techniques or decline reasons. No private recipe/plan was created.
+- Verification: 36 advanced checks, 23 existing Python performance checks and
+  12 Rust performance checks pass. Final focused suite: 264 tests; synthetic
+  desktop/mobile browser flows pass, including technique/decline display and
+  HTML escaping. Manually edited generated timelines remain protected from
+  generic rebuild, even after recompilation. The FFmpeg missing-soxr decoder test is
+  excluded from the performance subset, not removed or weakened. No new mix
+  has been heard or real playback started. Prompt contracts pass strict checks;
+  PDD architecture inference failed on local sandbox access, so prompt/manifest
+  updates are maintained manually and no semantic certification is claimed.
+- H model catalog checked 2026-10-06: .env.example recommends funded flagship
+  holo4-27b; faster Holo4 is holo4-35b-a3b. Runtime key-only default stays free-tier
+  holo3-1-35b-a3b. .env remains ignored and unchanged.
+- Restarted only the idle editor with all stages loaded at 127.0.0.1:8787,
+  control port 9995. Existing plan remains ready/non-stale; no build, Apply or
+  playback was performed on personal data. Reload the browser to see the update.
+
 ## Advanced generic builder, stage two (2026-10-06)
 
 Stage one committed as 6738000 and tagged advanced-builder-stage1-v1 after

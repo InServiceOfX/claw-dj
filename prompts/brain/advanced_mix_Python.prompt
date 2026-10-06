@@ -2,7 +2,7 @@
 % Govern brain/advanced_mix.py and its plan_mix_build/revision integration.
 
 <pdd-interface>
-{"type":"module","module":{"functions":[{"name":"compile_generic","signature":"(plan: dict, recipe: dict) -> dict","returns":"dict"},{"name":"upgrade","signature":"(plan: dict, recipe_path: Path) -> dict","returns":"dict"}]}}
+{"type":"module","module":{"functions":[{"name":"compile_generic","signature":"(plan: dict, recipe: dict, *, support_notes: dict | None = None) -> dict","returns":"dict"},{"name":"upgrade","signature":"(plan: dict, recipe_path: Path, *, slug: str | None = None) -> dict","returns":"dict"}]}}
 </pdd-interface>
 
 % Vocabulary
@@ -17,7 +17,10 @@ shared pattern zero, confidence >=0.9 and measured pitch residual within 15 cent
 The native clock uses one explicitly chosen tempo and a 4/8/16-beat pattern.
 Recipe presence participates in plan input revisions; absence preserves legacy
 revision behavior. Generic-generated performances carry generic-measured-v1
-provenance. Human-authored performances retain the existing generic-Build guard.
+provenance and the original compiled performance fingerprint. Human-authored
+performances retain the existing generic-Build guard. A manual edit to a
+generated performance or its events also takes it out of generic ownership,
+even after recompiling it through the performance CLI.
 
 % Requirements
 Preserve the optimized track set/order, effective DJ notes, bunches, cue points,
@@ -37,6 +40,20 @@ Short intro extension requires allow_intro_extension and a confirmed first
 verse boundary. Repeat only an approved pre-verse span, two or three plays,
 and prove it covers the entire incoming gentle blend. Preserve backbeat/pattern
 phase through every repeat and handoff. Do not loop a verse to hide a short intro.
+An explicitly false permission does not authorize a move. Preserve the source
+end of a play-to-end finale after re-entry, and refuse measured timing that
+moves an otherwise verse-safe exit before a confirmed final verse boundary.
+
+The optional support request names one independent verified instrumental source
+and one or consecutive approved full-mix foregrounds. Full-mix identity is kept;
+dry-vocal and instrumental foregrounds are refused. Obtain current effective bed
+notes in the named plan, verify its hash, loop length, pattern phase, pitch and
+alignment for the entire chosen body. One bed covers the complete span with
+gentle entry/exit fades. Keep foreground mid/high EQ at 0.75–1 and low EQ at
+0–0.5; keep bed low EQ at 0.5–1 and mid/high at 0–0.5, with gain -9 to -3 dB.
+One is raw EQ unity. Use the established native runner, which refuses occupied
+decks, preflights original sources, monitors drift/stops and restores all owned
+controls/decks on completion, failure or interruption. Do not add prepared audio.
 
 <contract_rules>
 R1 (MUST): Compile an advanced plan only with approved measured evidence and matching original source hashes for every foreground recording.
@@ -49,6 +66,8 @@ R7 (MUST NOT): Replace an authored performance with generic Build; allow rebuild
 R8 (MUST): Validate the compiled timeline for source regions, phase and available decks before publishing it.
 R9 (MUST): Use sample unison only for an adjacent approved source/sampling pair with measured pitch, backbeat and alignment evidence covering the whole overlap, entering on the measured sampled bar.
 R10 (MUST NOT): Infer sample-unison permission from lineage or a model suggestion, guess pitch shifts, or repeat a vocal entry region as an instrumental sampled bar.
+R11 (MUST): Cover the entire approved consecutive full-mix body with one verified instrumental bed, calibrated complementary EQ, measured phase/pitch, independent deck ownership and current source limits.
+R12 (MUST NOT): Reclassify a full mix as vocals-only, truncate requested bed coverage, add a second simultaneous bed, overwrite a playing deck or leave an owned support deck playing after failure or interruption.
 </contract_rules>
 
 % Verification

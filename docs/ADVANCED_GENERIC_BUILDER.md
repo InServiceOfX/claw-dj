@@ -11,6 +11,8 @@ No recipe is invented by an LLM, no original is rewritten and no rendered file
 is needed. Invalid, stale or incompatible evidence declines the upgrade and
 adds an explanation to the plan's order notes. An authored performance remains
 protected from generic Build; a generic-generated performance can be rebuilt.
+Manually editing its performance graph or events takes it out of generic
+ownership; recompiling that edited timeline does not remove this protection.
 The recipe is an input revision, so editing it makes the old artifact stale.
 
 Stage one supports same-song forward skips and backward re-entry on separate
@@ -53,6 +55,60 @@ The pair's cue/exit timing must already match these bar starts; a model cannot
 move a trusted cue to manufacture the connection. Structural sample moves
 combined with another handoff/intro extension on the same pair require an
 authored performance instead. Source guards apply to every sampled-bar repeat.
+
+Stage three adds one continuous instrumental bed under one or consecutive
+approved full mixes. It starts with the first foreground's entry, lasts through
+the last foreground's exit, and has gentle entry/exit faders. Foreground vocals
+stay in their original recordings. Low EQ is reduced on the foreground; the
+bed carries bass with reduced mid/high EQ. Raw unity is 1.0. It is neither a
+dry-acapella branch nor a short transition-only overlap.
+
+Every supported foreground needs `allow_instrumental_support` in its effective
+notes. A conflicting `no_instrumental_support` wins. Add a single request to
+the recipe's top-level `support` list:
+
+```json
+"support": [{
+  "approved": true,
+  "foreground_track_ids": ["/absolute/path/to/the-full-mix.wav"],
+  "track_id": "/absolute/path/to/instrumental.wav",
+  "instrumental_verified": true,
+  "backbeat_verified": true,
+  "alignment_error_ms": 0,
+  "residual_pitch_cents": 0,
+  "verified_seconds": 120,
+  "source_start_seconds": 0,
+  "source_end_seconds": 8,
+  "loop_beats": 16,
+  "gain_db": -6,
+  "bed_eq": [1, 0.25, 0.25],
+  "foreground_eq": [0.35, 1, 1],
+  "source": {
+    "measured": true, "bpm": 120, "zero": 0,
+    "confidence": 0.98, "pitch_residual_cents": 0,
+    "duration_seconds": 300, "sha256": "REPLACE_WITH_SOURCE_SHA256"
+  }
+}]
+```
+
+Numbers are examples, not measurements. `verified_seconds` must cover the
+whole resulting body, including repeated intro/sample bars. The loop must
+match the common tempo and pattern phase exactly. Current global plus plan
+notes for the instrumental are loaded at build; mandatory min/end/skips bound
+its loop too. The instrumental is an independent support source, not another
+finalized foreground or a duplicate playlist identity. Multiple supported
+foregrounds must be consecutive so one bed covers them continuously; a second
+bed, disconnected targets, acapella/full-mix misclassification, inadequate
+coverage or missing alignment declines the upgrade.
+
+Use the same **Build mix plan** button (or plan-aware CLI build) after placing
+the reviewed recipe in `brain/data/plans/<slug>/advanced_mix.json`. That local
+file is intentionally ignored with the rest of personal plan state. The result
+shows measured techniques or its decline reason in the browser. There is no
+new provider selector or playback side effect. Generic sets without a reviewed
+recipe do not automatically gain these moves. Explicit DJ formats, authored
+pair overrides and explicit entry/exit/tempo/pitch notes keep conventional
+execution rather than silently losing their controls.
 
 Keep the recipe, measurements and songs outside Git. Here is its schema, with
 placeholder paths/hashes (replace them with actual recording evidence):

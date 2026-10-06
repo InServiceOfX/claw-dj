@@ -97,9 +97,13 @@ windows, reference tempo/phase and output location. It measures bass and backbea
 onsets and fits the shared multi-beat pattern. Analysis is optional preparation
 of musical metadata, not generation of music files required to perform.
 
-Generic GUI Build refuses to overwrite an explicit performance. Edit and compile
-that timeline instead. Automatic translation of arbitrary generic plans into
-this richer schema is not implemented yet.
+Generic GUI Build refuses to overwrite an authored performance. Edit and compile
+that timeline instead. A generic-generated performance may be rebuilt. The
+optional measured-set translator now compiles approved handoffs, short-intro
+extension, sample unison and one continuous instrumental bed using this native
+schema; missing/conflicting evidence retains the ordinary plan. It needs a
+reviewed local recipe and evidence for every foreground, not arbitrary automatic
+translation. See [the generic builder contract](ADVANCED_GENERIC_BUILDER.md).
 
 Primary control references: [Mixxx controls](https://manual.mixxx.org/2.4/en_gb/chapters/appendix/mixxx_controls),
 [EQ and gain](https://manual.mixxx.org/2.4/en_gb/chapters/user_interface).

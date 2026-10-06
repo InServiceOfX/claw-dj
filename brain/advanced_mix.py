@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import re
+import sqlite3
 from pathlib import Path
 
 from brain.build_mix_plan import track_directives
@@ -18,6 +19,18 @@ from shared.gentle_faders import GENTLE_BLEND_BEATS
 from shared.performance import compile_events, duration, fingerprint, validate
 
 ORIGIN = "generic-measured-v1"
+
+
+def is_generated(plan):
+    """Only an untouched compiled output remains owned by generic Build."""
+    if plan.get("performance_origin") != ORIGIN:
+        return False
+    try:
+        performance = plan["performance"]
+        return (plan["advanced_mix"]["performance_sha256"] == fingerprint(performance)
+                and plan["events"] == compile_events(performance))
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _number(value, label, low=-math.inf, high=math.inf):
@@ -33,6 +46,11 @@ def _note_number(notes, name):
 
 def _has(notes, token):
     return bool(re.search(r"\b" + re.escape(token) + r"\b", notes, re.I))
+
+
+def _permission(notes, token):
+    values = re.findall(r"\b" + re.escape(token) + r"\b(?:\s*=\s*(true|false|yes|no|1|0))?", notes, re.I)
+    return bool(values) and values[-1].lower() not in ("false", "no", "0")
 
 
 def _limits(notes):
@@ -70,7 +88,7 @@ def _measure(tid, evidence, *, max_rate, tempo):
 
 
 def _intro_segments(clip, loop, notes, grid, name):
-    if not _has(notes, "allow_intro_extension"):
+    if not _permission(notes, "allow_intro_extension"):
         raise ValueError("intro extension needs an explicit DJ-note approval")
     verse = _note_number(notes, "observed_first_verse_start_seconds")
     start = _number(loop.get("start_seconds"), "intro loop start", 0)
@@ -102,14 +120,16 @@ def _handoff(clip, move, notes, grid, name):
     b = _number(move.get("to_seconds"), "handoff destination", 0)
     directive = track_directives({"dj_notes": notes})
     if b > a:
-        if not directive["skip_handoff"] or directive["skip_from_seconds"] != a or directive["skip_to_seconds"] != b:
+        if not _permission(notes, "skip_handoff") or directive["skip_from_seconds"] != a or directive["skip_to_seconds"] != b:
             raise ValueError("forward handoff must match the effective skip_handoff DJ notes")
     elif b < a:
-        if not _has(notes, "allow_reentry"):
+        if not _permission(notes, "allow_reentry"):
             raise ValueError("backward handoff needs an explicit re-entry DJ-note approval")
     else:
         raise ValueError("handoff cannot return to its current source point")
     beats = _number(move.get("blend_beats", 4), "same-song handoff beats", 4, 4)
+    if directive.get("skip_handoff_beats") is not None and directive["skip_handoff_beats"] != beats:
+        raise ValueError("handoff blend conflicts with the effective DJ-note length")
     rate = grid.rate(name)
     fade = beats * grid.beat
     cue = clip["segments"][0]["source_start"]
@@ -122,8 +142,9 @@ def _handoff(clip, move, notes, grid, name):
     left["length"] = after + fade
     left["fade_out"] = fade
     left["segments"][0]["source_end"] = a
+    right_end = clip["segments"][0]["source_end"] if clip.get("play_to_end") else b + (clip["length"] - after) * rate
     right = grid.clip(clip["id"] + "-after-handoff", name, b,
-                      b + (clip["length"] - after) * rate, clip["start"] + after,
+                      right_end, clip["start"] + after,
                       fade_in=fade, fade_out=clip["fade_out"],
                       artist=clip["artist"], title=clip["title"])
     left["advanced_technique"] = right["advanced_technique"] = "same_song_handoff"
@@ -141,7 +162,7 @@ def _sample_pairs(tracks, sources):
         if not isinstance(evidence, dict):
             raise ValueError("source evidence must be an object")
         move = evidence.get("sample_unison")
-        if not move:
+        if move is None:
             continue
         if not isinstance(move, dict) or move.get("approved") is not True or move.get("backbeat_verified") is not True:
             raise ValueError("sample unison needs approved measured backbeat evidence")
@@ -150,7 +171,7 @@ def _sample_pairs(tracks, sources):
             raise ValueError("sample source and sampling record must be adjacent in the optimized order")
         if tid in occupied or other in occupied:
             raise ValueError("sample-unison pairs cannot share an overlapping role")
-        if not _has(sampler.get("dj_notes", ""), "allow_sample_unison") or _has(sampler.get("dj_notes", ""), "no_flourish"):
+        if not _permission(sampler.get("dj_notes", ""), "allow_sample_unison") or _has(sampler.get("dj_notes", ""), "no_flourish"):
             raise ValueError("sample unison needs unconflicted DJ-note approval on the sampling record")
         _number(move.get("alignment_error_ms"), "sample alignment error", -20, 20)
         _number(move.get("residual_pitch_cents"), "sample/source pitch residual", -15, 15)
@@ -216,22 +237,98 @@ def _sample_blends(foregrounds, tracks, pairs, grid):
         # source rate, undoing turntable-style sample slowdown without guessed tuning.
 
 
-def compile_generic(plan, recipe):
+def _support_layer(recipe, foregrounds, tracks, grid, limits, support_notes):
+    requests = recipe.get("support", [])
+    if not isinstance(requests, list) or len(requests) > 1:
+        raise ValueError("use at most one continuous supporting layer")
+    if not requests:
+        return [], None, {}
+    request = requests[0]
+    if not isinstance(request, dict) or request.get("approved") is not True:
+        raise ValueError("instrumental support needs an approved measured recipe")
+    ids = request.get("foreground_track_ids") or [request.get("foreground_track_id")]
+    ordered = [t["track_id"] for t in tracks]
+    if not isinstance(ids, list) or not ids or len(set(ids)) != len(ids) or any(tid not in ordered for tid in ids):
+        raise ValueError("support must identify included foreground recordings")
+    positions = sorted(ordered.index(tid) for tid in ids)
+    if positions != list(range(positions[0], positions[-1] + 1)):
+        raise ValueError("continuous support needs consecutive foregrounds")
+    from brain.stems import classify_stem
+    for position in positions:
+        track = tracks[position]
+        note = track.get("dj_notes") or ""
+        if classify_stem(track.get("title", ""), track["track_id"]) != "full_mix":
+            raise ValueError("full-mix support cannot reclassify an acapella or instrumental foreground")
+        if not _permission(note, "allow_instrumental_support") or _has(note, "no_instrumental_support"):
+            raise ValueError("full-mix support needs unconflicted effective DJ-note approval")
+    tid = request.get("track_id")
+    if not isinstance(tid, str) or not tid or tid in ordered:
+        raise ValueError("support is an independent instrumental source, not a duplicate foreground identity")
+    if request.get("instrumental_verified") is not True or request.get("backbeat_verified") is not True:
+        raise ValueError("support needs a verified instrumental and measured backbeat relationship")
+    _number(request.get("alignment_error_ms"), "support alignment error", -20, 20)
+    _number(request.get("residual_pitch_cents"), "support pitch residual", -15, 15)
+    if support_notes is None or tid not in support_notes:
+        raise ValueError("current effective support-source DJ notes are required")
+    limits[tid] = _limits(support_notes[tid])
+    evidence = request.get("source")
+    grid.m[tid] = _measure(tid, evidence, max_rate=.08, tempo=grid.tempo)
+    limits[tid]["max"] = min(limits[tid].get("max", math.inf), _number(evidence.get("duration_seconds"), "support source duration", .001))
+    start = foregrounds[positions[0]][0]["start"]
+    end = Grid.end(foregrounds[positions[-1]][-1])
+    _number(request.get("verified_seconds"), "verified support duration", end - start)
+    fade = 1.5 * GENTLE_BLEND_BEATS * grid.beat
+    if end - start < 2 * fade:
+        raise ValueError("support body is too short for both gentle fades")
+    beats = request.get("loop_beats")
+    if isinstance(beats, bool) or beats not in (8, 16, 32, 64):
+        raise ValueError("support needs an 8/16/32/64-beat measured instrumental loop")
+    s0 = _number(request.get("source_start_seconds"), "support loop start", 0)
+    s1 = _number(request.get("source_end_seconds"), "support loop end", s0 + .001)
+    loop = {"track_id": tid, "source_start": s0, "source_end": s1,
+            "rate": grid.rate(tid), "beats": beats,
+            "gain_db": _number(request.get("gain_db", -6), "support gain", -9, -3)}
+    eq = request.get("bed_eq", [1, .25, .25])
+    foreground_eq = request.get("foreground_eq", [.35, 1, 1])
+    if not isinstance(eq, list) or not isinstance(foreground_eq, list) or len(eq) != 3 or len(foreground_eq) != 3:
+        raise ValueError("support needs calibrated low/mid/high EQ triples")
+    _number(eq[0], "support low EQ", .5, 1)
+    for gain in eq[1:]: _number(gain, "support mid/high EQ", 0, .5)
+    _number(foreground_eq[0], "foreground low EQ", 0, .5)
+    for gain in foreground_eq[1:]: _number(gain, "foreground vocal EQ", .75, 1)
+    for position in positions:
+        for clip in foregrounds[position]:
+            clip["live_eq"] = list(foreground_eq)
+            clip["instrumental_support"] = tid
+    bed = grid.bed("support-bed", tid, loop, start, end,
+                   fade_in=fade, fade_out=fade, support={"transition_seconds": .001,
+                   "low_gain": eq[0], "mid_gain": eq[1], "high_gain": eq[2]},
+                   artist=request.get("artist", "Instrumental"), title=request.get("title", "Continuous support"))
+    bed["advanced_technique"] = "continuous_instrumental_support"
+    bed["foreground_track_ids"] = ids
+    return [bed], loop, {tid: evidence["sha256"]}
+
+
+def compile_generic(plan, recipe, *, support_notes=None):
     """Return a native performance only when every foreground has valid evidence."""
     if not isinstance(recipe, dict) or type(recipe.get("version")) is not int or recipe.get("version") != 1 or recipe.get("approved") is not True:
         raise ValueError("advanced recipe must be version 1 and explicitly approved")
-    if recipe.get("support"):
-        raise ValueError("instrumental support is not enabled by this compiler stage")
     sources = recipe.get("sources")
     if not isinstance(sources, dict):
         raise ValueError("advanced recipe needs a sources mapping")
     if any(not isinstance(v, dict) for v in sources.values()):
         raise ValueError("source evidence must be an object")
+    for evidence in sources.values():
+        for name in ("intro_loop", "handoff", "sample_unison"):
+            if evidence.get(name) is not None and (not isinstance(evidence[name], dict) or not evidence[name]):
+                raise ValueError(f"{name} must contain an approved structural recipe")
     tempo = _number(recipe.get("tempo_bpm"), "mix tempo", 20, 400)
     pattern = recipe.get("pattern_beats", 4)
     if pattern not in (4, 8, 16):
         raise ValueError("pattern_beats must be 4, 8 or 16")
     tracks = plan["tracks"]
+    if (plan.get("dj_format") or {}).get("name", "none") != "none":
+        raise ValueError("explicit DJ formats retain their conventional recipes")
     if set(sources) != {t["track_id"] for t in tracks}:
         raise ValueError("measurement sources must cover exactly the finalized foreground set")
     pairs, sample_ids = _sample_pairs(tracks, sources)
@@ -242,6 +339,8 @@ def compile_generic(plan, recipe):
         raise ValueError("layered or incomplete conventional schedules cannot be translated")
     forbidden = {"hard_cut", "brake_out", "spinback_out", "key_blend", "snare_align"}
     for event in transitions:
+        if event.get("author"):
+            raise ValueError("authored pair overrides retain their conventional execution")
         if event.get("keep_outgoing_live") or forbidden.intersection(event.get("moves", [])) or not "crossfade" in event.get("moves", []):
             raise ValueError("advanced clock cannot replace this explicit transition recipe")
         if event.get("incoming_bpm_target") or event.get("incoming_settle_bpm") or event.get("incoming_pitch_semitones"):
@@ -252,8 +351,10 @@ def compile_generic(plan, recipe):
         tid = track["track_id"]
         note = track.get("dj_notes") or ""
         d = track_directives(track)
-        if d["exit_bpm"] or d["play_bpm"] or d["pitch_adjust_semitones"] or d["opener_style"]:
-            raise ValueError("explicit opener, tempo or pitch notes must retain their conventional execution")
+        if any(d[key] for key in ("exit_bpm", "play_bpm", "pitch_adjust_semitones", "opener_style",
+                                 "entry_style", "exit_style", "format_recipe", "landing_seconds",
+                                 "pickup_beats", "settle_bpm", "keep_blend_tempo")):
+            raise ValueError("explicit style, format, tempo or pitch notes must retain their conventional execution")
         measure[tid] = _measure(tid, sources[tid], max_rate=.16 if tid in sample_ids else .08, tempo=tempo)
         limits[tid] = _limits(note)
     first = tracks[0]
@@ -293,11 +394,19 @@ def compile_generic(plan, recipe):
         clip = grid.clip(f"foreground-{index}", tid, cue, cue + length * grid.rate(tid), start,
                          fade_in=incoming_beats * grid.beat, fade_out=outgoing_beats * grid.beat,
                          artist=track.get("artist", ""), title=track.get("title", ""))
+        if index == len(tracks) - 1 and finale.get("play_to_end"):
+            clip["play_to_end"] = True
         if evidence.get("intro_loop") and evidence.get("handoff"):
             raise ValueError("intro extension and handoff need separate approved performances")
         if evidence.get("intro_loop"):
             _intro_segments(clip, evidence["intro_loop"], note, grid, tid)
         parts = _handoff(clip, evidence["handoff"], note, grid, tid) if evidence.get("handoff") else [clip]
+        verse_end = _note_number(note, "observed_final_verse_end_seconds")
+        if verse_end is not None and index < len(tracks) - 1:
+            original_exit = cue + (incoming_beats + bodies[tid]["beats"] + 1) * 60 / _number(track.get("bpm"), "original source BPM", 20, 400)
+            native_exit = parts[-1]["segments"][-1]["source_end"] - parts[-1]["fade_out"] * parts[-1]["rate"]
+            if original_exit >= verse_end and native_exit < verse_end - 1e-6:
+                raise ValueError("measured timing would begin the exit before the confirmed final verse ends")
         for part in parts:
             part["source_duration_seconds"] = _number(evidence.get("duration_seconds"), "measured source duration", .001)
             limits[tid]["max"] = min(limits[tid].get("max", math.inf), part["source_duration_seconds"])
@@ -305,14 +414,17 @@ def compile_generic(plan, recipe):
         foregrounds.append(parts)
         previous = parts[-1]
     _sample_blends(foregrounds, tracks, pairs, grid)
-    performance = grid.performance(clips, source_limits=limits)
-    performance["source_sha256"] = {tid: evidence["sha256"] for tid, evidence in sources.items()}
+    beds, loop, bed_hashes = _support_layer(recipe, foregrounds, tracks, grid, limits, support_notes)
+    clips.extend(beds)
+    performance = grid.performance(clips, loop=loop, source_limits=limits)
+    performance["source_sha256"] = {**{tid: evidence["sha256"] for tid, evidence in sources.items()}, **bed_hashes}
     validate(performance)
     result = copy.deepcopy(plan)
     result.update(performance=performance, performance_sha256=fingerprint(performance),
                   execution_mode="live_source_tracks", performance_origin=ORIGIN,
                   duration_seconds=duration(performance), events=compile_events(performance))
-    result["advanced_mix"] = {"recipe_sha256": fingerprint(recipe), "stage": 2,
+    result["advanced_mix"] = {"recipe_sha256": fingerprint(recipe), "stage": 3,
+                              "performance_sha256": fingerprint(performance),
                               "techniques": sorted({c.get("advanced_technique", "measured_gentle_blend") for c in clips})}
     for index, segment in enumerate(result.get("segments", [])):
         segment.update(start_seconds=foregrounds[index + 1][0]["start"],
@@ -323,15 +435,23 @@ def compile_generic(plan, recipe):
     return result
 
 
-def upgrade(plan, recipe_path):
+def upgrade(plan, recipe_path, *, slug=None):
     """Optional upgrade; invalid evidence returns the original plan plus a reason."""
     path = Path(recipe_path)
     if not path.exists():
         return plan
     try:
         recipe = json.loads(path.read_text())
-        return compile_generic(plan, recipe)
-    except (ValueError, TypeError, KeyError, OSError, StopIteration) as error:
+        support_notes = None
+        if isinstance(recipe, dict) and recipe.get("support"):
+            from brain.plan_notes import get_effective
+            requests = recipe["support"]
+            if not isinstance(requests, list) or any(not isinstance(r, dict) for r in requests):
+                raise ValueError("support must be a list of measured requests")
+            ids = [r["track_id"] for r in requests if isinstance(r.get("track_id"), str)]
+            support_notes = {item.track_id: item.note for item in get_effective(slug, ids)}
+        return compile_generic(plan, recipe, support_notes=support_notes)
+    except (ValueError, TypeError, KeyError, OSError, StopIteration, sqlite3.Error) as error:
         result = copy.deepcopy(plan)
         result["advanced_mix"] = {"status": "fallback", "reason": str(error)}
         result.setdefault("profile", {}).setdefault("order_notes", []).append("Advanced techniques declined: " + str(error))

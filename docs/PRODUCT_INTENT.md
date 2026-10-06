@@ -1,5 +1,21 @@
 # Product Intent (PRD)
 
+## Advanced generic mix builder — accepted 2026-10-06
+
+Ernest authorized implementation of the staged advanced techniques previously
+recommended: same-song skips/re-entry and short-intro extension, measured
+sample/source unison, then continuous instrumental support with independent
+decks and monitoring. The generic builder may choose these through an approved
+local measurement recipe, preserving finalized foreground order/identity,
+effective notes, source exclusions, verse/phrase timing and gentle faders.
+Invalid or missing evidence retains the ordinary plan with an explanation.
+Support remains one layer at a time; a foreground stays a full mix. Original
+source playback, deck allocation, drift monitoring and cleanup use the existing
+native performance executor. Build never starts audio and authored plans remain
+protected. The recipe is part of plan revisions. Synthetic tests do not replace
+audible approval of a new musical arrangement. Exact request history:
+docs/intents/intent__evidence-gated-advanced-techniques-in-the-generi-7ab3a6e9.md.
+
 This current product-intent record is maintained by `pdd intent apply`.
 Each accepted change links to an immutable intent event.
 

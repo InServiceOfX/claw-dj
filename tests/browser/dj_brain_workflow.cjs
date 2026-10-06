@@ -67,6 +67,14 @@ const mix = () => ({profile:'dj-showcase',playlist_ready:true,plan_ready:true,pl
     assert.equal(await page.locator('#order-engine').inputValue(),'hcompany-api');
     await page.evaluate(() => pollMix());
     assert.equal(await page.locator('[data-profile="club-set"]').getAttribute('aria-pressed'),'true');
+    summary.advanced_mix={techniques:['same_song_handoff','continuous_instrumental_support']};
+    await page.evaluate(() => pollMix());
+    assert((await page.locator('#mix-stats').textContent()).includes('Measured moves: same song handoff, continuous instrumental support'));
+    summary.advanced_mix={status:'fallback',reason:'<img src=x onerror=alert(1)> Missing measured phase'};
+    await page.evaluate(() => pollMix());
+    assert((await page.locator('#mix-stats').textContent()).includes('Advanced moves declined:'));
+    assert.equal(await page.locator('#mix-stats img').count(),0);
+    delete summary.advanced_mix;
     await page.locator('#build-mix').click();
     assert.deepEqual(posts.find(p => p.path === '/api/mix/build').body,{profile:'club-set',dj_format:'none',mix_brief:'Smooth blends; let the verses breathe.',order_engine:'hcompany-api'});
     await page.evaluate(() => { clearInterval(mixState.pollTimer); mixState.pollTimer=null; });
@@ -102,6 +110,6 @@ const mix = () => ({profile:'dj-showcase',playlist_ready:true,plan_ready:true,pl
     assert.equal(await page.locator('#interpret-directives').isDisabled(),true);
     assert(refreshes >= 3);
     assert.deepEqual(errors,[]);
-    console.log('PASS: shared provider requests, previews, refresh, preference retention, failures, optimizer-only, analysis gate, desktop/mobile layout');
+    console.log('PASS: shared provider requests, previews, refresh, preference retention, failures, optimizer-only, analysis gate, advanced status/escaping, desktop/mobile layout');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode=1; });

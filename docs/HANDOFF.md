@@ -1,5 +1,42 @@
 # Handoff / continuation notes
 
+## Advanced generic builder, completed measured-set stages (2026-10-06)
+
+Stage one: 6738000 / advanced-builder-stage1-v1. Stage two: addbb34 /
+advanced-builder-stage2-v1. Stage three adds one continuous instrumental support
+bed beneath one/consecutive full mixes using the existing native source engine.
+See ADVANCED_GENERIC_BUILDER.md for the reviewed local recipe schema. All
+foregrounds need measured data for one common clock; this is not arbitrary
+automatic generation of new measurement evidence. No real recipe/plan was
+created or played during this task. The same GUI/plan-aware CLI Build upgrades
+when evidence is present, otherwise retains conventional events with a reason.
+
+Generic-generated provenance permits rebuilding its own performance, while
+authored timelines remain protected. Recipe revisions enter staleness. Native
+performance retains finalized foreground identities/order; a supporting source
+is a separate clip, never an extra selected song or an acapella reclassification.
+Bed source hashes/current effective notes, whole-body coverage, loop phase,
+pitch/alignment and complementary EQ are enforced. One bed at a time. Native
+deck allocator, source guards, drift/stop monitor and normal/failure/interruption
+cleanup are reused. Native eased different-song fades take 24+ counts to meet
+the sixteen-count linear peak-speed rule. Explicit styles/formats/tempo/pitch
+holds/pair overrides retain conventional execution. Confirmed final verse exits
+cannot move earlier and play-to-end re-entry preserves the original endpoint.
+
+Verification: 36 advanced tests, 23 existing Python performance tests and 12
+Rust performance tests pass. Known FFmpeg lacking soxr still prevents the one
+real-decoder test; it is excluded from that subset only. Final focused suite:
+264 tests; synthetic desktop/mobile browser flows and strict prompt checks pass.
+Manual edits remove generic ownership even after performance recompilation.
+PDD intent is durable;
+its architecture inference could not reach sandbox localhost. No automatic
+regeneration or semantic certification is claimed. Musical quality of these
+new generated arrangements still requires a short live audition.
+
+The idle editor was restarted with these stages loaded on port 8787, retaining
+Mixxx control port 9995. The existing personal plan remains ready/non-stale;
+no Build/Apply/Start was run on it. Reload the browser for the updated UI.
+
 ## Advanced generic builder, stage two (2026-10-06)
 
 Stage one commit 6738000 / tag advanced-builder-stage1-v1: 243 focused tests

@@ -4,7 +4,12 @@ Research and local audit: 2026-09-20. Accepted example: **50 Cent — WHO SHOT
 YA, 24 Shots**, featuring the performances Ernest identifies as 50 Cent and
 Tony Yayo, over **The_Notorious_BIG — Who_Shot_Ya (Instrumental), Promo VLS**.
 This document specifies the reusable live feature and audits the existing
-Astra render. It does not claim the general live feature is implemented.
+Astra render. Current 2026-10-06 status: the generic builder now supports one
+continuous measured instrumental layer through an approved local recipe and
+the existing native performance executor. Whole-body coverage, source limits,
+phase/pitch, complementary EQ, deck allocation and cleanup are required. See
+[advanced generic Build](ADVANCED_GENERIC_BUILDER.md) for scope and verification;
+the historical gaps below describe the earlier conventional runner.
 
 ## Musical approach
 

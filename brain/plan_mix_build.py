@@ -33,8 +33,9 @@ def mix_plan_path(slug: str):
 
 def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **opts) -> dict:
     paths = plan_paths.resolve(slug)
+    from brain.advanced_mix import is_generated, upgrade
     existing = json.loads(paths.mix_plan.read_text()) if paths.mix_plan.exists() else {}
-    if existing.get("performance") and existing.get("performance_origin") != "generic-measured-v1":
+    if existing.get("performance") and not is_generated(existing):
         raise ValueError(
             "This plan has an explicit musical performance. Generic Build cannot replace it. "
             "Edit its performance and compile with: python -m brain.performance_cli --plan " + slug
@@ -108,8 +109,7 @@ def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **
                 # event field aligned and refuse silent drift.
                 event["transition_beats"] = override.beats
             event["author"] = override.author.value if override.author else None
-        from brain.advanced_mix import upgrade
-        plan = upgrade(plan, paths.root / "advanced_mix.json")
+        plan = upgrade(plan, paths.root / "advanced_mix.json", slug=slug)
         inputs_after = plan_rev(paths)
         if inputs_after.token != inputs_before.token:
             changed = [name for name, rev in inputs_before.files.items() if inputs_after.files.get(name) != rev]

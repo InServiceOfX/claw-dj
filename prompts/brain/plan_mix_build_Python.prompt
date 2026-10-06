@@ -118,7 +118,17 @@ As a DJ, when I finalize a playlist I am declaring which songs are available, no
 
 Preserve the independent story at `user_stories/story__when_i_highlight_vocals_in_a_full_mix_i_keep_an_instrumental_underneath.md`. A featured record may already contain vocals, drums, and bass. When continuous support is requested, pair it explicitly with a compatible instrumental across the entire approved body without reclassifying it as vocals-only. A matching instrumental is preferred for repairing the backing of the exact 50 Cent WHO SHOT YA / 24 Shots recording. Preserve existing acapella pairing, dry-vocal safety, and short exposed-bridge behavior; their different-bed preference and short-bridge duration limit do not govern this full-mix support layer. Record both source identities/spans, repeating-pattern anchors, loop bounds, complementary level/EQ treatment, deck ownership, and exit behavior. On the full-song deck, emphasize the vocals and high frequencies by keeping them forward and turning that deck's bass down. The support deck plays the beat, or another chosen beat, and strengthens the bass and the bass notes, with its mid and treble held back. Do this with live Mixxx faders and low/mid/high EQ. Emphasizing treble does not require pushing the high knob past center and does not mean the vocal was extracted. Mandatory exclusions and source ends apply to every layer. Preview must distinguish simultaneous support from sequential playback. Do not duplicate catalog identities merely to represent multiple support occurrences.
 
-Implementation status: an authored live performance already does this on Mixxx with the channel fader and low/mid/high EQ. The Astra offline render remains a measured example. The generic planner still must not emit the layer by itself, and the conventional runner still needs explicit layer scheduling before a generated plan can claim this mode. Never silently serialize a requested body layer, treat a transition-only overlap as full-body coverage, route it through the acapella branch without its additional controls, or mark unknown note tokens as execution support. Three simultaneous sources require three owned decks or an explicitly identified offline render. Raw EQ values must be calibrated against the loaded effect, and all owned decks/controls need normal and abnormal-exit cleanup. See `docs/FULL_MIX_INSTRUMENTAL_LAYERING.md` for primary sources, current gaps, and the observed raw-EQ unity mismatch.
+Implementation status: authored live performances already use this mode. The
+generic builder now optionally translates an approved measured-set recipe
+through brain.advanced_mix and the native performance runner. It may emit one
+continuous instrumental bed only with whole-body verified coverage, current
+effective source notes, calibrated EQ, independent deck allocation and measured
+phase/pitch. Missing evidence keeps the ordinary plan with a reason. Never
+silently serialize a body layer, treat a transition-only overlap as full-body
+coverage, route it through the acapella branch, or label an unrecognized token
+as execution support. Three concurrent sources need three owned decks. All
+owned controls/decks must be cleaned up on normal or abnormal exit. Raw EQ
+unity is 1.0. See docs/ADVANCED_GENERIC_BUILDER.md for current execution scope.
 
 Future implementation verification must include negative cases for full-mix misclassification, missing/truncated bed coverage, one-beat-wrong alignment, drift/loop wrap, loading over an occupied bed, impossible two-deck three-source overlap, source audio at/after the mandatory boundary, wrong raw EQ unity, and an orphaned support deck after stop/failure. Also preserve the current acapella and bridge regressions. Do not claim these future checks pass merely because the current offline example passes its source/PCM audit.
 
@@ -133,7 +143,8 @@ the caller to `python -m brain.performance_cli --plan <slug>`. MUST NOT silently
 replace an authored source timeline with sequential events or finished-master
 playback. This guard must happen before composer invocation or temporary files.
 An exception allows rebuilding a generic-measured-v1 generated performance;
-this provenance is distinct from an authored performance. After ordinary order,
+only an unchanged performance and matching compiled events retain that ownership.
+Manual graph edits must remain protected even after recompilation. After ordinary order,
 notes, stem checks and overrides, optionally compile a local approved
 advanced_mix.json through brain.advanced_mix. Its revision is a build input.
 An invalid recipe retains the conventional events and reports why it declined.

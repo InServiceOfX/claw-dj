@@ -2928,8 +2928,8 @@
         ]
       }
     }
-  }
-  ,{
+  },
+  {
     "reason": "Promote approved measured techniques into generic Build while retaining native source guards and ordinary-plan fallback.",
     "description": "Evidence-gated generic-to-native timeline compiler: same-song handoffs, short-intro extension, measured sample unison and one instrumental support layer, with source hashes, phase, pitch, gentle-fader and deck validation.",
     "dependencies": ["brain/plan_mix_build_Python.prompt"],
@@ -2939,8 +2939,8 @@
     "tags": ["backend", "mix", "performance"],
     "context_urls": [],
     "interface": {"type": "module", "module": {"functions": [
-      {"name": "compile_generic", "signature": "(plan: dict, recipe: dict) -> dict"},
-      {"name": "upgrade", "signature": "(plan: dict, recipe_path: Path) -> dict"}
+      {"name": "compile_generic", "signature": "(plan: dict, recipe: dict, *, support_notes: dict | None = None) -> dict"},
+      {"name": "upgrade", "signature": "(plan: dict, recipe_path: Path, *, slug: str | None = None) -> dict"}
     ]}}
   }
 ]
