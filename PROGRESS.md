@@ -1,5 +1,22 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Advanced generic builder, stage one (2026-10-06)
+
+Shared-provider commit 87aea34 and tag shared-dj-brain-providers-v1 are pushed
+to origin. Master remains e589b06, published with annotated checkpoint tag
+master-before-advanced-builder-2026-10-06; no merge. H's current flagship
+holo4-27b is documented in .env.example; key-only defaults remain free-tier.
+
+Generic Build now optionally reads a local approved advanced_mix.json after
+normal notes/order/overrides. Every foreground must have hashed measured data
+for one common clock. Stage one compiles same-song skips/re-entries and short
+intro extensions through the established native source runner; invalid evidence
+retains the ordinary events with a reason. Authored plans remain protected;
+generic-generated ones can rebuild. Recipe edits participate in staleness.
+See docs/ADVANCED_GENERIC_BUILDER.md and tests/test_advanced_mix.py. No private
+plan or live playback was changed. PDD intake recorded the request, but its local
+architecture inference failed; targeted source contracts are maintained manually.
+
 ## Shared DJ brain providers and mix-panel redesign (2026-10-06)
 
 - Branch `feat/shared-dj-brain-providers`, based on master `e589b06` so the

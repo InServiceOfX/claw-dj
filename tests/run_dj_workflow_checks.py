@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from brain import collection_registry, library_index, playlist_editor
 
 MODULES = (
+    "test_advanced_mix",
     "test_dj_brain_providers", "test_llm_providers", "test_mix_order_brief",
     "test_mix_directives", "test_mix_editor", "test_plan_frontend",
     "test_mix_optimizer", "test_dj_notes_respected", "test_listen_ride",

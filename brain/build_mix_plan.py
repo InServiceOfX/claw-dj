@@ -2813,6 +2813,10 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
         blend_by_track.setdefault(key, event.get("backbeat"))
         status = (event.get("backbeat") or {}).get("status") or "unknown"
         backbeat_counts[status] = backbeat_counts.get(status, 0) + 1
+    if plan.get("performance_origin") == "generic-measured-v1":
+        for track in (plan.get("tracks") or [])[:-1]:
+            blend_by_track[track["track_id"]] = {"status": "matched", "reason": "approved measured pattern phase"}
+        backbeat_counts = {"matched": max(0, len(plan.get("tracks") or []) - 1)}
     return {
         "plan_path": str(plan_path) if plan_path else None,
         "version": plan.get("version"),
@@ -2843,6 +2847,8 @@ def plan_summary(plan: dict, *, plan_path: Path | None = None) -> dict:
             for t in (plan.get("tracks") or [])
         ],
         "segments": segments,
+        "advanced_mix": plan.get("advanced_mix"),
+        "execution_mode": plan.get("execution_mode"),
         "dry_run_ok": True,
         "dry_run_note": f"{len(events)} events validated in-process (no Mixxx connection)",
         "mixxx_control_port": (

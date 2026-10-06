@@ -132,3 +132,9 @@ nonempty `performance`, refuse generic Build with a clear ValueError directing
 the caller to `python -m brain.performance_cli --plan <slug>`. MUST NOT silently
 replace an authored source timeline with sequential events or finished-master
 playback. This guard must happen before composer invocation or temporary files.
+An exception allows rebuilding a generic-measured-v1 generated performance;
+this provenance is distinct from an authored performance. After ordinary order,
+notes, stem checks and overrides, optionally compile a local approved
+advanced_mix.json through brain.advanced_mix. Its revision is a build input.
+An invalid recipe retains the conventional events and reports why it declined.
+The advanced compiler contract owns measured-source execution decisions.

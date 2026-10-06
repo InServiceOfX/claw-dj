@@ -22,8 +22,11 @@ def file_rev(path: Path) -> str:
 
 def plan_rev(paths: PlanPaths) -> Rev:
     files = {name: file_rev(getattr(paths, name)) for name in SOURCE_NAMES}
+    recipe = paths.root / "advanced_mix.json"
+    if recipe.exists():
+        files["advanced_mix"] = file_rev(recipe)
     digest = hashlib.sha256()
-    for name in SOURCE_NAMES:
+    for name in files:
         digest.update(name.encode() + b"\0" + files[name].encode() + b"\0")
     return Rev(digest.hexdigest(), files)
 

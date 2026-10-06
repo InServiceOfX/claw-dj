@@ -752,6 +752,7 @@
         (compliance ? `<span>format: ${esc(compliance)}</span>` : '') +
         `<span>cues: ${esc(cues)}</span>` +
         `<span>${esc(summary.dry_run_note || 'dry-run ok')}</span>` +
+        (summary.advanced_mix ? `<span>${summary.advanced_mix.status === 'fallback' ? 'Advanced moves declined: '+esc(summary.advanced_mix.reason) : 'Measured moves: '+esc((summary.advanced_mix.techniques || []).join(', ').replaceAll('_',' '))}</span>` : '') +
         (stale ? '<span class="warn">STALE vs finalized set</span>' : '');
       const notes = summary.order_notes || profile.order_notes || [];
       el('order-notes').hidden = notes.length === 0;

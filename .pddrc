@@ -377,3 +377,10 @@ contexts:
       outputs:
         code:
           path: "brain/pick_candidates.py"
+
+  advanced_mix:
+    paths: ["*advanced_mix*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/advanced_mix.py"

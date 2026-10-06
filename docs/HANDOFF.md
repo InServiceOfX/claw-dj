@@ -1,5 +1,22 @@
 # Handoff / continuation notes
 
+## Advanced generic builder, stage one (2026-10-06)
+
+Ernest authorized commit/tag/push and implementation of the advanced stages.
+The shared-provider commit 87aea34 and tag shared-dj-brain-providers-v1 are on
+origin; master e589b06 has master-before-advanced-builder-2026-10-06. No merge.
+The latest H flagship is holo4-27b, now in .env.example; Holo4 requires funded
+access and the key-only runtime still defaults to free-tier Holo3.1.
+
+brain.advanced_mix upgrades the conventional finalized plan only when a local
+approved advanced_mix.json covers every foreground with compatible measured
+tempo/pattern/pitch evidence and source hashes. It reuses the existing native
+performance compiler/runner, including deck allocation, bounded original-source
+loops and drift/stop cleanup. First-stage features: independent-copy forward
+skips/re-entry and pre-verse intro extension. Invalid recipes preserve original
+events with a reason. Explicit notes/formats win; authored performance guard
+remains. Recipe revisions make old builds stale. See ADVANCED_GENERIC_BUILDER.md.
+
 ## DJ brain provider unification and mix controls (2026-10-06)
 
 `feat/shared-dj-brain-providers` starts from latest master `e589b06`, not the
