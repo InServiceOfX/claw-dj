@@ -176,3 +176,63 @@ class AdvancedMixTest(TestCase):
         result = compile_generic(self.plan,self.recipe)
         with patch('hands.performance_validation.current_limits',return_value={}), patch('hands.performance_runner.MixxxControl',side_effect=AssertionError('must not connect')), patch('subprocess.Popen',side_effect=AssertionError('must not render')):
             run_plan(result,port=9995,dry_run=True,max_events=None)
+
+    def sample_recipe(self):
+        tid = self.tracks[0]['track_id']
+        source = self.tracks[1]['track_id']
+        self.plan['tracks'][0]['dj_notes'] = 'cue_seconds=0; ride_beats=63; trust_ride_beats; allow_sample_unison'
+        self.sources[tid]['sample_unison'] = dict(approved=True, backbeat_verified=True,
+            source_track_id=source, sample_start_seconds=32, source_start_seconds=0,
+            sample_beats=16, verified_beats=32, alignment_error_ms=0,
+            residual_pitch_cents=0, confidence=.98,entry_region_instrumental=True)
+        return self.sources[tid]['sample_unison']
+
+    def test_sample_unison_repeats_the_measured_bar_and_restores_turntable_pitch(self):
+        self.sample_recipe()
+        self.recipe['tempo_bpm'] = 138
+        for track in self.tracks[1:]:self.sources[track['track_id']]['bpm'] = 138
+        result = compile_generic(self.plan,self.recipe)
+        clips = result['performance']['clips']
+        self.assertAlmostEqual(clips[0]['rate'],1.15)
+        self.assertEqual(clips[1]['advanced_technique'],'measured_sample_unison')
+        self.assertEqual(clips[1]['segments'][0]['source_start'],0)
+        self.assertEqual(clips[1]['segments'][1]['source_start'],0)
+        self.assertEqual(clips[1]['segments'][0]['source_end'],clips[1]['segments'][1]['source_end'])
+        validate_artifact(result)
+
+    def test_sample_requires_pitch_alignment_confidence_and_full_blend_evidence(self):
+        move = self.sample_recipe()
+        cases = [('residual_pitch_cents',16),('alignment_error_ms',21),('confidence',.5),
+                 ('verified_beats',16),('entry_region_instrumental',False),('backbeat_verified',False),
+                 ('sample_start_seconds',32.5),('source_start_seconds',2),('sample_beats',4)]
+        for key,value in cases:
+            before = move[key]; move[key] = value
+            with self.subTest(key=key),self.assertRaises(ValueError):compile_generic(self.plan,self.recipe)
+            move[key] = before
+
+    def test_lineage_or_model_suggestion_alone_cannot_authorize_unison(self):
+        move = self.sample_recipe()
+        self.plan['tracks'][0]['dj_notes'] = 'sample lineage, no_flourish'
+        with self.assertRaisesRegex(ValueError,'DJ-note approval'):
+            compile_generic(self.plan,self.recipe)
+        self.plan['tracks'][0]['dj_notes'] = 'allow_sample_unison'
+        move['source_track_id'] = self.tracks[2]['track_id']
+        with self.assertRaisesRegex(ValueError,'adjacent'):
+            compile_generic(self.plan,self.recipe)
+
+    def test_sample_repeats_still_obey_source_exclusions(self):
+        self.sample_recipe()
+        self.plan['tracks'][1]['dj_notes'] += '; mandatory_end_seconds=6'
+        with self.assertRaisesRegex(ValueError,'boundary'):
+            compile_generic(self.plan,self.recipe)
+
+    def test_sampler_can_be_the_entering_record(self):
+        outgoing = self.tracks[0]['track_id']; sampler = self.tracks[1]['track_id']
+        self.plan['tracks'][1]['dj_notes'] = 'allow_sample_unison'
+        self.sources[sampler]['sample_unison'] = dict(approved=True,backbeat_verified=True,
+            source_track_id=outgoing,sample_start_seconds=0,source_start_seconds=32,
+            sample_beats=16,verified_beats=32,alignment_error_ms=0,
+            residual_pitch_cents=0,confidence=.98,entry_region_instrumental=True)
+        result=compile_generic(self.plan,self.recipe)
+        self.assertEqual(result['performance']['clips'][1]['sample_relation']['sampling_track_id'],sampler)
+        validate_artifact(result)

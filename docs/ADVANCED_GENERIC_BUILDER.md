@@ -21,6 +21,39 @@ handoffs are restricted to copies of the same recording. Entry/exit overlaps
 and invalid backbeat/pattern phase are refused. Intro loops need an observed
 first-verse boundary, cannot contain a verse, and allow only two or three plays.
 
+Stage two adds measured sample/source unison. Lineage alone is insufficient:
+the sampling record needs `allow_sample_unison` without a conflicting
+`no_flourish` note. Its source must be adjacent in the optimized order. The
+pair must have backbeat/pitch and <=20 ms alignment evidence across the complete
+overlap. Both must enter the measured sampled bar. Native source rate with
+keylock off and pitch adjustment zero restores a turntable-slowed sample's
+pitch; no guessed tuning is applied. An approved instrumental entry bar can
+repeat one to three whole times across the gentle fade. Sample pairs allow
+up to +/-16% source-rate correction; other foregrounds retain +/-8%.
+
+Add this to the *sampling record's* source evidence (example numbers only):
+
+```json
+"sample_unison": {
+  "approved": true,
+  "source_track_id": "/absolute/path/to/the-original-sampled-record.wav",
+  "sample_start_seconds": 32,
+  "source_start_seconds": 0,
+  "sample_beats": 16,
+  "verified_beats": 32,
+  "backbeat_verified": true,
+  "alignment_error_ms": 0,
+  "residual_pitch_cents": 0,
+  "confidence": 0.98,
+  "entry_region_instrumental": true
+}
+```
+
+The pair's cue/exit timing must already match these bar starts; a model cannot
+move a trusted cue to manufacture the connection. Structural sample moves
+combined with another handoff/intro extension on the same pair require an
+authored performance instead. Source guards apply to every sampled-bar repeat.
+
 Keep the recipe, measurements and songs outside Git. Here is its schema, with
 placeholder paths/hashes (replace them with actual recording evidence):
 

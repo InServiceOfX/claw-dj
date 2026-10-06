@@ -1,5 +1,14 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Advanced generic builder, stage two (2026-10-06)
+
+Stage one committed as 6738000 and tagged advanced-builder-stage1-v1 after
+243 focused tests and browser checks. Stage two adds approved measured adjacent
+sample/source unison: exact bar entry, whole-overlap phase/pitch evidence,
+original-source bar repetition, and bounded turntable-style rate restoration.
+No lineage/model-only authorization or guessed tuning. Source limits apply to
+every repeat. Twenty advanced compiler checks pass; no live audio audition yet.
+
 ## Advanced generic builder, stage one (2026-10-06)
 
 Shared-provider commit 87aea34 and tag shared-dj-brain-providers-v1 are pushed

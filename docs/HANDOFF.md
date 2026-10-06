@@ -1,5 +1,16 @@
 # Handoff / continuation notes
 
+## Advanced generic builder, stage two (2026-10-06)
+
+Stage one commit 6738000 / tag advanced-builder-stage1-v1: 243 focused tests
+plus browser checks. Stage two adds measured sample/source unison through
+brain.advanced_mix. Explicit notes, adjacent pair, exact sampled-bar cues,
+whole-blend backbeat/pitch/alignment evidence and source hashes are required.
+The native runner already sets keylock off and pitch_adjust zero, restoring
+turntable sample pitch with the measured rate. Foreground order is preserved;
+sample bar repeats shift later clips by whole pattern periods. Twenty advanced
+tests pass, including source limits, both sample directions and failed evidence.
+
 ## Advanced generic builder, stage one (2026-10-06)
 
 Ernest authorized commit/tag/push and implementation of the advanced stages.

@@ -130,15 +130,103 @@ def _handoff(clip, move, notes, grid, name):
     return [left, right]
 
 
+def _sample_pairs(tracks, sources):
+    by_id = {t["track_id"]: t for t in tracks}
+    indices = {t["track_id"]: i for i, t in enumerate(tracks)}
+    pairs = []
+    occupied = set()
+    for sampler in tracks:
+        tid = sampler["track_id"]
+        evidence = sources.get(tid)
+        if not isinstance(evidence, dict):
+            raise ValueError("source evidence must be an object")
+        move = evidence.get("sample_unison")
+        if not move:
+            continue
+        if not isinstance(move, dict) or move.get("approved") is not True or move.get("backbeat_verified") is not True:
+            raise ValueError("sample unison needs approved measured backbeat evidence")
+        other = move.get("source_track_id")
+        if other not in by_id or abs(indices[tid] - indices[other]) != 1:
+            raise ValueError("sample source and sampling record must be adjacent in the optimized order")
+        if tid in occupied or other in occupied:
+            raise ValueError("sample-unison pairs cannot share an overlapping role")
+        if not _has(sampler.get("dj_notes", ""), "allow_sample_unison") or _has(sampler.get("dj_notes", ""), "no_flourish"):
+            raise ValueError("sample unison needs unconflicted DJ-note approval on the sampling record")
+        _number(move.get("alignment_error_ms"), "sample alignment error", -20, 20)
+        _number(move.get("residual_pitch_cents"), "sample/source pitch residual", -15, 15)
+        _number(move.get("confidence"), "sample relation confidence", .9, 1)
+        _number(move.get("sample_start_seconds"), "sample bar start", 0)
+        _number(move.get("source_start_seconds"), "original sampled bar start", 0)
+        if move.get("entry_region_instrumental") is not True:
+            raise ValueError("sample-bar repetition requires an approved instrumental entry region")
+        beats = move.get("sample_beats")
+        if isinstance(beats, bool) or beats not in (8, 16, 32):
+            raise ValueError("sample unison needs an 8/16/32-beat measured sampled span")
+        for record in (tid, other):
+            if sources[record].get("intro_loop") or sources[record].get("handoff"):
+                raise ValueError("sample pairs with other structural moves require an authored performance")
+        pairs.append((tid, other, move))
+        occupied.update((tid, other))
+    return pairs, occupied
+
+
+def _sample_blends(foregrounds, tracks, pairs, grid):
+    indices = {t["track_id"]: i for i, t in enumerate(tracks)}
+    for sampler, source, move in pairs:
+        index = min(indices[sampler], indices[source])
+        outgoing = foregrounds[index][-1]
+        incoming = foregrounds[index + 1][0]
+        cue_a = move["sample_start_seconds"] if outgoing["track_id"] == sampler else move["source_start_seconds"]
+        cue_b = move["sample_start_seconds"] if incoming["track_id"] == sampler else move["source_start_seconds"]
+        actual_a = outgoing["segments"][0]["source_end"] - outgoing["fade_out"] * outgoing["rate"]
+        actual_b = incoming["segments"][0]["source_start"]
+        if abs(actual_a - cue_a) > .02 or abs(actual_b - cue_b) > .02:
+            raise ValueError("sample blend does not enter on the measured sampled bar; keep the approved cues")
+        window = _number(move.get("verified_beats"), "verified sample overlap", move["sample_beats"], 128)
+        blend_beats = incoming["fade_in"] / grid.beat
+        if window < blend_beats:
+            raise ValueError("sample relation was not verified throughout the whole blend")
+        plays = blend_beats / move["sample_beats"]
+        if abs(plays - round(plays)) > 1e-6 or round(plays) not in (1, 2, 3):
+            raise ValueError("sample bar must cover the blend in one, two or three whole plays")
+        # Repetition belongs to the entering original, never a prepared loop.
+        if round(plays) > 1:
+            end = cue_b + move["sample_beats"] * grid.beat * incoming["rate"]
+            old_end = incoming["segments"][0]["source_end"]
+            if end >= old_end:
+                raise ValueError("sample span leaves no foreground body after the blend")
+            segments = []
+            cursor = 0.0
+            for _ in range(round(plays)):
+                segments.append({"source_start": cue_b, "source_end": end, "local_start": cursor})
+                cursor += move["sample_beats"] * grid.beat
+            segments.append({"source_start": end, "source_end": old_end, "local_start": cursor})
+            extra = (round(plays) - 1) * move["sample_beats"] * grid.beat
+            incoming["segments"] = segments
+            incoming["length"] += extra
+            # All later foregrounds move by complete measured pattern periods.
+            for group in foregrounds[index + 2:]:
+                for clip in group:
+                    clip["start"] += extra
+        incoming["advanced_technique"] = "measured_sample_unison"
+        incoming["sample_relation"] = {"sampling_track_id": sampler, "source_track_id": source,
+                                       "sample_beats": move["sample_beats"], "alignment_error_ms": move["alignment_error_ms"],
+                                       "residual_pitch_cents": move["residual_pitch_cents"]}
+        # Native playback already uses keylock=0, pitch_adjust=0 and exact
+        # source rate, undoing turntable-style sample slowdown without guessed tuning.
+
+
 def compile_generic(plan, recipe):
     """Return a native performance only when every foreground has valid evidence."""
-    if not isinstance(recipe, dict) or recipe.get("version") != 1 or recipe.get("approved") is not True:
+    if not isinstance(recipe, dict) or type(recipe.get("version")) is not int or recipe.get("version") != 1 or recipe.get("approved") is not True:
         raise ValueError("advanced recipe must be version 1 and explicitly approved")
     if recipe.get("support"):
         raise ValueError("instrumental support is not enabled by this compiler stage")
     sources = recipe.get("sources")
     if not isinstance(sources, dict):
         raise ValueError("advanced recipe needs a sources mapping")
+    if any(not isinstance(v, dict) for v in sources.values()):
+        raise ValueError("source evidence must be an object")
     tempo = _number(recipe.get("tempo_bpm"), "mix tempo", 20, 400)
     pattern = recipe.get("pattern_beats", 4)
     if pattern not in (4, 8, 16):
@@ -146,6 +234,7 @@ def compile_generic(plan, recipe):
     tracks = plan["tracks"]
     if set(sources) != {t["track_id"] for t in tracks}:
         raise ValueError("measurement sources must cover exactly the finalized foreground set")
+    pairs, sample_ids = _sample_pairs(tracks, sources)
     transitions = [e for e in plan["events"] if e.get("op") == "transition"]
     bodies = {e["track_id"]: e for e in plan["events"] if e.get("op") == "play_body"}
     finale = next(e for e in plan["events"] if e.get("op") == "finale")
@@ -165,9 +254,7 @@ def compile_generic(plan, recipe):
         d = track_directives(track)
         if d["exit_bpm"] or d["play_bpm"] or d["pitch_adjust_semitones"] or d["opener_style"]:
             raise ValueError("explicit opener, tempo or pitch notes must retain their conventional execution")
-        measure[tid] = _measure(tid, sources[tid], max_rate=.08, tempo=tempo)
-        if sources[tid].get("sample_unison"):
-            raise ValueError("sample unison is not enabled by this compiler stage")
+        measure[tid] = _measure(tid, sources[tid], max_rate=.16 if tid in sample_ids else .08, tempo=tempo)
         limits[tid] = _limits(note)
     first = tracks[0]
     cue = _number(first.get("cue_seconds"), "first cue", 0)
@@ -217,6 +304,7 @@ def compile_generic(plan, recipe):
         clips.extend(parts)
         foregrounds.append(parts)
         previous = parts[-1]
+    _sample_blends(foregrounds, tracks, pairs, grid)
     performance = grid.performance(clips, source_limits=limits)
     performance["source_sha256"] = {tid: evidence["sha256"] for tid, evidence in sources.items()}
     validate(performance)
@@ -224,7 +312,7 @@ def compile_generic(plan, recipe):
     result.update(performance=performance, performance_sha256=fingerprint(performance),
                   execution_mode="live_source_tracks", performance_origin=ORIGIN,
                   duration_seconds=duration(performance), events=compile_events(performance))
-    result["advanced_mix"] = {"recipe_sha256": fingerprint(recipe), "stage": 1,
+    result["advanced_mix"] = {"recipe_sha256": fingerprint(recipe), "stage": 2,
                               "techniques": sorted({c.get("advanced_technique", "measured_gentle_blend") for c in clips})}
     for index, segment in enumerate(result.get("segments", [])):
         segment.update(start_seconds=foregrounds[index + 1][0]["start"],
