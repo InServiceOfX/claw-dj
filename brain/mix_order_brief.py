@@ -532,6 +532,7 @@ def order_from_brief(
     *,
     engine: str = "none",
     ask: Callable[[str], str] | None = None,
+    mix_context: dict | None = None,
 ) -> tuple[list[dict], list[str], dict]:
     """Resolve brief → (ordered rows, notes, constraints).
 
@@ -573,6 +574,6 @@ def order_from_brief(
     if engine != "none":
         from brain.mix_llm_refine import refine_order
 
-        ordered, refine_notes = refine_order(ordered, constraints, rows, brief=text, ask=ask, provider=engine)
+        ordered, refine_notes = refine_order(ordered, constraints, rows, brief=text, ask=ask, provider=engine, mix_context=mix_context)
         notes.extend(refine_notes)
     return ordered, notes_prefix + notes, constraints

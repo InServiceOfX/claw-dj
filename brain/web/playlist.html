@@ -315,7 +315,7 @@
         <div class="banner" id="plan-stale-banner" hidden>The dry-run plan below is <strong>stale</strong> — it does not match the current finalized set (e.g. you added a track). Rebuild the mix plan.</div>
         <div class="mix-builder" aria-label="Build a mix plan">
           <div class="builder-head">
-            <div><div class="builder-eyebrow">Shape the set</div><h3>Build your mix</h3><div class="ingest-detail">Choose a feel, describe your direction, then review the plan.</div></div>
+            <div><div class="builder-eyebrow">Shape the set</div><h3>Build your mix</h3><div class="ingest-detail">Choose a feel and DJ brain, then build. Add direction only if you want to.</div></div>
             <span id="builder-readiness" class="builder-readiness" role="status">Checking finalized set…</span>
           </div>
           <div class="builder-grid">
@@ -331,7 +331,8 @@
           </div>
           <div class="builder-brief">
             <label class="builder-label" for="mix-brief">Direction for the mix <span class="meta">· optional</span></label>
-            <textarea id="mix-brief" placeholder="e.g. Smooth R&amp;B, let the verses breathe. Put the original before its sample. Keep the opening gentle." aria-label="Free-text mix description"></textarea>
+            <textarea id="mix-brief" placeholder="Leave blank to use your mix feel and DJ notes. Or try: Smooth R&amp;B, let the verses breathe." aria-label="Free-text mix description" aria-describedby="mix-brief-help"></textarea>
+            <div class="ingest-detail" id="mix-brief-help">Your selected DJ brain reviews the order even with no direction. It may keep an order that already works.</div>
           </div>
           <div class="builder-footer"><span class="ingest-detail">Optimizes the whole set, applies DJ notes, and checks the dry-run.</span><button id="build-mix" class="primary">Build mix plan</button></div>
           <div class="builder-safeguards" aria-label="Mix safeguards"><span>✓ Backbeat alignment</span><span>✓ Gentle fades</span><span>✓ Verse &amp; phrase boundaries</span><span>✓ Tempo &amp; key compatibility</span><span>✓ Stem layering checks</span><span>✓ DJ notes &amp; source limits</span></div>
@@ -342,6 +343,11 @@
               <div class="ingest-detail" id="dj-format-detail">Use the selected mix profile and per-track DJ notes.</div>
             </div>
             <div class="notes-action"><button id="interpret-directives" disabled title="Preview specific DJ-note edits grounded in the track's real lyrics, using the DJ brain selected above">Preview DJ-note edits…</button><span class="ingest-detail">Uses the same DJ brain. Review changes before applying.</span></div>
+            <p class="ingest-detail">Measured advanced moves are used when approved evidence is available. Otherwise the builder uses its usual musical safeguards.</p>
+          </details>
+          <details class="builder-advanced" id="agent-refinement">
+            <summary>Refine this mix with your AI agent</summary>
+            <p class="ingest-detail">Open this repository in Codex, Claude Code, Grok Build, Hermes or your preferred agent. Ask it to read docs/MIX_WORKFLOW.md and refine the current named plan, preserving your approved work and DJ notes. Use Refresh in Arrange to review its changes.</p>
           </details>
         </div>
         <div class="brain-detail" id="directives-detail"></div>
@@ -816,8 +822,11 @@
     function describeProvider() {
       const name = el('order-engine').value;
       const p = providerState.list.find(item => item.name === name);
-      el('provider-detail').textContent = p ? `${p.detail}. ${mixState.profile === 'dj-showcase' ? 'Reviews the order and proposes transition moves.' : 'Reviews the optimized order.'}`
+      el('provider-detail').textContent = p ? `${p.detail}. ${mixState.profile === 'dj-showcase' ? 'Reviews the order and proposes transition moves, even with no direction.' : 'Reviews the optimized order, even with no direction.'}`
         : 'Whole-set ordering with the local optimizer. Choose a model to interpret your brief and review the order.';
+      el('mix-brief-help').textContent = name === 'none'
+        ? 'Leave blank to build from your mix feel, DJ notes and track analysis with the local optimizer.'
+        : 'Your selected DJ brain reviews the order even with no direction. It may keep an order that already works.';
       updateModelActions();
     }
     async function loadProviders(refresh = false) {

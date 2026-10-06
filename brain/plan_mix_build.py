@@ -31,8 +31,11 @@ def mix_plan_path(slug: str):
     return plan_paths.resolve(slug).mix_plan
 
 
-def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **opts) -> dict:
+def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, base_rev=None, **opts) -> dict:
     paths = plan_paths.resolve(slug)
+    inputs_before = plan_rev(paths)
+    if base_rev is not None and base_rev != inputs_before.token:
+        raise StalePlanError(inputs_before.token)
     from brain.advanced_mix import is_generated, upgrade
     existing = json.loads(paths.mix_plan.read_text()) if paths.mix_plan.exists() else {}
     if existing.get("performance") and not is_generated(existing):
@@ -47,7 +50,6 @@ def build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **
     notes = {item.track_id: item.note for item in plan_notes.get_effective(slug, track_ids)}
     constraints = order_constraints.from_activations(slug)
     before = file_rev(paths.mix_plan)
-    inputs_before = plan_rev(paths)
     fd, temporary_name = tempfile.mkstemp(prefix=".mix-build-", suffix=".json", dir=paths.root)
     os.close(fd)
     try:

@@ -1,5 +1,27 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## One-shot first pass and agent refinement (2026-10-06)
+
+- Added independent casual/experienced-DJ stories and docs/MIX_WORKFLOW.md.
+  Direction remains optional: all eight providers review two-or-more-song sets
+  with blank direction, using the effective feel and untruncated DJ notes.
+  A retained order is valid; errors/unsafe proposals retain optimized ordering.
+- Model choreography is limited to DJ showcase, matching the UI and existing
+  contract; Club set and Mix to listen retain ordinary profile planning.
+- CLI Build accepts --provider, --brief and optional --base-rev. A stale base
+  revision stops before model calls or artifact writes. Legacy callers retain
+  optimizer-only defaults. Existing authored-performance protections remain.
+- Mix panel explains blank direction and includes optional agent-refinement
+  guidance. Existing measured advanced recipes are still consumed automatically;
+  automatic creation/approval of arbitrary recording evidence is future work.
+- Verification: 281 focused tests pass with local socket access (no skips),
+  synthetic desktop/mobile browser flows pass including blank-direction payload,
+  and four affected prompt contracts pass strict checks. No real mix was built
+  or played. PDD saved exact authorization but its local architecture inference
+  failed; prompts/manifest updated directly, no semantic certification claim.
+  Implemented on feat/shared-dj-brain-providers. Idle editor restarted
+  as PID 34519 on 8787/control 9995; same active plan remains ready/non-stale.
+
 ## Advanced generic builder, completed measured-set stages (2026-10-06)
 
 - Stage one 6738000 / advanced-builder-stage1-v1: same-song handoffs/re-entry and

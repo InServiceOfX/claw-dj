@@ -13,6 +13,8 @@ Build and operate `claw-dj`: an autonomous or semi-autonomous DJ that plays Mixx
    requirements supersede older timings in historical sections. Recheck live
    active-plan identity and staleness instead of assuming the summary is current.
 4. Read the specific docs for the task. In particular:
+   - `docs/MIX_WORKFLOW.md` — a first build without direction, then agent
+     refinement of the same named plan with revisions and source safeguards.
    - `docs/ARCHITECTURE.md` — brain/hands split.
    - `docs/MIXXX_CONTROL_SURFACE.md` — reachable Mixxx controls.
    - `docs/DJ_TRANSITIONS_PLAYBOOK.md` and `docs/DJ_STYLE_GUIDE.md` — mixing craft.

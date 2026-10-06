@@ -1,5 +1,23 @@
 # Product Intent (PRD)
 
+## One-shot first pass and continuing agent refinement — accepted 2026-10-06
+
+A casual listener selects songs, feel and a DJ brain and presses Build mix plan
+without writing direction. The provider attempts an order review even for two
+songs, using the effective feel and full DJ notes; it may keep a good optimized
+order. Invalid proposals/provider failures retain local planning with visible
+notes. Existing musical safeguards and approved measured techniques apply;
+arbitrary new measurement/approval generation remains future work. Build is a
+reviewable first pass and never starts audio or guarantees subjective taste.
+
+An experienced DJ can continue the same named plan with any repository-capable
+agent/harness. Track/transition edits carry revisions and attribution; CLI Build
+offers provider, optional direction and an optional reviewed base revision.
+Authored performances remain protected. Review changes through Arrange Refresh.
+Stories: story__one_shot_mix_without_direction.md and
+story__refine_current_mix_with_any_agent.md. Guide: [MIX_WORKFLOW.md](MIX_WORKFLOW.md).
+Approval history: intents/intent__one-shot-mixes-and-agent-refinement-of-the-curre-3dc013eb.md.
+
 ## Advanced generic mix builder — accepted 2026-10-06
 
 Ernest authorized implementation of the staged advanced techniques previously
@@ -383,3 +401,15 @@ Research: [H Company API](H_COMPANY_MODELS_API.md).
 > no changes added to commit (use "git add" and/or "git commit -a")
 > ernestyeung@Ernests-Mac-mini claw-dj % " , tag that and then like do the change to generic builder in the stages you mentioned, do those changes where we're adding those advanced techniques with those musical safeguards into the generic builder, and once those are git committed, tag that too. Also, for .env.example or in general, can you get me the latest model name I should be using for H compnay, because it's a tedious step to get the right model name and latest one, so this is good in .env.example so far, just double check it's the latest and greatest: CLAWDJ_HCOMPANY_MODEL=holo3-1-35b-a3b
 <!-- pdd-intent-entry:evidence-gated-advanced-techniques-in-the-generi-7ab3a6e9:end -->
+
+<!-- pdd-intent-entry:one-shot-mixes-and-agent-refinement-of-the-curre-3dc013eb:start -->
+## One-shot mixes and agent refinement of the current plan
+
+- Intent event: [`docs/intents/intent__one-shot-mixes-and-agent-refinement-of-the-curre-3dc013eb.md`](intents/intent__one-shot-mixes-and-agent-refinement-of-the-curre-3dc013eb.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `not stated`
+
+> ok go ahead and do those recommended user stories, and take any other actions
+<!-- pdd-intent-entry:one-shot-mixes-and-agent-refinement-of-the-curre-3dc013eb:end -->

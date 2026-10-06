@@ -4,8 +4,8 @@
   "type": "module",
   "module": {
     "functions": [
-      {"name": "refine_order", "signature": "refine_order(ordered_rows: list[dict], constraints: dict, all_rows: list[dict], *, brief: str, ask: Callable[[str], str], provider: str, snare_confidence: dict[str, float] | None = None) -> tuple[list[dict], list[str]]"},
-      {"name": "build_refine_prompt", "signature": "build_refine_prompt(rows: list[dict], graph: MixGraph, brief: str) -> str"}
+      {"name": "refine_order", "signature": "refine_order(ordered_rows: list[dict], constraints: dict, all_rows: list[dict], *, brief: str, ask: Callable[[str], str], provider: str, snare_confidence: dict[str, float] | None = None, mix_context: dict | None = None) -> tuple[list[dict], list[str]]"},
+      {"name": "build_refine_prompt", "signature": "build_refine_prompt(rows: list[dict], graph: MixGraph, brief: str, *, mix_context: dict | None = None) -> str"}
     ]
   }
 }
@@ -32,6 +32,13 @@ R1 (MUST NOT): a model error, timeout, refusal, unparsable reply or rejected pro
 R2 (MUST NOT): accept an order that adds a blind backbeat blend.
 R3 (MUST NOT): accept an order that moves the requested opener or splits a requested pairing.
 R4 (MUST): every outcome (skipped, rejected with reason, accepted) is visible in the plan's order notes.
+R5 (MUST): A selected provider reviews every supported set of at least two songs
+even with an empty/whitespace brief. An empty brief skips only constraint
+interpretation. It may keep the optimized order and report that outcome.
+R6 (MUST): The review receives the effective mix feel and effective DJ notes
+without truncation, including source restrictions after long commentary. With no direction,
+use those settings for a strong first pass. The model reviews order only;
+musical safeguards and evidence approval remain in the established builder.
 </contract_rules>
 
 % Verification

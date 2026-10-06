@@ -2588,7 +2588,7 @@ def choreograph_showcase(
     from brain.mix_order_brief import build_graph
     from brain.showcase_moves import choreograph
 
-    if profile.ride_most_of_song or not profile.flourish_every:
+    if profile.name != "dj-showcase" or profile.ride_most_of_song or not profile.flourish_every:
         return None
     if order_engine not in llm_providers.PROVIDERS or len(rows) < 2:
         return None
@@ -2610,7 +2610,7 @@ def choreograph_showcase(
             "lineage": any("lineage" in r for r in edge.reasons),
             "no_flourish": bool(in_d["no_flourish"]),
             "noted_style": bool(out_d["exit_style"] or in_d["entry_style"]),
-            "dj_notes": [(left.get("dj_notes") or "")[:160] or None, (right.get("dj_notes") or "")[:160] or None],
+            "dj_notes": [(left.get("dj_notes") or "") or None, (right.get("dj_notes") or "") or None],
         })
     if ask is None:
         ask = lambda prompt: llm_providers.ask(order_engine, prompt)  # noqa: E731
@@ -2688,7 +2688,14 @@ def compose_mix_plan(
 
     try:
         pool, order_notes, order_constraints = order_from_brief(
-            pool, mix_brief, engine=order_engine, ask=ask
+            pool, mix_brief, engine=order_engine, ask=ask,
+            mix_context={
+                "name": profile.name, "description": profile.description,
+                "ride_most_of_song": profile.ride_most_of_song,
+                "avoid_silence": profile.avoid_silence,
+                "flourish_every": profile.flourish_every,
+                "transition_scale": profile.transition_scale,
+            },
         )
     except Exception as error:
         # Model interpretation is optional. Preserve the complete pool and

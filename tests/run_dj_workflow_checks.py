@@ -20,6 +20,7 @@ MODULES = (
     "test_mix_optimizer", "test_dj_notes_respected", "test_listen_ride",
     "test_showcase_moves", "test_mix_plan", "test_mix_runner",
     "test_source_cutoffs", "test_stems",
+    "test_plan_integration",
 )
 
 

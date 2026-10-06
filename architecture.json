@@ -855,7 +855,7 @@
   },
   {
     "reason": "The GUI's build_mix calls compose_mix_plan IN-PROCESS against the module-level MIX_PLAN_PATH, so adding a --plan flag to build_mix_plan.py would never reach it and the Arrange tab would be permanently empty.",
-    "description": "The single plan-aware entry to mix composition, callable from both the GUI and the CLI so the two cannot produce different artifacts. build(slug, **opts) resolves EVERY path from PlanPaths and never from MIX_PLAN_PATH or DEFAULT_PLAYLIST_JSON, injects effective notes plus ordering constraints plus transition overrides, calls the existing compose_mix_plan, wraps the result through decorate(), writes plans/<slug>/mix_plan.json and appends one journal entry. For every build mode (no model, or any brain.llm_providers provider reviewing the order), the selected tracks are an AVAILABLE POOL, not a required playback order: the builder may reorder the finalized playlist as needed for mix quality, must preserve every available track exactly once unless explicit subset constraints say otherwise, and must return the candidate order for user review before Start mix. Any natural-language ordering constraints may be interpreted with LLM help, but mix-quality ordering itself must not require an LLM and must still work in every mode. Model calls are text-only and never start a desktop bridge. Ordering uses the whole-set backbeat-aware optimizer (brain.mix_optimizer); a model's reorder is kept only under the hard rules (brain.mix_llm_refine). Each blend in the candidate order is labelled snare-matched, unverified, or listener-locked. When downstream execution needs a Mixxx control API port, preserve an explicit override as highest priority and otherwise propagate the discovered/reused validated localhost control port consistently rather than assuming 9995. Exports playlist_path(slug) and mix_plan_path(slug) so start_mix, reexport_finalized and start_enrich resolve the same way rather than re-deriving paths. Without this module /api/mix/build writes the legacy singleton while api_plan_arrange reads plans/<slug>/mix_plan.json, and /api/mix/start plays the wrong plan under a live run. Exists as its own module rather than an inline diff because playlist_editor.py is 1437 lines, past the single-prompt regeneration ceiling. Keep the legacy constants in place as a fallback so the existing tests' patch-the-constant idiom survives.",
+    "description": "The single plan-aware entry to mix composition, callable from both the GUI and the CLI so the two cannot produce different artifacts. build(slug, **opts) resolves EVERY path from PlanPaths and never from MIX_PLAN_PATH or DEFAULT_PLAYLIST_JSON, injects effective notes plus ordering constraints plus transition overrides, calls the existing compose_mix_plan, wraps the result through decorate(), writes plans/<slug>/mix_plan.json and appends one journal entry. For every build mode (no model, or any brain.llm_providers provider reviewing the order), the selected tracks are an AVAILABLE POOL, not a required playback order: the builder may reorder the finalized playlist as needed for mix quality, must preserve every available track exactly once unless explicit subset constraints say otherwise, and must return the candidate order for user review before Start mix. Any natural-language ordering constraints may be interpreted with LLM help, but mix-quality ordering itself must not require an LLM and must still work in every mode. Model calls are text-only and never start a desktop bridge. Ordering uses the whole-set backbeat-aware optimizer (brain.mix_optimizer); a model's reorder is kept only under the hard rules (brain.mix_llm_refine). Each blend in the candidate order is labelled snare-matched, unverified, or listener-locked. When downstream execution needs a Mixxx control API port, preserve an explicit override as highest priority and otherwise propagate the discovered/reused validated localhost control port consistently rather than assuming 9995. Exports playlist_path(slug) and mix_plan_path(slug) so start_mix, reexport_finalized and start_enrich resolve the same way rather than re-deriving paths. Without this module /api/mix/build writes the legacy singleton while api_plan_arrange reads plans/<slug>/mix_plan.json, and /api/mix/start plays the wrong plan under a live run. Exists as its own module rather than an inline diff because playlist_editor.py is 1437 lines, past the single-prompt regeneration ceiling. Keep the legacy constants in place as a fallback so the existing tests' patch-the-constant idiom survives. Blank direction still requests selected-provider order review for two or more songs using effective profile settings and untruncated notes. Optional base_rev rejects stale agent builds before model calls or writes. Approved measured evidence remains automatic when present; authored performances stay protected.",
     "dependencies": [
       "brain/plan_paths_Python.prompt",
       "brain/plan_journal_Python.prompt",
@@ -895,7 +895,7 @@
         "functions": [
           {
             "name": "build",
-            "signature": "build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, **opts) -> dict",
+            "signature": "build(slug: str, *, profile=None, dj_format=None, seconds_per_track=None, base_rev=None, **opts) -> dict",
             "sideEffects": "writes plans/<slug>/mix_plan.json, one journal entry"
           },
           {
@@ -2026,7 +2026,7 @@
   },
   {
     "reason": "The PRD's 'an AI agent harness like hermes-agent, Claude or Codex makes changes' needs a defined offline write path; without it agents keep editing singleton files and there is nothing to refresh from.",
-    "description": "THE HARNESS-FACING CONTRACT. Runs with no GUI process and no server. argparse add_subparsers(dest=..., required=True) - required defaults to False, so without it the CLI with no verb parses successfully and does nothing - plus add_parser() and set_defaults(func=...) per verb, which keeps 13 verbs and their nested sub-verbs from becoming an if-ladder. 'show --json' RETURNS THE SAME SHAPE AS THE ARRANGE ROUTE, so a harness and the GUI cannot disagree about what the plan is. 'build' calls plan_mix_build so CLI and GUI produce an identical artifact. Every mutation takes --base-rev or --force and prints the new rev. 'transition get|set|clear' mirrors the transitions route FIELD-FOR-FIELD: --from --to [--technique --beats --showcase-move --effects --note --author] --base-rev, with the same null-means-leave-unchanged semantics. --AUTHOR IS EXPLICIT AND IS NOT INFERRED FROM actor=cli, because an LLM shelling out and a human typing the same command are both actor=cli and inferring would mislabel exactly the case the PRD cares about. 'bunch list|new|activate|deactivate|archive', where 'bunch new --activate' composes create-then-activate in one invocation and reports a conflicting bunch by name, because a bunch that is created and never activated constrains nothing. 'mark <wip|ready|archived>' WRITES lifecycle state while the separate 'status' verb READS staleness; deliberately different verbs. 'note' is TRACK-scoped; transition notes go through 'transition set --note'.",
+    "description": "THE HARNESS-FACING CONTRACT. Runs with no GUI process and no server. argparse add_subparsers(dest=..., required=True) - required defaults to False, so without it the CLI with no verb parses successfully and does nothing - plus add_parser() and set_defaults(func=...) per verb, which keeps 13 verbs and their nested sub-verbs from becoming an if-ladder. 'show --json' RETURNS THE SAME SHAPE AS THE ARRANGE ROUTE, so a harness and the GUI cannot disagree about what the plan is. 'build' calls plan_mix_build so CLI and GUI produce an identical artifact. Every mutation takes --base-rev or --force and prints the new rev. 'transition get|set|clear' mirrors the transitions route FIELD-FOR-FIELD: --from --to [--technique --beats --showcase-move --effects --note --author] --base-rev, with the same null-means-leave-unchanged semantics. --AUTHOR IS EXPLICIT AND IS NOT INFERRED FROM actor=cli, because an LLM shelling out and a human typing the same command are both actor=cli and inferring would mislabel exactly the case the PRD cares about. 'bunch list|new|activate|deactivate|archive', where 'bunch new --activate' composes create-then-activate in one invocation and reports a conflicting bunch by name, because a bunch that is created and never activated constrains nothing. 'mark <wip|ready|archived>' WRITES lifecycle state while the separate 'status' verb READS staleness; deliberately different verbs. 'note' is TRACK-scoped; transition notes go through 'transition set --note'. Build additionally exposes --provider, --brief and optional --base-rev, forwarding them to the plan-aware builder. Defaults remain optimizer-only and blank direction. Agents refine the same named plan; docs/MIX_WORKFLOW.md defines the workflow.",
     "dependencies": [
       "brain/plan_staleness_Python.prompt",
       "brain/plan_revision_Python.prompt",
@@ -2037,7 +2037,8 @@
       "brain/plan_notes_Python.prompt",
       "brain/transition_overrides_Python.prompt",
       "brain/order_constraints_Python.prompt",
-      "brain/plan_mix_build_Python.prompt"
+      "brain/plan_mix_build_Python.prompt",
+      "brain/llm_providers_Python.prompt"
     ],
     "priority": 31,
     "filename": "brain/plan_cli_Python.prompt",
@@ -2190,7 +2191,10 @@
             "flags": [
               "--plan",
               "--profile",
-              "--dj-format"
+              "--dj-format",
+              "--provider",
+              "--brief",
+              "--base-rev"
             ]
           },
           {
@@ -2765,7 +2769,7 @@
   },
   {
     "reason": "Ernest chose optimizer leads, LLM refines (2026-09-30).",
-    "description": "Model review of the optimized order. Keeps a model's reorder only if it uses the same songs once, keeps the requested opener/pairings/regions, adds no blind backbeat blend, adds at most one unverified blend, and stays within 3% of the optimizer objective. Never fails the build.",
+    "description": "Model review of the optimized order. Keeps a model's reorder only if it uses the same songs once, keeps the requested opener/pairings/regions, adds no blind backbeat blend, adds at most one unverified blend, and stays within 3% of the optimizer objective. Never fails the build. Review two-or-more-song sets even with blank direction, with optional mix_context describing the effective feel and untruncated DJ notes. Keeping the optimized order is valid. All existing hard-rule and failure fallbacks remain.",
     "dependencies": [
       "brain/mix_optimizer_Python.prompt",
       "brain/llm_providers_Python.prompt"
@@ -2785,7 +2789,11 @@
         "functions": [
           {
             "name": "refine_order",
-            "signature": "refine_order(ordered_rows, constraints, all_rows, *, brief, ask, provider, snare_confidence=None) -> tuple[list[dict], list[str]]"
+            "signature": "refine_order(ordered_rows, constraints, all_rows, *, brief, ask, provider, snare_confidence=None, mix_context=None) -> tuple[list[dict], list[str]]"
+          },
+          {
+            "name": "build_refine_prompt",
+            "signature": "build_refine_prompt(rows, graph, brief, *, mix_context=None) -> str"
           }
         ]
       }

@@ -31,6 +31,70 @@ def _rows(n: int = 8) -> list[dict]:
 
 
 class MixOrderBriefTest(TestCase):
+    def test_blank_direction_reviews_every_provider_including_two_song_sets(self) -> None:
+        from brain.llm_providers import PROVIDERS
+
+        for provider in PROVIDERS:
+            for size in (2, 3):
+                with self.subTest(provider=provider, size=size):
+                    prompts = []
+                    def ask(prompt):
+                        prompts.append(prompt)
+                        return json.dumps({"order": [f"t{i:03d}" for i in range(size)]})
+                    ordered, notes, _ = order_from_brief(
+                        _rows(size), "  \n", engine=provider, ask=ask,
+                        mix_context={"name": "mix-to-listen", "ride_most_of_song": True},
+                    )
+                    self.assertEqual(len(prompts), 1)
+                    self.assertIn("reviewing a continuous mix order", prompts[0])
+                    self.assertIn('"ride_most_of_song": true', prompts[0])
+                    self.assertIn("User brief (may be empty): (none)", prompts[0])
+                    self.assertCountEqual([r["track_id"] for r in ordered], [r["track_id"] for r in _rows(size)])
+                    self.assertTrue(any("kept the optimized order" in n for n in notes))
+
+    def test_blank_direction_provider_failure_keeps_two_song_optimizer_result(self) -> None:
+        from unittest.mock import Mock
+        expected, _, _ = order_from_brief(_rows(2), "", engine="none")
+        ask = Mock(side_effect=RuntimeError("synthetic unavailable provider"))
+        actual, notes, _ = order_from_brief(_rows(2), "", engine="llama-server", ask=ask)
+        self.assertEqual(actual, expected)
+        ask.assert_called_once()
+        self.assertTrue(any("review skipped" in note for note in notes))
+
+    def test_first_pass_model_receives_notes_after_long_comment(self) -> None:
+        from unittest.mock import Mock
+        rows = _rows(2)
+        rows[0]["dj_notes"] = "comment " * 80 + "; mandatory_end_seconds=92"
+        ask = Mock(return_value='{"order": ["t000", "t001"]}')
+        order_from_brief(rows, "", engine="claude-cli", ask=ask)
+        self.assertIn("mandatory_end_seconds=92", ask.call_args.args[0])
+
+    def test_compose_blank_direction_passes_each_effective_feel_and_keeps_song_set(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from brain.build_mix_plan import compose_mix_plan
+        from brain.mix_profiles import PROFILES
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            playlist = root / "playlist.json"
+            playlist.write_text(json.dumps(_rows(3)))
+            for name in PROFILES:
+                with self.subTest(profile=name):
+                    prompts = []
+                    def ask(prompt):
+                        prompts.append(prompt)
+                        return '{"order": ["t000", "t001", "t002"]}'
+                    plan = compose_mix_plan(playlist=playlist, profile_name=name,
+                                            mix_brief="", order_engine="claude-cli",
+                                            out=root / "mix.json", dj_notes_lookup={}, ask=ask)
+                    reviews = [p for p in prompts if "reviewing a continuous mix order" in p]
+                    self.assertEqual(len(reviews), 1)
+                    self.assertIn('"name": "' + name + '"', reviews[0])
+                    self.assertCountEqual([r['track_id'] for r in plan['tracks']], [r['track_id'] for r in _rows(3)])
+                    if name != "dj-showcase":
+                        self.assertEqual(len(prompts), 1)
+
     def test_no_model_and_empty_brief_still_reorder_exactly_once(self) -> None:
         rows = [
             {"track_id": "/b.mp3", "artist": "B", "title": "B", "bpm": 140.0, "key": "F#"},

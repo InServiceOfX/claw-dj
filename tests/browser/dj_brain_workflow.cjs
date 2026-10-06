@@ -77,6 +77,12 @@ const mix = () => ({profile:'dj-showcase',playlist_ready:true,plan_ready:true,pl
     delete summary.advanced_mix;
     await page.locator('#build-mix').click();
     assert.deepEqual(posts.find(p => p.path === '/api/mix/build').body,{profile:'club-set',dj_format:'none',mix_brief:'Smooth blends; let the verses breathe.',order_engine:'hcompany-api'});
+    await page.evaluate(() => pollMix());
+    await page.locator('#mix-brief').fill('');
+    await page.locator('#build-mix').click();
+    assert.deepEqual(posts.filter(p => p.path === '/api/mix/build').at(-1).body,{profile:'club-set',dj_format:'none',mix_brief:'',order_engine:'hcompany-api'});
+    assert((await page.locator('#mix-brief-help').textContent()).includes('even with no direction'));
+    await page.locator('#mix-brief').fill('Smooth blends; let the verses breathe.');
     await page.evaluate(() => { clearInterval(mixState.pollTimer); mixState.pollTimer=null; });
     await page.locator('#mix-advanced summary').click();
     await page.locator('#interpret-directives').click();
@@ -84,6 +90,7 @@ const mix = () => ({profile:'dj-showcase',playlist_ready:true,plan_ready:true,pl
     assert.equal(posts.some(p => p.path === '/api/directives/apply'),false);
     assert.equal(posts.some(p => p.path === '/api/mix/start'),false);
     await page.locator('#order-engine').selectOption('none');
+    assert((await page.locator('#mix-brief-help').textContent()).includes('local optimizer'));
     assert.equal(await page.locator('#interpret-directives').isDisabled(),true);
     missing=1; await page.evaluate(() => pollMix());
     assert.equal(await page.locator('#build-mix').isDisabled(),true);

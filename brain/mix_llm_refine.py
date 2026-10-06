@@ -26,7 +26,7 @@ MIN_OBJECTIVE_SLACK = 0.5
 MAX_EXTRA_UNVERIFIED = 1
 
 
-def build_refine_prompt(rows: list[dict], graph, brief: str) -> str:
+def build_refine_prompt(rows: list[dict], graph, brief: str, *, mix_context: dict | None = None) -> str:
     ids = short_ids(rows)
     weak = {t.track_id for t, w in zip(graph.tracks, graph.weak) if w}
     catalog = [
@@ -38,7 +38,7 @@ def build_refine_prompt(rows: list[dict], graph, brief: str) -> str:
             "key": row.get("key"),
             "genre": row.get("genre"),
             "snare_read": "weak" if row["track_id"] in weak else "ok",
-            "dj_notes": (row.get("dj_notes") or "")[:400] or None,
+            "dj_notes": (row.get("dj_notes") or "") or None,
         }
         for sid, row in ids.items()
     ]
@@ -60,6 +60,14 @@ lineage, genre, chroma texture, snare-parity verifiability). Improve the
 listening journey where it matters: opener and closer, energy arc, sample /
 lineage payoffs, same-beat pairs, artist runs that feel repetitive. Keep
 blends compatible — a swap that creates a tempo or key clash is worse.
+
+Selected mix feel (effective settings): {json.dumps(mix_context or {}, ensure_ascii=False)}
+When the brief is empty, use this feel and the DJ notes as your direction.
+Aim for a strong first listening pass, with purposeful pacing and clean blends.
+Gentle fades, verse/phrase boundaries, source exclusions and backbeat matching
+remain authoritative. This is an order review: the builder chooses executable
+moves from its analysis and approved evidence. Do not invent measurements,
+approve unsupported sample blends or add supporting tracks.
 
 Hard rules you must keep:
 - Use every id exactly once; never invent ids.
@@ -105,16 +113,17 @@ def refine_order(
     ask: Callable[[str], str],
     provider: str,
     snare_confidence: dict[str, float] | None = None,
+    mix_context: dict | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Return (rows in final order, notes). Never raises on model trouble."""
-    if len(ordered_rows) < 3:
-        return ordered_rows, []
+    if len(ordered_rows) < 2:
+        return ordered_rows, [f"{provider} review skipped: need at least two songs"]
     graph = build_graph(ordered_rows, snare_confidence)
     current_paths = [row["track_id"] for row in ordered_rows]
     local = short_ids(ordered_rows)
     path_to_local = {row["track_id"]: sid for sid, row in local.items()}
     try:
-        reply = ask(build_refine_prompt(ordered_rows, graph, brief))
+        reply = ask(build_refine_prompt(ordered_rows, graph, brief, mix_context=mix_context))
         proposal_short, model_notes = _parse_order(reply, list(local))
     except Exception as error:  # provider down, bad JSON, wrong set
         return ordered_rows, [f"{provider} review skipped: {error}"]

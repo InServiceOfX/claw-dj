@@ -5,7 +5,7 @@ import argparse
 import json
 import sys
 
-from brain import plan_journal, plan_mix_build, plan_paths, plan_staleness, plan_store, transition_overrides
+from brain import llm_providers, plan_journal, plan_mix_build, plan_paths, plan_staleness, plan_store, transition_overrides
 from brain.api import api_bunch_item, api_bunches_collection, api_plan_bunches, api_plan_notes, api_plan_order, api_plan_tracks, api_plan_transitions
 from brain.api.common import ApiError, meta_dict, rev, snapshot
 from brain.plan_revision import StalePlanError
@@ -126,7 +126,9 @@ def cmd_bunch(args):
 
 def cmd_build(args):
     slug = _active(args)
-    return plan_mix_build.build(slug, profile=args.profile, dj_format=args.dj_format)
+    return plan_mix_build.build(slug, profile=args.profile, dj_format=args.dj_format,
+                                order_engine=args.provider, mix_brief=args.brief,
+                                base_rev=args.base_rev)
 
 
 def cmd_log(args):
@@ -164,7 +166,10 @@ def parser():
     for name in ("activate", "deactivate"):
         sub = nested.add_parser(name); sub.add_argument("--bunch-id", required=True); _mutation(sub); sub.set_defaults(func=cmd_bunch)
     sub = nested.add_parser("archive"); sub.add_argument("--bunch-id", required=True); sub.set_defaults(func=cmd_bunch)
-    item = commands.add_parser("build"); item.add_argument("--plan"); item.add_argument("--profile", default="dj-showcase"); item.add_argument("--dj-format", default="none"); item.set_defaults(func=cmd_build)
+    item = commands.add_parser("build"); item.add_argument("--plan"); item.add_argument("--profile", default="dj-showcase"); item.add_argument("--dj-format", default="none")
+    item.add_argument("--provider", choices=["none", *sorted(llm_providers.PROVIDERS)], default="none")
+    item.add_argument("--brief", default=""); item.add_argument("--base-rev")
+    item.set_defaults(func=cmd_build)
     item = commands.add_parser("log"); item.add_argument("--plan"); item.add_argument("--limit", type=int, default=50); item.add_argument("--actor"); item.add_argument("--author"); item.set_defaults(func=cmd_log)
     item = commands.add_parser("status"); _plan_json(item); item.set_defaults(func=cmd_status)
     return root

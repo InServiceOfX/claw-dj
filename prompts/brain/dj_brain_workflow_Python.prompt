@@ -45,6 +45,14 @@ explicit authored performance plans rather than replacing them with Generic Buil
 R9 (MUST): Build preserves the existing hard rules: effective DJ notes, source
 exclusions, verse safety, phrase cues, stem layering, backbeat alignment, tempo/key
 compatibility, gentle fades, exact-once track integrity and model-failure fallback.
+R10 (MUST): Explain that direction is optional and the selected provider reviews
+order even when blank, possibly retaining an already good order. Optimizer-only
+help must accurately describe local planning without model calls. Explain approved
+measured evidence without promising automatic measurement or audible approval.
+R11 (MUST): Keep first-build controls simple. A separate optional disclosure
+explains how a repository-capable agent can refine the same named plan through
+docs/MIX_WORKFLOW.md, then review changes with Arrange Refresh. Preserve authored
+performance safeguards and the separate Start action.
 </contract_rules>
 
 % Verification

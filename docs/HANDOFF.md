@@ -1,5 +1,30 @@
 # Handoff / continuation notes
 
+## One-shot first pass and agent refinement (2026-10-06)
+
+Read docs/MIX_WORKFLOW.md and the independent stories
+story__one_shot_mix_without_direction.md / story__refine_current_mix_with_any_agent.md.
+The selected provider now reviews two-song sets too; blank direction skips only
+constraint interpretation, and review receives effective profile settings and
+untruncated effective DJ notes. Model choreography is restricted to DJ showcase.
+Club set/Mix to listen use model order review plus established ordinary planning.
+The panel explains these defaults and how an agent can continue the same plan.
+
+plan_cli build now supports --provider, --brief and optional --base-rev (checked
+before model calls/writes); defaults remain optimizer-only and empty direction.
+Agents should use named scope and fresh revisions for edits, preserve approved
+parts, and compile authored performances through performance_cli. Generic Build
+still protects hand-authored timelines. Existing approved advanced_mix.json is
+used automatically; arbitrary evidence generation/approval remains future work.
+
+Verification: 281 focused synthetic tests pass without skips, desktop/mobile
+mocked browser checks pass, four affected prompts pass strict structural checks.
+No new real mix/listening audition or playback. Exact authorization recorded by
+PDD; local architecture inference failed, so source prompts/manifest maintained
+directly without automatic regeneration/semantic certification claims. Implemented
+on feat/shared-dj-brain-providers. Idle editor restarted as
+PID 34519 on 8787/control 9995; active plan identity/readiness stayed unchanged.
+
 ## Advanced generic builder, completed measured-set stages (2026-10-06)
 
 Stage one: 6738000 / advanced-builder-stage1-v1. Stage two: addbb34 /

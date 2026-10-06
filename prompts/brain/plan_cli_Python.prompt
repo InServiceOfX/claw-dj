@@ -121,7 +121,10 @@
         "flags": [
           "--plan",
           "--profile",
-          "--dj-format"
+          "--dj-format",
+          "--provider",
+          "--brief",
+          "--base-rev"
         ]
       },
       {
@@ -156,6 +159,18 @@
 <pdd-dependency>brain/transition_overrides_Python.prompt</pdd-dependency>
 <pdd-dependency>brain/order_constraints_Python.prompt</pdd-dependency>
 <pdd-dependency>brain/plan_mix_build_Python.prompt</pdd-dependency>
+<pdd-dependency>brain/llm_providers_Python.prompt</pdd-dependency>
+
+% Accepted agent-refinement workflow (2026-10-06)
+
+Build passes --provider as order_engine and --brief as mix_brief through the
+same plan-aware builder used by the GUI. Provider choices are none and the
+shared provider registry; defaults remain optimizer-only and empty direction.
+Optional --base-rev is checked by the builder before model calls or writes.
+Existing command families and legacy build callers remain compatible. Agent
+edits retain explicit attribution/revision checks and named-plan scope. Authored
+performances remain protected from generic Build and use performance_cli instead.
+No CLI operation here starts playback or rewrites original recordings.
 
 % Goal
 

@@ -201,6 +201,31 @@ class PlanIntegrationTest(TestCase):
         parsed = plan_cli.parser().parse_args(["transition", "set", "--from", "a", "--to", "b", "--note", "cut here", "--author", "llm", "--force"])
         self.assertEqual((parsed.transition_command, parsed.note, parsed.author), ("set", "cut here", "llm"))
 
+    def test_cli_build_passes_provider_optional_direction_and_reviewed_revision(self):
+        meta = self.plan()
+        paths = plan_paths.resolve(meta.slug)
+        paths.playlist.write_text(json.dumps([{"track_id": "a"}, {"track_id": "b"}]))
+        revision = rev(meta.slug)
+        args = plan_cli.parser().parse_args(["build", "--plan", meta.slug,
+            "--profile", "mix-to-listen", "--provider", "llama-server", "--base-rev", revision])
+        with patch("brain.plan_mix_build.build", return_value={}) as build:
+            plan_cli.cmd_build(args)
+        build.assert_called_once_with(meta.slug, profile="mix-to-listen", dj_format="none",
+                                      order_engine="llama-server", mix_brief="", base_rev=revision)
+
+    def test_stale_agent_build_refuses_before_model_or_artifact_write(self):
+        from brain.plan_mix_build import build
+        meta = self.plan()
+        paths = plan_paths.resolve(meta.slug)
+        paths.playlist.write_text(json.dumps([{"track_id": "a"}, {"track_id": "b"}]))
+        before = paths.mix_plan.read_bytes() if paths.mix_plan.exists() else None
+        with patch("brain.plan_mix_build.compose_mix_plan") as compose:
+            with self.assertRaises(plan_revision.StalePlanError):
+                build(meta.slug, base_rev="old-review", order_engine="claude-cli")
+        compose.assert_not_called()
+        self.assertEqual(paths.mix_plan.read_bytes() if paths.mix_plan.exists() else None, before)
+        self.assertEqual(list(paths.root.glob(".mix-build-*")), [])
+
     def test_http_structured_404_409_and_legacy_endpoint_compatibility(self):
         meta = self.plan()
         app = SimpleNamespace(
