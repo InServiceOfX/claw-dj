@@ -110,17 +110,29 @@ def apply_brief(profile: MixProfile, brief: str) -> tuple[MixProfile, list[str]]
     smooth_opening = has(
         "smooth opening", "smooth first", "opening blends", "opening transitions"
     )
-    if (
+    wants_longer = (
         has("longer", "long blend", "breathe", "let it play", "let the", "relaxed")
         or (has("smooth") and not smooth_opening)
-    ):
+    )
+    wants_shorter = has("short", "quick", "fast cuts", "chop", "rapid", "showcase")
+    if profile.ride_most_of_song and (wants_longer or wants_shorter):
+        # Mix to listen already rides most of each song from verse-safe
+        # exits computed for ITS blend length. Stretching blends from the
+        # direction box (32 -> 48 beats, 2026-10-07) shortened every ride
+        # and pushed fades into verses. Keep the profile's lengths.
+        notes.append(
+            "kept Mix to listen blend length (direction words like "
+            "smooth/breathe/long/short do not change it)"
+        )
+        wants_longer = wants_shorter = False
+    if wants_longer:
         profile = replace(
             profile,
             transition_scale=profile.transition_scale * 1.5,
             ride_phrases_pattern=_clamp_pattern(profile.ride_phrases_pattern, 1),
         )
         notes.append("longer blends + longer rides (smooth/breathe)")
-    if has("short", "quick", "fast cuts", "chop", "rapid", "showcase"):
+    if wants_shorter:
         profile = replace(
             profile,
             transition_scale=max(0.5, profile.transition_scale * 0.75),

@@ -37,3 +37,30 @@ class ListenRideTest(TestCase):
         t, why = song_exit_seconds([], earliest=50, latest=190, blend_seconds=20)
         self.assertEqual(t, 190)
         self.assertIn("no lyric", why)
+
+
+class ListenBlendLengthTest(TestCase):
+    """2026-10-07: direction words must not stretch Mix to listen blends."""
+
+    BRIEF = (
+        "Smooth R&B listening mix. Play most of each song if it makes sense "
+        "and let it breathe, with a long blend into the next song."
+    )
+
+    def test_mix_to_listen_keeps_its_blend_length(self) -> None:
+        from brain.mix_profiles import apply_brief
+
+        base = PROFILES["mix-to-listen"]
+        profile, notes = apply_brief(base, self.BRIEF)
+        self.assertEqual(profile.transition_scale, base.transition_scale)
+        self.assertTrue(any("kept Mix to listen blend length" in n for n in notes))
+        profile, _ = apply_brief(base, "quick short showcase")
+        self.assertEqual(profile.transition_scale, base.transition_scale)
+
+    def test_other_feels_still_follow_length_words(self) -> None:
+        from brain.mix_profiles import apply_brief
+
+        for name in ("dj-showcase", "club-set"):
+            base = PROFILES[name]
+            profile, _ = apply_brief(base, self.BRIEF)
+            self.assertGreater(profile.transition_scale, base.transition_scale)
