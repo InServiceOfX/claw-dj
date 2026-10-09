@@ -161,3 +161,35 @@ class RefineTest(TestCase):
         ordered, notes, _ = order_from_brief(_rows(5), "anything", engine="nemoclaw")
         self.assertEqual(len(ordered), 5)
         self.assertTrue(any("retired" in n for n in notes))
+
+
+class MixSheetTest(TestCase):
+    """The review sees measured best-next options, vocals and the rules."""
+
+    def setUp(self) -> None:
+        patcher = patch("brain.mix_order_brief._snare_confidence", return_value={})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_prompt_comes_from_the_versioned_file_and_carries_the_sheet(self) -> None:
+        from brain.mix_llm_refine import PROMPT_PATH, build_refine_prompt
+        from brain.mix_order_brief import build_graph
+
+        rows = _rows(8)
+        rows[2]["duration_seconds"] = 245.0
+        segments = {rows[2]["track_id"]: [
+            {"kind": "verse", "start": 20, "end": 65},
+            {"kind": "chorus", "start": 65, "end": 90},
+            {"kind": "verse", "start": 90, "end": 150},
+        ]}
+        graph = build_graph(rows, {})
+        prompt = build_refine_prompt(rows, graph, "", segments=segments)
+        self.assertTrue(prompt.startswith(PROMPT_PATH.read_text()))
+        self.assertIn("How your answer is judged", prompt)
+        song2 = next(json.loads(line) for line in prompt.splitlines() if line.startswith('{"id": "t002"'))
+        self.assertEqual(song2["minutes"], 4.1)
+        self.assertIn("last verse ends 2:30", song2["vocals"])
+        self.assertEqual(len(song2["best_next"]), 5)
+        scores = [entry[1] for entry in song2["best_next"]]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+        self.assertTrue(all(entry[2] in ("verifiable", "one_side_unverified", "blind") for entry in song2["best_next"]))

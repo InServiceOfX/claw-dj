@@ -413,3 +413,15 @@ Research: [H Company API](H_COMPANY_MODELS_API.md).
 
 > ok go ahead and do those recommended user stories, and take any other actions
 <!-- pdd-intent-entry:one-shot-mixes-and-agent-refinement-of-the-curre-3dc013eb:end -->
+
+<!-- pdd-intent-entry:can-you-make-it-so-the-button-build-mix-plans-al-5c9db8d4:start -->
+## Can you make it so the button Build mix plans allow for more turns?
+
+- Intent event: [`docs/intents/intent__can-you-make-it-so-the-button-build-mix-plans-al-5c9db8d4.md`](intents/intent__can-you-make-it-so-the-button-build-mix-plans-al-5c9db8d4.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `not stated`
+
+> Can you make it so the button Build mix plans allow for more turns?
+<!-- pdd-intent-entry:can-you-make-it-so-the-button-build-mix-plans-al-5c9db8d4:end -->
