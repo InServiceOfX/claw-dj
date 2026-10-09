@@ -116,9 +116,41 @@ class ProviderTest(TestCase):
         with patch.object(llm_providers, "_run", side_effect=fake_run), patch.object(llm_providers, "load_env"):
             self.assertEqual(llm_providers.ask("claude-cli", "PROMPT"), '{"order": []}')
         self.assertEqual(seen["cmd"][:2], ["claude", "-p"])
+        # Build review is one bounded answer: no tools, so no turns spent exploring.
         self.assertIn("--tools", seen["cmd"])
         self.assertEqual(seen["cmd"][seen["cmd"].index("--tools") + 1], "")
+        self.assertNotIn("--permission-mode", seen["cmd"])
         self.assertEqual(seen["stdin"], "PROMPT")
+
+    def test_codex_exec_is_not_passed_a_turn_flag_it_rejects(self) -> None:
+        seen = {}
+
+        def fake_run(cmd, *, stdin=None, timeout_s=30.0):
+            seen["cmd"] = cmd
+            out = next(part for part in cmd if str(part).endswith("answer.txt"))
+            Path(out).write_text('{"order": []}')
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch.object(llm_providers, "_run", side_effect=fake_run), patch.object(llm_providers, "load_env"):
+            self.assertEqual(llm_providers.ask("codex-cli", "PROMPT"), '{"order": []}')
+        self.assertIn("exec", seen["cmd"])
+        self.assertNotIn("--max-turns", seen["cmd"])
+
+    def test_grok_cli_answers_once_without_tools(self) -> None:
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, stdout='{"order": []}', stderr="")
+
+        with patch.object(llm_providers.subprocess, "run", side_effect=fake_run), patch.object(llm_providers, "load_env"):
+            self.assertEqual(llm_providers.ask("grok-cli", "PROMPT"), '{"order": []}')
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--max-turns") + 1], "1")
+        self.assertIn("--disable-web-search", seen["cmd"])
+        self.assertNotIn("--always-approve", seen["cmd"])
+        self.assertIn("--no-subagents", seen["cmd"])
+        self.assertNotEqual(seen["cmd"][seen["cmd"].index("--cwd") + 1], str(llm_providers.REPO_ROOT))
+        self.assertIn("--prompt-file", seen["cmd"])
 
     def test_cli_failure_becomes_provider_error(self) -> None:
         def fake_run(cmd, *, stdin=None, timeout_s=30.0):

@@ -1,0 +1,129 @@
+diff --git a/brain/llm_providers.py b/brain/llm_providers.py
+index 2f016c3..951b947 100644
+--- a/brain/llm_providers.py
++++ b/brain/llm_providers.py
+@@ -3,9 +3,9 @@
+ One text-in / text-out call, many ways to reach a model:
+ 
+   CLI sign-in (your subscription, browser login owned by the vendor's CLI):
+-    claude-cli   `claude -p`            sign in: `claude auth login`
+-    codex-cli    `codex exec`           sign in: `codex login`
+-    grok-cli     `grok --prompt-file`   sign in: `grok login --oauth`
++    claude-cli   `claude -p`            sign in: `claude auth login` (10 turns, tools on)
++    codex-cli    `codex exec`           sign in: `codex login` (read-only tools; this CLI has no turn cap)
++    grok-cli     `grok --prompt-file`   sign in: `grok login --oauth` (10 turns, tools on)
+   API key (kept in the repo's gitignored `.env`, never in plan files):
+     anthropic-api  ANTHROPIC_API_KEY   (+ optional CLAWDJ_ANTHROPIC_MODEL)
+     openai-api     OPENAI_API_KEY      + CLAWDJ_OPENAI_MODEL
+@@ -36,6 +36,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
+ ENV_PATH = REPO_ROOT / ".env"
+ DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5"
+ DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080"
++# Tool calls spend turns before the order JSON comes back. Ten is the ceiling
++# for Claude and Grok. Codex exec has no turn flag. HTTP providers are one
++# completion and have no tool loop.
++CLI_ANSWER_TURNS = 10
+ DEFAULT_HCOMPANY_MODEL = "holo3-1-35b-a3b"
+ HCOMPANY_BASE_URL = "https://api.hcompany.ai/v1"
+ _ENV_LOADED: dict[str, str] = {}
+@@ -169,7 +173,12 @@ def status_all() -> list[dict]:
+ 
+ 
+ def _ask_claude_cli(prompt: str, timeout_s: float) -> str:
+-    cmd = ["claude", "-p", "--output-format", "text", "--tools", "", "--no-session-persistence"]
++    cmd = [
++        "claude", "-p", "--output-format", "text",
++        "--max-turns", str(CLI_ANSWER_TURNS),
++        "--permission-mode", "bypassPermissions",
++        "--no-session-persistence",
++    ]
+     if os.environ.get("CLAWDJ_CLAUDE_CLI_MODEL"):
+         cmd += ["--model", os.environ["CLAWDJ_CLAUDE_CLI_MODEL"]]
+     result = _run(cmd, stdin=prompt, timeout_s=timeout_s)
+@@ -181,6 +190,8 @@ def _ask_claude_cli(prompt: str, timeout_s: float) -> str:
+ def _ask_codex_cli(prompt: str, timeout_s: float) -> str:
+     with tempfile.TemporaryDirectory(prefix="clawdj-codex-") as tmp:
+         out = Path(tmp) / "answer.txt"
++        # This Codex build rejects --max-turns. exec already continues until
++        # it writes the answer file, so there is no 1-turn cap to raise.
+         cmd = [
+             "codex", "exec", "--skip-git-repo-check", "--ephemeral",
+             "-s", "read-only", "--color", "never", "-C", tmp, "-o", str(out), "-",
+@@ -199,7 +210,8 @@ def _ask_grok_cli(prompt: str, timeout_s: float) -> str:
+         prompt_file.write_text(prompt)
+         cmd = [
+             "grok", "--prompt-file", str(prompt_file), "--output-format", "plain",
+-            "--no-subagents", "--disable-web-search", "--max-turns", "1", "--cwd", tmp,
++            "--no-subagents", "--always-approve",
++            "--max-turns", str(CLI_ANSWER_TURNS), "--cwd", str(REPO_ROOT),
+         ]
+         if os.environ.get("CLAWDJ_GROK_CLI_MODEL"):
+             cmd += ["--model", os.environ["CLAWDJ_GROK_CLI_MODEL"]]
+diff --git a/prompts/brain/llm_providers_Python.prompt b/prompts/brain/llm_providers_Python.prompt
+index e533266..7634d2f 100644
+--- a/prompts/brain/llm_providers_Python.prompt
++++ b/prompts/brain/llm_providers_Python.prompt
+@@ -25,7 +25,7 @@ One text-in / text-out call to a language model, reachable in the ways a local D
+ 
+ 1. `PROVIDERS` lists exactly the eight providers above with a human label, kind (`cli` | `api` | `local`), the one-time terminal sign-in command for CLI providers (`claude auth login`, `codex login`, `grok login --oauth`), and the env vars for API/local providers.
+ 2. `status_all()` reports availability and a one-line human detail for every provider without raising: CLI installed and signed in; API key (and model where required) set; llama-server answering `/health`.
+-3. `ask()` sends one prompt and returns only the model's answer text. CLI providers run non-interactively with no tools, no web access and no persisted session; the prompt is passed on stdin or a temporary file, never in a shell string.
++3. `ask()` sends one prompt and returns only the model's answer text. The prompt is passed on stdin or a temporary file, never in a shell string. `claude-cli` and `grok-cli` may use up to 10 turns (`--max-turns 10`) with their normal tools available, so a Build mix plan review can call tools and still return its order. Headless runs approve those tool calls (`--permission-mode bypassPermissions` for Claude, `--always-approve` for Grok) and Grok's working directory is the repository. Subagents stay off (`--no-subagents`) so the 10 turns belong to that one agent. No session is resumed. `codex-cli` uses `codex exec` in a read-only sandbox; this Codex build rejects `--max-turns` and already runs until it writes the answer. The API and llama-server providers are one completion each; they have no turn parameter and no tool loop.
+ 4. `.env` is loaded without overriding variables already set in the process environment.
+ 5. The Anthropic API path uses the official `anthropic` SDK (not raw HTTP, not an OpenAI-compatible shim), explicit effort, and the server-side refusal fallback.
+ 
+@@ -57,4 +57,4 @@ in status/error messages. Status failures are isolated to the failing provider.
+ 
+ % Verification
+ 
+-`tests/test_llm_providers.py`: every provider has a sign-in or env route; unknown/retired names raise; missing keys name the env var; `.env` does not override the shell; `.env` is gitignored; Claude CLI argv has `-p` and an empty tool list with the prompt on stdin; CLI failure becomes ProviderError; a down llama-server is reported, not raised.
++`tests/test_llm_providers.py`: every provider has a sign-in or env route; unknown/retired names raise; missing keys name the env var; `.env` does not override the shell; `.env` is gitignored; Claude CLI argv has `-p`, `--max-turns 10`, and bypassPermissions with the prompt on stdin and no empty tool allowlist; Grok CLI argv has `--max-turns 10`, `--always-approve`, the repository as cwd, and no empty tool allowlist; Codex argv does not pass `--max-turns`; CLI failure becomes ProviderError; a down llama-server is reported, not raised.
+diff --git a/tests/test_llm_providers.py b/tests/test_llm_providers.py
+index 3ef2b82..7e3a50a 100644
+--- a/tests/test_llm_providers.py
++++ b/tests/test_llm_providers.py
+@@ -116,10 +116,42 @@ class ProviderTest(TestCase):
+         with patch.object(llm_providers, "_run", side_effect=fake_run), patch.object(llm_providers, "load_env"):
+             self.assertEqual(llm_providers.ask("claude-cli", "PROMPT"), '{"order": []}')
+         self.assertEqual(seen["cmd"][:2], ["claude", "-p"])
+-        self.assertIn("--tools", seen["cmd"])
+-        self.assertEqual(seen["cmd"][seen["cmd"].index("--tools") + 1], "")
++        self.assertNotIn("--tools", seen["cmd"])
++        self.assertEqual(seen["cmd"][seen["cmd"].index("--max-turns") + 1], "10")
++        self.assertEqual(seen["cmd"][seen["cmd"].index("--permission-mode") + 1], "bypassPermissions")
+         self.assertEqual(seen["stdin"], "PROMPT")
+ 
++    def test_codex_exec_is_not_passed_a_turn_flag_it_rejects(self) -> None:
++        seen = {}
++
++        def fake_run(cmd, *, stdin=None, timeout_s=30.0):
++            seen["cmd"] = cmd
++            out = next(part for part in cmd if str(part).endswith("answer.txt"))
++            Path(out).write_text('{"order": []}')
++            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
++
++        with patch.object(llm_providers, "_run", side_effect=fake_run), patch.object(llm_providers, "load_env"):
++            self.assertEqual(llm_providers.ask("codex-cli", "PROMPT"), '{"order": []}')
++        self.assertIn("exec", seen["cmd"])
++        self.assertNotIn("--max-turns", seen["cmd"])
++
++    def test_grok_cli_allows_ten_turns_with_tools(self) -> None:
++        seen = {}
++
++        def fake_run(cmd, **kwargs):
++            seen["cmd"] = cmd
++            return subprocess.CompletedProcess(cmd, 0, stdout='{"order": []}', stderr="")
++
++        with patch.object(llm_providers.subprocess, "run", side_effect=fake_run), patch.object(llm_providers, "load_env"):
++            self.assertEqual(llm_providers.ask("grok-cli", "PROMPT"), '{"order": []}')
++        self.assertEqual(seen["cmd"][seen["cmd"].index("--max-turns") + 1], "10")
++        self.assertNotIn("--tools", seen["cmd"])
++        self.assertNotIn("--disable-web-search", seen["cmd"])
++        self.assertIn("--always-approve", seen["cmd"])
++        self.assertIn("--no-subagents", seen["cmd"])
++        self.assertEqual(seen["cmd"][seen["cmd"].index("--cwd") + 1], str(llm_providers.REPO_ROOT))
++        self.assertIn("--prompt-file", seen["cmd"])
++
+     def test_cli_failure_becomes_provider_error(self) -> None:
+         def fake_run(cmd, *, stdin=None, timeout_s=30.0):
+             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Not logged in")

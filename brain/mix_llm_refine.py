@@ -17,6 +17,7 @@ never blocks Build mix plan.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Callable
 
 from brain.mix_order_brief import build_graph, enforce_constraints, parse_constraints, short_ids
@@ -26,70 +27,98 @@ MIN_OBJECTIVE_SLACK = 0.5
 MAX_EXTRA_UNVERIFIED = 1
 
 
-def build_refine_prompt(rows: list[dict], graph, brief: str, *, mix_context: dict | None = None) -> str:
+PROMPT_PATH = Path(__file__).resolve().parent / "llm_prompts" / "build_review.md"
+TOP_NEXT = 5
+
+
+def _mmss(seconds: float) -> str:
+    seconds = max(0, int(round(seconds)))
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def vocal_outline(segments: list[dict] | None) -> str | None:
+    """Compact verse/chorus outline from a lyric timeline, or None."""
+    items = []
+    for seg in segments or []:
+        try:
+            kind, start, end = str(seg.get("kind") or ""), float(seg["start"]), float(seg["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if kind:
+            items.append((kind, start, end))
+    if not items:
+        return None
+    parts = [f"{kind} {_mmss(start)}-{_mmss(end)}" for kind, start, end in items[:12]]
+    if len(items) > 12:
+        parts.append(f"+{len(items) - 12} more")
+    verses = [end for kind, _, end in items if kind.casefold() == "verse"]
+    tail = f"; last verse ends {_mmss(max(verses))}" if verses else ""
+    return ", ".join(parts) + tail
+
+
+def _segments_lookup() -> dict[str, list[dict]]:
+    try:
+        from brain.build_mix_plan import load_lyric_segment_lookup
+
+        return load_lyric_segment_lookup()
+    except Exception:  # no index on this machine / in tests
+        return {}
+
+
+def mix_sheet(rows: list[dict], graph, *, segments: dict[str, list[dict]] | None = None, top_next: int = TOP_NEXT) -> dict:
+    """The distilled, pre-scored input the model reviews (Grokicad-style)."""
     ids = short_ids(rows)
-    weak = {t.track_id for t, w in zip(graph.tracks, graph.weak) if w}
-    catalog = [
-        {
+    path_to_short = {row["track_id"]: sid for sid, row in ids.items()}
+    segments = _segments_lookup() if segments is None else segments
+    songs = []
+    for sid, row in ids.items():
+        i = graph.index[row["track_id"]]
+        ranked = sorted(
+            (j for j in range(len(graph.tracks)) if j != i),
+            key=lambda j: (-graph.edges[i][j].score, graph.tracks[j].track_id),
+        )[:top_next]
+        best_next = []
+        for j in ranked:
+            edge = graph.edges[i][j]
+            label = "blind" if graph.weak[i] and graph.weak[j] else (
+                "one_side_unverified" if graph.weak[i] or graph.weak[j] else "verifiable"
+            )
+            best_next.append([path_to_short[graph.tracks[j].track_id], round(edge.score, 2), label, list(edge.reasons)[:2]])
+        songs.append({
             "id": sid,
             "artist": row.get("artist"),
             "title": row.get("title"),
+            "genre": row.get("genre"),
             "bpm": round(float(row["bpm"]), 1) if row.get("bpm") else None,
             "key": row.get("key"),
-            "genre": row.get("genre"),
-            "snare_read": "weak" if row["track_id"] in weak else "ok",
+            "minutes": round(float(row["duration_seconds"]) / 60, 1) if row.get("duration_seconds") else None,
+            "snare_read": "weak" if graph.weak[i] else "ok",
+            "vocals": vocal_outline(segments.get(row["track_id"])),
             "dj_notes": (row.get("dj_notes") or "") or None,
-        }
-        for sid, row in ids.items()
-    ]
-    path_to_short = {row["track_id"]: sid for sid, row in ids.items()}
-    edges = [
-        {
-            "from": path_to_short[e.from_id],
-            "to": path_to_short[e.to_id],
-            "score": e.score,
-            "backbeat": e.backbeat,
-            "why": list(e.reasons)[:3],
-        }
+            "best_next": best_next,
+        })
+    current = [
+        [path_to_short[e.from_id], path_to_short[e.to_id], e.score, e.backbeat]
         for e in graph.report([row["track_id"] for row in rows])
     ]
-    return f"""You are the DJ brain of claw-dj reviewing a continuous mix order for Mixxx.
+    return {"songs": songs, "current_order": current}
 
-The order below was built by a compatibility optimizer (BPM, key, sample
-lineage, genre, chroma texture, snare-parity verifiability). Improve the
-listening journey where it matters: opener and closer, energy arc, sample /
-lineage payoffs, same-beat pairs, artist runs that feel repetitive. Keep
-blends compatible — a swap that creates a tempo or key clash is worse.
 
-Selected mix feel (effective settings): {json.dumps(mix_context or {}, ensure_ascii=False)}
-When the brief is empty, use this feel and the DJ notes as your direction.
-Aim for a strong first listening pass, with purposeful pacing and clean blends.
-Gentle fades, verse/phrase boundaries, source exclusions and backbeat matching
-remain authoritative. This is an order review: the builder chooses executable
-moves from its analysis and approved evidence. Do not invent measurements,
-approve unsupported sample blends or add supporting tracks.
-
-Hard rules you must keep:
-- Use every id exactly once; never invent ids.
-- A song whose snare_read is "weak" cannot be snare-matched; do not place two
-  weak songs next to each other.
-- Respect every song's dj_notes: they are the DJ's own instructions
-  (cue points, ride lengths, skips, opener/closer, tempo holds).
-- Vocals-only (acapella) tracks are layered over instrumentals by the
-  builder; keep each acapella next to its instrumental if it already is.
-
-User brief (may be empty): {brief or "(none)"}
-
-Respond with EXACTLY one JSON object (no markdown fences):
-{{"order": ["t000", "..."], "notes": ["one short line per change and why"]}}
-Return the order unchanged with notes ["no change"] if it is already best.
-
-Catalog ({len(catalog)} songs):
-{json.dumps(catalog, indent=1)}
-
-Current order with blend scores:
-{json.dumps(edges, indent=1)}
-"""
+def build_refine_prompt(rows: list[dict], graph, brief: str, *, mix_context: dict | None = None,
+                        segments: dict[str, list[dict]] | None = None) -> str:
+    sheet = mix_sheet(rows, graph, segments=segments)
+    # One song / one blend per line: compact but still readable in the audit file.
+    songs = "\n".join(json.dumps(s, ensure_ascii=False) for s in sheet["songs"])
+    current = "\n".join(json.dumps(e, ensure_ascii=False) for e in sheet["current_order"])
+    return (
+        PROMPT_PATH.read_text()
+        + "\n\n## This mix\n\n"
+        + f"mix_feel: {json.dumps(mix_context or {}, ensure_ascii=False)}\n"
+        + f"User brief (may be empty): {brief or '(none)'}\n\n"
+        + f"songs ({len(sheet['songs'])}):\n{songs}\n\n"
+        + "current_order ([from, to, score, backbeat]):\n"
+        + current + "\n"
+    )
 
 
 def _parse_order(text: str, allowed: list[str]) -> tuple[list[str], list[str]]:
