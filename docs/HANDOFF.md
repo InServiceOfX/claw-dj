@@ -1,5 +1,22 @@
 # Handoff / continuation notes
 
+## Startup mix-duration estimate (2026-10-08)
+
+`scripts/run_mix.sh` prints `Estimated total mix length: about ...` in its plan
+summary before either live or dry-run execution. `hands/mix_duration.py` counts
+sequential beat-based rides/blends with planned BPM holds/settles/ramps and
+seconds-based finales; simultaneous `performance` timelines use their last
+clip end, counting supporting beds once. Rounded to minutes, approximate:
+live source clamps, beat alignment, loading and effect timing can vary. Even
+with `--max-events` this is the full-plan estimate. No Mixxx connection, audio
+reads, or plan changes during estimation. Shell summary reads the plan path
+from an argument so quotes/spaces are safe. Regression tests use synthetic
+plans and stub the live executor; no real playback is needed.
+Verified: 61 existing runner tests, eight new tests, shell syntax/diff checks,
+and a full 47-event Smooth R&B shell dry-run (estimated about 1 hr 7 min).
+The selected `chill-afternoon-rnb-vol-01` currently lacks a built mix_plan.json;
+its selection and all personal plan artifacts remain unchanged.
+
 ## One-shot first pass and agent refinement (2026-10-06)
 
 Read docs/MIX_WORKFLOW.md and the independent stories

@@ -1,5 +1,19 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Startup mix-duration estimate (2026-10-08)
+
+`./scripts/run_mix.sh` now prints estimated total mix play time before live or
+dry-run execution, rounded to minutes (hours for longer sets). The estimate
+counts planned rides and blends at their planned tempos, or the last clip end
+for native simultaneous performance timelines. It always describes the full
+plan, including with `--max-events`. Pure JSON calculation; no playback or plan
+mutation. Source: `hands/mix_duration.py`; tests: `tests/test_mix_duration.py`.
+Intent: `docs/requirements/requests/2026-10-08-mix-duration-estimate.md`.
+Verification: 61 existing runner tests and eight new estimate/shell tests pass;
+shell syntax and diff checks pass. The Smooth R&B plan's real shell dry-run
+prints about 1 hr 7 min and completes 47 events without a Mixxx connection.
+Branch: `feat/mix-duration-estimate`.
+
 ## One-shot first pass and agent refinement (2026-10-06)
 
 - Added independent casual/experienced-DJ stories and docs/MIX_WORKFLOW.md.

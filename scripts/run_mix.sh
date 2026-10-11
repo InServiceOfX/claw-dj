@@ -8,6 +8,9 @@ usage() {
 Run a mix plan against Mixxx (same plan the playlist editor "Build mix plan"
 writes and "Start mix" reads).
 
+Prints an estimated total mix length before playback (also with --dry-run).
+The estimate is for the full plan, even when --max-events limits execution.
+
 Default plan (important)
   Uses the *active named plan* from the GUI
   (brain/data/plans/active.json → brain/data/plans/<slug>/mix_plan.json).
@@ -140,20 +143,23 @@ if [ ! -f "$PLAN" ]; then
 fi
 
 echo "Plan: $PLAN"
-uv run python -c "
+uv run python - "$PLAN" <<'PY'
 import json
+import sys
 from pathlib import Path
 from brain.build_mix_plan import plan_summary
-plan_path = Path(r'''$PLAN''')
+from hands.mix_duration import mix_duration_label
+plan_path = Path(sys.argv[1])
 plan = json.loads(plan_path.read_text())
 s = plan_summary(plan, plan_path=str(plan_path))
 profile = s.get('profile') or {}
 dj_format = s.get('dj_format') or {}
-print(f\"  {s['track_count']} tracks, {s['event_count']} events, {s['segment_count']} transitions\")
-print(f\"  profile: {profile.get('name')}   dj_format: {dj_format.get('name', 'none')}\")
+print(f"  {s['track_count']} tracks, {s['event_count']} events, {s['segment_count']} transitions")
+print(f"  Estimated total mix length: {mix_duration_label(plan)}")
+print(f"  profile: {profile.get('name')}   dj_format: {dj_format.get('name', 'none')}")
 print('  execution: ' + plan.get('execution_mode', 'legacy_live_events'))
 if s.get('format_compliance'):
-    print(f\"  format compliance: {s['format_compliance']}\")
+    print(f"  format compliance: {s['format_compliance']}")
 # Warn if plan still points at an unmounted volume (common after collection switch).
 ids = []
 for track in plan.get('tracks') or []:
@@ -163,9 +169,9 @@ for track in plan.get('tracks') or []:
         ids.append(track)
 missing = [p for p in ids if not Path(p).is_file()]
 if missing:
-    print(f\"  WARNING: {len(missing)}/{len(ids)} track path(s) missing on disk (first: {missing[0]})\")
+    print(f"  WARNING: {len(missing)}/{len(ids)} track path(s) missing on disk (first: {missing[0]})")
     print('  This plan may be from another volume — rebuild after Finalize on the active collection.')
-"
+PY
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run (no Mixxx moves):"
