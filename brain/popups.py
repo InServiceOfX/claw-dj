@@ -328,14 +328,16 @@ def timeline(segments: list[Segment], scheduler: Scheduler, *, first_offset_s: f
     return items
 
 
-def card_lines(card: Card, width: int = 30) -> list[str]:
+def card_lines(card: Card, width: int = 30, *, attribution: bool = True) -> list[str]:
+    """Display lines. With attribution=False the "— <initials>" line is left out,
+    only for displays that show the initials as a separate badge."""
     text = f"“{card.text}”" if card.kind == "quote" else card.text
     lines = textwrap.wrap(text, width) or [text]
     if card.kind == "distilled":
         lines.append("in brief")
     if card.part:
         lines.append(f"{card.part[0]}/{card.part[1]}")
-    if card.is_commentary:
+    if card.is_commentary and attribution:
         lines.append(f"— {card.initials}")
     return lines
 

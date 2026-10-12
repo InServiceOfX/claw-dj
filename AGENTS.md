@@ -220,9 +220,13 @@ alignment and every source exclusion through loops, skips, fades and pre-roll.
 
 ## Pop-ups: music facts and commentary
 
-`docs/POPUPS.md`. `brain/popups.py` chooses VH1-style cards; `hands/popup_overlay.py`
-serves them as an OBS browser source for the Twitch stream (read-only on
-Mixxx). Rules:
+`docs/POPUPS.md`. `brain/popups.py` chooses VH1-style cards.
+- Default on stream: `hands/popup_obs.py` drives native OBS text sources through
+  the OBS control, with `--allow-write` and auto + manual modes.
+- Optional: `hands/popup_overlay.py` serves an OBS browser source.
+- Both read Mixxx without writing to it.
+
+Rules:
 - Agent facts (`brain/popup_facts.json`) never carry an author mark, and each
   needs a source. Mark new ones `"verified": false`.
 - Authors' writing lives in `commentary/<author-slug>/` and every snippet

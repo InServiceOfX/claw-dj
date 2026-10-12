@@ -8,7 +8,10 @@
 - Code:
   - `brain/popups.py`: cards, relevance, cadence, progressions, cue-sheet timelines, drawtext.
   - `hands/popup_overlay.py`: an OBS browser source at `/overlay`. It finds the song from Mixxx read-only: audible deck, exact file duration, `file_bpm` tiebreak.
-- Tests: `tests/test_popups.py`, `tests/test_popup_overlay.py` (29). Run: `uv run python -m hands.popup_overlay`; how-to in `docs/POPUPS.md`.
+- Native OBS mode (`hands/popup_obs.py`, recommended): drives text sources you create once (`claw-dj pop-up`, optional `claw-dj pop-up EY` and `claw-dj pop-up bubble`) via the OBS control.
+  - Auto mode, plus manual next/back/show/hide/pause/resume from the CLI or a control page on :8766.
+  - `dry-run` previews in the terminal.
+- Tests: `tests/test_popups.py`, `tests/test_popup_overlay.py`, `tests/test_popup_obs.py` (40). Run: `uv run python -m hands.popup_overlay`; how-to in `docs/POPUPS.md`.
 - Content:
   - `brain/popup_facts.json`: 63 starter facts, all `verified: false`.
   - `commentary/ernest-yeung/`: author.json and a template. No EY cards show until Ernest writes there.

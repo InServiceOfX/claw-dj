@@ -10,7 +10,7 @@
       {"name": "is_relevant", "signature": "is_relevant(card: Card, artist: str | None, title: str | None) -> bool"},
       {"name": "parse_cue_sheet", "signature": "parse_cue_sheet(path: Path, duration_s: float | None = None) -> list[Segment]"},
       {"name": "timeline", "signature": "timeline(segments: list[Segment], scheduler: Scheduler, *, first_offset_s: float = 10.0) -> list[dict]"},
-      {"name": "card_lines", "signature": "card_lines(card: Card, width: int = 30) -> list[str]"},
+      {"name": "card_lines", "signature": "card_lines(card: Card, width: int = 30, *, attribution: bool = True) -> list[str]"},
       {"name": "drawtext_filters", "signature": "drawtext_filters(items: list[dict], out_dir: Path, fontfile: str, *, fontsize: int = 46, x: str = '60', y: str = '60') -> str"}
     ],
     "classes": [
@@ -55,7 +55,7 @@ serves the cards live and the video builders burn them in.
 7. `Scheduler.tick(now, artist, title)` returns a new card when at least `interval_s` has passed since the last one (or on the first call), else None. `interval_s` must be >= `show_s` (ValueError otherwise).
 8. `parse_cue_sheet` reads a Mixxx `.cue` (TRACK / TITLE / PERFORMER / INDEX 01 mm:ss:ff at 75 frames per second). Each track ends where the next starts; the last ends at `duration_s` when given, else 600 s later.
 9. `timeline(segments, scheduler)` gives `{start, end, artist, title, card}` items. The first card in a segment starts `first_offset_s` in; then every `interval_s`. Each card shows `show_s`, lies entirely inside its segment (ending >= 1 s before the segment ends), and never overlaps another.
-10. `card_lines` wraps the card text to `width` characters and wraps a quote in curly quotation marks. A distilled card gets the line "in brief". A card with `part` gets "i/n". Commentary ends with "— <initials>". Facts get no attribution line.
+10. `card_lines` wraps the card text to `width` characters and wraps a quote in curly quotation marks. A distilled card gets the line "in brief". A card with `part` gets "i/n". Commentary ends with "— <initials>" unless `attribution=False`, which only a display that shows the initials as a separate badge may use. Facts get no attribution line.
 11. `drawtext_filters(items, out_dir, fontfile)` writes one text file per item into `out_dir` (no escaping problems) and returns a comma-joined ffmpeg drawtext chain enabled only between each item's start and end, with a semi-transparent box.
 12. CLI `python -m brain.popups preview --artist A --title T [--count N]` prints the next N cards. `python -m brain.popups timeline --cue FILE [--duration S] [--out FILE.json]` writes the video timeline.
 

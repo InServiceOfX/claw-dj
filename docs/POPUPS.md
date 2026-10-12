@@ -12,11 +12,64 @@ VH1 Pop-Up Video for claw-dj. While a mix plays, large bubbles pop up:
   - Long passages run as a progression (1/3, 2/3, 3/3).
 
 Story: `user_stories/story__while_the_mix_plays_pop_ups_show_music_facts_and_my_commentary.md`.
-Code: `brain/popups.py` (cards, choice, video timelines) and
-`hands/popup_overlay.py` (live OBS overlay). Prompts: `prompts/brain/popups_Python.prompt`,
-`prompts/hands/popup_overlay_Python.prompt`.
+Code: `brain/popups.py` (cards, choice, video timelines), `hands/popup_obs.py`
+(native OBS text sources, auto and manual) and `hands/popup_overlay.py`
+(browser-source overlay). Prompts: `prompts/brain/popups_Python.prompt`,
+`prompts/hands/popup_obs_Python.prompt`, `prompts/hands/popup_overlay_Python.prompt`.
 
-## On stream (Twitch via OBS, Mac mini)
+## On stream: native OBS (recommended, lowest footprint)
+
+OBS renders the pop-ups with its own text sources, so there's no browser
+source and no embedded Chromium (about 100-300 MB saved). A small Python
+process (about 30-40 MB) sets the text and shows or hides the sources through
+the authenticated OBS control (`docs/OBS_AGENT_CONTROL.md`).
+
+**One-time OBS setup (about 2 minutes).** The OBS control deliberately can't
+create or move sources, so you add them once:
+
+1. OBS's WebSocket server must be on with a password saved (once):
+   `uv sync --extra obs`, then in your own terminal
+   `.venv/bin/python -m hands.obs_cli setup-password`.
+2. In your stream scene, add:
+   - **Text source named `claw-dj pop-up`**: the card. Pick a bold font sized
+     for your canvas (for example 28-36 px at 854x480, 40-52 px at 1280x720),
+     white with an outline or drop shadow, and place it where the bubble goes.
+   - Optional **Text source `claw-dj pop-up EY`**: the small initials badge,
+     placed at the card's corner. Without it, commentary ends with "— EY" in
+     the card text instead.
+   - Optional **backdrop `claw-dj pop-up bubble`**: a Color source (dark, about
+     60% opacity) or an Image source sized behind the text.
+   - Optional: a fade or slide show/hide transition on each source
+     (right-click → Show Transition / Hide Transition) for the pop.
+3. Start, in a terminal on the stream machine, next to the mix:
+   ```
+   cd repos/claw-dj
+   caffeinate -dimsu uv run python -m hands.popup_obs run --scene "Your Scene" --allow-write
+   ```
+   `--allow-write` is required: it's your go-ahead for this process to change
+   OBS text and visibility.
+
+**Automatic mode** is the default: a card every `--interval` seconds (75),
+shown `--show` seconds (12), matched to the song playing. The song comes from
+Mixxx, read-only, as described below.
+
+**Manual mode**, any time, from another terminal:
+```
+uv run python -m hands.popup_obs next      # next card (or forward through ones you went back over)
+uv run python -m hands.popup_obs back      # previous card
+uv run python -m hands.popup_obs show      # show the current card again
+uv run python -m hands.popup_obs hide
+uv run python -m hands.popup_obs pause     # stop automatic cards; a manual card stays up until hide/next/back
+uv run python -m hands.popup_obs resume
+uv run python -m hands.popup_obs status
+```
+Or open the control page at `http://127.0.0.1:8766/`. To use it from your
+phone, start with `--control-host 0.0.0.0` and open `http://<mac-mini>:8766/`.
+
+**Preview without OBS:** `uv run python -m hands.popup_obs dry-run` prints each
+card in the terminal when it would pop up. The same manual commands work.
+
+## On stream: browser source (optional, fancier bubbles)
 
 1. Start the mix as usual, for example
    `caffeinate -dimsu scripts/run_mix.sh` (`caffeinate` keeps the Mac awake;
@@ -27,20 +80,24 @@ Code: `brain/popups.py` (cards, choice, video timelines) and
    uv run python -m hands.popup_overlay
    ```
    It prints, for example, `OBS Browser Source URL: http://192.168.x.x:8765/overlay`.
-3. In OBS: **Sources → + → Browser**, paste the URL, set **Width 1920, Height
-   1080**, and leave the default transparent background. Put it above the
-   video and visuals.
+3. In OBS: **Sources → + → Browser**, paste the URL, and set **Width and Height
+   to your canvas size** (for example 1280x720 or 854x480; the page scales to
+   whatever size it's given). On small canvases add `?scale=1.4` to the URL.
+   To cut its cost, set the source to 10-15 fps and turn on "Shutdown source
+   when not visible".
 
-It finds the playing song by itself. It reads Mixxx without changing anything:
+### How it knows what's playing (both modes)
+
+It reads Mixxx without changing anything:
 - **Audible deck:** the playing deck with the highest channel fader × crossfader level.
 - **Identification:** that deck's exact track length is matched against the
   active plan, with Mixxx's analyzed BPM breaking ties.
 - **Unknown song:** if the song can't be identified with certainty, general
   facts or untagged commentary show instead.
 
-The overlay never writes to Mixxx and never affects the mix.
+Neither mode writes to Mixxx or affects the mix.
 
-Options:
+Options (both modes):
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -49,9 +106,7 @@ Options:
 | `--commentary-every N` | 3 | every Nth pop-up is commentary (when any exists) |
 | `--verified-only` | off | only facts marked `"verified": true` |
 | `--now-file now.json` | — | `{"artist": "...", "title": "..."}` instead of Mixxx |
-| `--port P` / `--host H` | 8765 / all interfaces | where OBS connects |
-
-In OBS, add `?scale=1.2` to the URL for bigger bubbles.
+| `--wrap N` (native) | 30 | characters per line |
 
 Preview the cards for a song in the terminal:
 ```

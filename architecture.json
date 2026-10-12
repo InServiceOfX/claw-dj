@@ -3100,5 +3100,72 @@
         ]
       }
     }
+  },
+  {
+    "reason": "The browser-source overlay costs 100-300 MB in OBS; Ernest wants the lowest footprint plus automatic and manual pop-up modes.",
+    "description": "Native OBS pop-ups: sets the text and visibility of human-created OBS text sources through the authenticated OBS control (scene-items, text-set, source-visible; allow_write required). The author's initials go on a badge source or stay in the text; facts never get a badge. A controller does automatic cards and manual next/back/show/hide/pause/resume via CLI and a small control page. dry-run previews in the terminal. OBS errors never reach the stream.",
+    "dependencies": [
+      "brain/popups_Python.prompt",
+      "hands/obs_control_Python.prompt",
+      "hands/popup_overlay_Python.prompt"
+    ],
+    "priority": 51,
+    "filename": "hands/popup_obs_Python.prompt",
+    "filepath": "hands/popup_obs.py",
+    "tags": [
+      "runtime",
+      "stream",
+      "obs",
+      "popups"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "card_text",
+            "signature": "card_text(card: Card, *, wrap: int = 30, badge: bool = True) -> str"
+          },
+          {
+            "name": "make_control_server",
+            "signature": "make_control_server(controller: PopupController, *, host: str = '127.0.0.1', port: int = 8766) -> ThreadingHTTPServer"
+          }
+        ],
+        "classes": [
+          {
+            "name": "ObsDisplay",
+            "signature": "ObsDisplay(control, *, scene: str, text_source: str, badge_source: str | None = None, bubble_source: str | None = None, wrap: int = 30)",
+            "methods": [
+              "resolve() -> None",
+              "show(card) -> None",
+              "hide() -> None"
+            ]
+          },
+          {
+            "name": "TerminalDisplay",
+            "signature": "TerminalDisplay(out=sys.stdout, *, wrap: int = 30)",
+            "methods": [
+              "show(card) -> None",
+              "hide() -> None"
+            ]
+          },
+          {
+            "name": "PopupController",
+            "signature": "PopupController(scheduler: Scheduler, display, now_playing, *, clock=time.monotonic)",
+            "methods": [
+              "step() -> None",
+              "next() -> Card | None",
+              "back() -> Card | None",
+              "show_again() -> Card | None",
+              "hide() -> None",
+              "pause() -> None",
+              "resume() -> None",
+              "status() -> dict"
+            ]
+          }
+        ]
+      }
+    }
   }
 ]

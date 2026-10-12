@@ -309,6 +309,13 @@ contexts:
         code:
           path: "brain/popups.py"
 
+  popup_obs:
+    paths: ["*popup_obs*"]
+    defaults:
+      outputs:
+        code:
+          path: "hands/popup_obs.py"
+
   popup_overlay:
     paths: ["*popup_overlay*"]
     defaults:

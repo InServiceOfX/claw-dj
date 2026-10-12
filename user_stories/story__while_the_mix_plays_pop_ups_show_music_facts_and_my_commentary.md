@@ -1,6 +1,7 @@
-<!-- pdd-story-prompts: prompts/brain/popups_Python.prompt, prompts/hands/popup_overlay_Python.prompt -->
+<!-- pdd-story-prompts: prompts/brain/popups_Python.prompt, prompts/hands/popup_obs_Python.prompt, prompts/hands/popup_overlay_Python.prompt -->
 <!-- pdd-story-status: accepted-2026-10-12 -->
 <!-- pdd-story-intent: docs/intents/intent__pop-up-music-facts-and-ernest-s-commentary-over--71fbe377.md -->
+<!-- pdd-story-intent: docs/intents/intent__native-obs-pop-ups-with-automatic-and-manual-mod-40842147.md -->
 
 # User Story: While the mix plays, pop-ups show music facts and my commentary
 
@@ -54,9 +55,20 @@ never changes what plays.
    timeline from the Mixxx cue sheet: each card inside the song it is about,
    none overlapping. They also come out as text overlays the video builders
    can burn in.
-9. **Stream-ready.** It serves a transparent web page that OBS (or any
-   streaming tool) adds as a browser source, reachable from another machine
-   on the network.
+9. **Stream-ready, lowest footprint first (2026-10-12).**
+   - The default stream mode drives OBS's own text sources (no browser source,
+     so no embedded Chromium) through the authenticated OBS control.
+   - Text is sized to the actual canvas, which may be smaller than 1920x1080 to
+     save video bandwidth for audio.
+   - A transparent web page (browser source) remains as an optional fancier
+     mode.
+10. **Automatic and manual.**
+   - Automatic mode pops cards on its own for unattended streams.
+   - Manual mode lets Ernest flip forward and back, show, hide, pause and
+     resume, from the command line or a small control page on his phone or
+     laptop.
+11. **Preview without OBS.** The same cards, with the same timing and manual
+   controls, can be previewed in the terminal.
 
 ## Examples
 

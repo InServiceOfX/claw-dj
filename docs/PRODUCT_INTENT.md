@@ -455,3 +455,15 @@ Usage: [OBS_AGENT_CONTROL.md](OBS_AGENT_CONTROL.md).
 
 > I'm streaming on Twitch (https://www.twitch.tv/clawdj) with claw-dj running autonomously on the Mac mini on this network. I want an application that periodically shows, in large text, interesting music facts about the songs and artists we're playing, much like VH1's Pop-Up Video pop-ups while music videos played. I also want to write at length about my thoughts on music, pop culture, the development and progression of hip hop and R&B, and my opinions about hip hop and R&B; the application then pops up snippets of that, or a progression of text from my commentary, either quoting me directly or a distillation of my thoughts. It belongs inside claw-dj as its own mini-application. It runs while the music plays on stream, and can also be used when creating short-form content or long-form full-mix videos. When I'm the one saying something (a direct quote or a distillation of my thoughts), mark it with EY, my initials, or a very small, subtle asterisk or EY icon; otherwise the music facts the agent surfaces are the agent's own and carry no EY mark. My writing is public, so it lives in the repo in a subdirectory named for me, so other people can add their own commentary under their own names in the future.
 <!-- pdd-intent-entry:pop-up-music-facts-and-ernest-s-commentary-over--71fbe377:end -->
+
+<!-- pdd-intent-entry:native-obs-pop-ups-with-automatic-and-manual-mod-40842147:start -->
+## Native OBS pop-ups with automatic and manual modes
+
+- Intent event: [`docs/intents/intent__native-obs-pop-ups-with-automatic-and-manual-mod-40842147.md`](intents/intent__native-obs-pop-ups-with-automatic-and-manual-mod-40842147.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `not stated`
+
+> Build the native OBS version of the pop-ups for the lowest memory footprint on the stream machine: drive OBS's own text sources through the existing authenticated OBS control instead of a browser source, sized to my actual (smaller than 1920x1080) canvas because I want to spend less bandwidth on video and more on audio. Give it an automatic mode for unattended streams and a manual mode where I can flip forward, go back, show, hide, pause and resume cards. Let me preview the text without OBS.
+<!-- pdd-intent-entry:native-obs-pop-ups-with-automatic-and-manual-mod-40842147:end -->

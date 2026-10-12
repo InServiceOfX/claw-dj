@@ -1,0 +1,75 @@
+<pdd-reason>The browser-source overlay costs 100-300 MB inside OBS on the stream machine (embedded Chromium). Ernest wants the lowest footprint: native OBS text sources driven by a small process, an automatic mode for unattended streams, and a manual mode to flip forward and back through cards.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "card_text", "signature": "card_text(card: Card, *, wrap: int = 30, badge: bool = True) -> str"},
+      {"name": "make_control_server", "signature": "make_control_server(controller: PopupController, *, host: str = '127.0.0.1', port: int = 8766) -> ThreadingHTTPServer"}
+    ],
+    "classes": [
+      {"name": "ObsDisplay", "signature": "ObsDisplay(control, *, scene: str, text_source: str, badge_source: str | None = None, bubble_source: str | None = None, wrap: int = 30)", "methods": ["resolve() -> None", "show(card) -> None", "hide() -> None"]},
+      {"name": "TerminalDisplay", "signature": "TerminalDisplay(out=sys.stdout, *, wrap: int = 30)", "methods": ["show(card) -> None", "hide() -> None"]},
+      {"name": "PopupController", "signature": "PopupController(scheduler: Scheduler, display, now_playing, *, clock=time.monotonic)", "methods": ["step() -> None", "next() -> Card | None", "back() -> Card | None", "show_again() -> Card | None", "hide() -> None", "pause() -> None", "resume() -> None", "status() -> dict"]}
+    ]
+  }
+}
+</pdd-interface>
+
+% Goal
+
+Show `brain.popups` cards in **native OBS text sources** through the existing authenticated OBS control (`hands/obs_control.py`, actions `scene-items`, `text-set`, `source-visible`). There is no browser source. An automatic mode follows the scheduler; a manual mode flips through cards. A `--dry-run` shows the same cards in the terminal without OBS (`user_stories/story__while_the_mix_plays_pop_ups_show_music_facts_and_my_commentary.md`).
+
+% Requirements
+
+1. OBS sources are created once by the human in OBS; the OBS control v1 deliberately cannot create or move sources:
+   - a text source for the card (default name "claw-dj pop-up");
+   - optionally a text source for the initials badge (default "claw-dj pop-up EY");
+   - optionally a backdrop source (default "claw-dj pop-up bubble").
+
+   `ObsDisplay.resolve()` finds their scene-item ids by name with `scene-items` in the given scene. A missing card text source raises a clear error naming the scene and source. Missing optional sources are simply not used.
+2. `ObsDisplay.show(card)`:
+   - Text: sets the card text with `text-set`.
+   - Initials, with a badge source: sets it to the card's initials and shows it only for commentary.
+   - Initials, without a badge source: the "— <initials>" line stays in the text (`card_text(..., badge=False)`). Commentary is never shown without its author's initials.
+   - Visibility: shows the backdrop and text with `source-visible`.
+
+   Facts never show a badge. `hide()` hides all three.
+3. Every OBS write goes through `OBSControl.execute(..., allow_write=True)`. The CLI `run` command refuses to start without `--allow-write` (the OBS control's mutation contract: an explicit human instruction). Dry-run needs no OBS and no flag.
+4. An OBS error during a show or hide is reported once per outage on stderr and never raised, so the stream and mix are unaffected; the next show retries (the client reconnects lazily). Startup resolution errors are raised.
+5. `PopupController`:
+   - `step()` (called about every 0.5 s): in auto mode, asks `scheduler.tick(now, artist, title)` with `now_playing.current()` and shows a new card. It hides the card once it has been up `scheduler.show_s`.
+   - `next()`: shows the next card in history if the user went back; otherwise asks the scheduler for a fresh one.
+   - `back()`: shows the previous card in history.
+   - `show_again()` re-shows the current card; `hide()` hides now.
+   - `pause()` stops automatic cards (manual still works); `resume()` restarts them.
+   - Manual shows also hide after `show_s` unless paused, where they stay until `hide`, `next` or `back`.
+   - `status()` reports mode, the current card (JSON), its position in history and the now-playing song.
+6. `make_control_server` serves:
+   - `/next`, `/back`, `/show`, `/hide`, `/pause`, `/resume`: GET or POST, each returning `status()` JSON;
+   - `/status`;
+   - `/`: a minimal button page usable from a phone;
+   - anything else: 404.
+
+   It binds 127.0.0.1 by default (`--control-host 0.0.0.0` for a phone on the LAN). Logging is quiet.
+7. CLI `python -m hands.popup_obs`:
+   - `run --scene NAME --allow-write [--text-source N] [--badge-source N] [--bubble-source N] [--interval S] [--show S] [--commentary-every N] [--verified-only] [--wrap N] [--now-file P] [--control-port P] [--control-host H] [--obs-port P] [--password-file P]`;
+   - `dry-run [same card options]`: the terminal display, auto mode, and the same control server;
+   - `next | back | show | hide | pause | resume | status [--control-port P]`: send the command to a running daemon and print its JSON.
+
+   The OBS password comes from `hands.obs_cli.load_password`.
+8. `card_text` joins `brain.popups.card_lines(card, wrap, attribution=not badge)` with newlines.
+
+% Verification
+
+- `uv run python -m unittest tests/test_popup_obs.py` with a fake OBS control. No real OBS, no secrets.
+- Cover:
+  - name resolution and the missing-source error;
+  - text-set and visibility calls with `allow_write=True`;
+  - the badge only for commentary, and initials kept in the text when there's no badge source;
+  - auto show and timed hide;
+  - next/back history; pause and resume;
+  - OBS errors swallowed during show;
+  - control HTTP endpoints;
+  - run refusing without `--allow-write`;
+  - dry-run terminal output.
