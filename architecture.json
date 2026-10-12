@@ -2950,5 +2950,33 @@
       {"name": "compile_generic", "signature": "(plan: dict, recipe: dict, *, support_notes: dict | None = None) -> dict"},
       {"name": "upgrade", "signature": "(plan: dict, recipe_path: Path, *, slug: str | None = None) -> dict"}
     ]}}
+  },
+  {
+    "reason": "Agents need authenticated local OBS control without accessing Twitch credentials or changing Mixxx timing.",
+    "description": "Harness-neutral OBS WebSocket v5 client with strict action schemas, loopback-only endpoints, sanitized errors, deadlines and explicit mutation/output permission declarations. No raw RPC or stream service settings.",
+    "dependencies": [],
+    "priority": 51,
+    "filename": "hands/obs_control_Python.prompt",
+    "filepath": "hands/obs_control.py",
+    "tags": ["runtime", "obs", "safety"],
+    "context_urls": ["https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md"],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "validate_action", "signature": "(action: str, data: dict | None = None, *, allow_write: bool = False, allow_output: bool = False) -> dict"}
+    ]}}
+  },
+  {
+    "reason": "Every AI harness should be able to call the same safe OBS functions through JSON without requiring MCP.",
+    "description": "One JSON CLI over obs_control with private password setup, offline capabilities, screenshot path delivery, preflight permission/schema checks and sanitized operation failures.",
+    "dependencies": ["hands/obs_control_Python.prompt"],
+    "priority": 52,
+    "filename": "hands/obs_cli_Python.prompt",
+    "filepath": "hands/obs_cli.py",
+    "tags": ["runtime", "obs", "cli", "safety"],
+    "context_urls": [],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "main", "signature": "(argv=None, *, control_factory=None) -> int"},
+      {"name": "load_password", "signature": "(path=None) -> str | None"},
+      {"name": "setup_password", "signature": "(path=None) -> None"}
+    ]}}
   }
 ]

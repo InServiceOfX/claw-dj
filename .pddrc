@@ -384,3 +384,17 @@ contexts:
       outputs:
         code:
           path: "brain/advanced_mix.py"
+
+  obs_control:
+    paths: ["*obs_control*"]
+    defaults:
+      outputs:
+        code:
+          path: "hands/obs_control.py"
+
+  obs_cli:
+    paths: ["*obs_cli*"]
+    defaults:
+      outputs:
+        code:
+          path: "hands/obs_cli.py"

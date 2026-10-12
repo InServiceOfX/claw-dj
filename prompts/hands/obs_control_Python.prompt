@@ -1,0 +1,106 @@
+<pdd-reason>Any local AI harness needs the same authenticated OBS control surface while OBS retains its Twitch authorization and Mixxx retains beat-critical execution.</pdd-reason>
+<pdd-interface>
+{"type":"module","module":{"functions":[
+ {"name":"validate_action","signature":"validate_action(action: str, data: dict | None = None, *, allow_write: bool = False, allow_output: bool = False) -> dict"}
+],"classes":[{"name":"OBSControl","methods":[
+ "__init__(host='127.0.0.1', port=4455, password=None, timeout_s=5.0)",
+ "__enter__() -> OBSControl", "__exit__(*exc_info) -> None", "close() -> None",
+ "execute(action: str, data: dict | None = None, *, allow_write=False, allow_output=False) -> dict"
+]}]}}
+</pdd-interface>
+
+% Goal
+Implement hands/obs_control.py in Python over native OBS WebSocket v5 using
+optional websocket-client. Expose OBSControlError for sanitized transport and
+protocol failures and READ_ACTIONS, WRITE_ACTIONS, OUTPUT_ACTIONS frozensets.
+No connection is created during import, construction or validation. The context
+manager closes the connection and clears its password reference. The client
+is synchronous, single-owner, reusable for sequential permitted execute calls;
+close and any communication failure are terminal, not implicit retry triggers.
+
+% Endpoint and protocol
+Allow only 127.0.0.1, ::1 and localhost. Normalize localhost to literal 127.0.0.1
+so host lookup cannot redirect credentials. Port is an integer 1..65535, not
+boolean. Timeout is finite, positive, at most 300 seconds and not boolean.
+Password is a string or None. Bypass HTTP proxies and prohibit redirects.
+Hello op=0 must negotiate RPC>=1. Identify op=1 uses rpcVersion=1,
+eventSubscriptions=0, and OBS's salted/challenged SHA256/base64 authentication
+when Hello requests it. A challenge without a password fails; never disable
+server authentication. Identified op=2 must negotiate exact integer RPC 1.
+Requests use op=6 with fresh requestId, requestType and requestData. Receive
+op=7 with matching requestId/type, success result exactly true and object
+responseData. Ignore op=5 events only under the same monotonic operation
+deadline. Malformed/mismatched/error responses close the client. Server comments
+and raw exceptions are not returned. Use finite socket timeouts, no automatic
+retries, and non-waiting close so shutdown cannot extend deadlines.
+Each execute gets one absolute monotonic deadline covering literal-loopback TCP
+connect, HTTP upgrade, OBS identification, every send/receive (including inner
+partial-read/write loops and fragmented frames), aggregates and events. Recompute
+remaining time before every low-level socket I/O; trickling bytes must not renew
+the budget. A reused connection gets a fresh deadline only at the next execute.
+Preconnect a deadline-aware literal-loopback socket and supply it to
+websocket-client, bypassing DNS/proxy connection setup. Release the raw socket
+if connect/upgrade fails; on client close release it without protocol I/O.
+
+% Action schema
+All fields listed below are required for direct Python execution; data omitted
+means {}. Return a copied validated dict and reject any extra field. Flags are
+strict booleans. Names are nonempty strings <=1024 characters without NUL.
+Text is a string <=65536 characters without NUL. Numeric booleans are rejected.
+
+Read actions:
+- version -> GetVersion, scenes -> GetSceneList, inputs -> GetInputList: {}.
+- status: {} -> stream GetStreamStatus, record GetRecordStatus, stats GetStats.
+- scene-items: sceneName -> GetSceneItemList.
+- audio: inputName -> mute GetInputMute and volume GetInputVolume.
+- screenshot: sourceName, width, height -> GetSourceScreenshot with imageFormat
+  png and imageWidth/imageHeight; dimensions are integers 8..4096. Return imageData
+  for the caller to save; the CLI does not dump it into agent context.
+
+Write actions (allow_write=True required):
+- scene-create, scene-switch, scene-preview: sceneName -> CreateScene,
+  SetCurrentProgramScene, SetCurrentPreviewScene respectively.
+- source-visible: sceneName, sceneItemId (integer 0..2^31-1), sceneItemEnabled
+  (boolean) -> SetSceneItemEnabled.
+- input-mute: inputName, inputMuted (boolean) -> SetInputMute.
+- input-volume: inputName, inputVolumeDb (finite -100..0) -> SetInputVolume.
+- studio-mode: studioModeEnabled (boolean) -> SetStudioModeEnabled.
+- text-set: inputName, text -> verify existing input kind through GetInputList,
+  then SetInputSettings overlay=true and only {text}. Allowed kinds are
+  text_ft2_source, text_ft2_source_v2, text_gdiplus, text_gdiplus_v2.
+- color-create: sceneName, inputName, color (integer 0..2^32-1 ABGR), width,
+  height (integers 1..4096) -> CreateInput color_source_v3 with only those
+  inputSettings and sceneItemEnabled=true.
+
+Output actions (both allow_write=True and allow_output=True required):
+stream-start, stream-stop, record-start, record-stop with {} -> StartStream,
+StopStream, StartRecord, StopRecord. Permission flags declare caller
+human authorization; they are not an independent human-consent mechanism.
+
+<contract_rules>
+R1 (MUST): validate action names, schemas and permission flags before connecting or sending any request.
+R2 (MUST NOT): connect to a non-loopback endpoint, follow redirects or route OBS credentials through a proxy.
+R3 (MUST): negotiate OBS v5 authentication/RPC, match response IDs/types and enforce one total deadline per execute including aggregates and interleaved events.
+R4 (MUST NOT): expose raw RPC, stream service settings, Twitch tokens, stream keys, arbitrary source settings, source deletion or arbitrary input creation.
+R5 (MUST NOT): perform mutations without write permission or stream/record start/stop without separate output permission.
+R6 (MUST NOT): retry a mutation after error, automatically start outputs, disable authentication, launch OBS, or change OBS preferences.
+R7 (MUST): errors are fixed sanitized messages without passwords, server comments, input settings or raw transport details; failed communication closes the socket.
+R8 (MUST): text updates apply only to an existing text source, never a browser/media source or nonexistent name.
+R9 (MUST): reject malformed protocol objects and received messages larger than 16 MiB; close without waiting for peer acknowledgement.
+R10 (MUST NOT): alter Mixxx timing, music files or personal plan state.
+</contract_rules>
+
+<vocabulary>
+malformed: an OBS envelope missing the integer op or object d, a Hello/RPC value
+outside the declared handshake, a response with mismatched ID/type or non-object
+responseData, or JSON which cannot be decoded.
+</vocabulary>
+
+% Verification
+Run .venv/bin/python -m unittest discover -s tests -p test_obs_control.py -v.
+Use synthetic in-memory transport seams and real ephemeral-loopback RFC6455
+fixtures. Cover authentication, schema/gates, all public action mappings,
+text-source restrictions, failure sanitization, IDs, events, deadlines, local
+endpoint normalization, screenshot limits and close. Never invoke real OBS
+outputs in tests. Real OBS access is separately demonstrated by authorized
+read-only version/status/scenes calls; synthetic fixtures do not prove it.

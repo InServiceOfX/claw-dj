@@ -1,5 +1,39 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Harness-neutral OBS integration (2026-10-11)
+
+- Python library `hands/obs_control.py` and JSON CLI `hands/obs_cli.py`, installed
+  as `.venv/bin/claw-obs`; optional `obs` extra uses websocket-client. No MCP.
+  Localhost OBS WebSocket v5 authentication, strict action/schema validation,
+  deadlines, request IDs, sanitized failures and no mutation retries.
+- Read scene/input inventories, scene items, audio mute/volume and output/stats;
+  screenshot-to-new-file; explicit scene/source/audio/text/color/studio controls.
+  Stream/record start and stop need both write and output permission declarations.
+  No raw RPC, service settings, Twitch tokens or stream-key access.
+- User approved Python + JSON CLI, explicitly gated outputs. Hidden local
+  password setup creates a private new file outside source; no saved OBS
+  credentials were read and no real scene/output/Mixxx state was mutated.
+- Verification: 31 OBS tests pass, including synthetic real-WebSocket protocol
+  fixtures; existing 6 Mixxx-control-port and 22 live-toolkit tests also pass.
+  The isolated DJ-workflow runner passes 286 tests against temporary data and
+  fake runtime fixtures, without playing the personal collection.
+  Both new prompt contracts pass strict checks; syntax and git diff checks pass.
+  Pre-commit review fixes isolate synthetic CLI credentials and enforce the
+  shared deadline inside TCP/HTTP-upgrade and fragmented-frame socket I/O.
+  Slow-trickle handshake/frame regressions and reused-client checks pass.
+  Installed capabilities/help execute. The user enabled authenticated WebSocket
+  control on 4455 and saved the password through the hidden local prompt.
+  Real version/status/scenes/inputs now all succeed: OBS 32.2.2, obs-websocket
+  5.7.4, RPC 1; stream and recording inactive, one scene named Scene, no inputs.
+  No Twitch broadcast or real mutation was tested. OBS's native saved credentials
+  and Twitch tokens remain untouched; only the user-provisioned private helper
+  password is used in-process.
+- Exact intent persisted by PDD. Its architecture step stalled and inferred
+  Rust instead of approved Python; stopped before generated changes. Bounded
+  prompts/manifest maintained directly; no automatic generation or semantic
+  certification claimed. Guide: `docs/OBS_AGENT_CONTROL.md`; accepted meaning:
+  `docs/intents/OBS_CONTROL_APPROVAL.md`. No commit/push.
+
 ## Startup mix-duration estimate (2026-10-08)
 
 `./scripts/run_mix.sh` now prints estimated total mix play time before live or

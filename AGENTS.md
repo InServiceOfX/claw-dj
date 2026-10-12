@@ -163,6 +163,19 @@ YouTube OAuth/API setup remains an active cross-machine priority. Follow:
 
 Never request a Google password, 2FA code, recovery code, browser cookie, raw access token, or refresh token. Default API uploads to private. Require explicit confirmation for uploads, publication/scheduling, public metadata edits, comment writes/moderation, and deletion.
 
+## OBS control from any harness
+
+Read `docs/OBS_AGENT_CONTROL.md` before operating OBS. Use
+`.venv/bin/claw-obs capabilities` for the harness-neutral JSON action inventory,
+or import `hands.obs_control.OBSControl`. OBS owns its Twitch authorization;
+never read Twitch tokens, stream keys, service settings or saved OBS credentials
+to make connection setup convenient. Password setup belongs in the user's own
+hidden-input terminal. Writes require explicit human authorization plus
+`--allow-write`; stream/record start AND stop additionally require
+`--allow-output`. These flags declare approval, they do not replace it.
+Use read-only version/status/scenes/inputs for live connection tests. No outputs
+may be started just to verify access. Keep screenshots and secrets outside Git.
+
 ## Prompt-Driven Development
 
 Before PDD adoption or PDD-managed product work, read the workspace router at

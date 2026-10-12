@@ -1,5 +1,37 @@
 # Handoff / continuation notes
 
+## Harness-neutral OBS integration (2026-10-11)
+
+Use `.venv/bin/claw-obs capabilities` or `python -m hands.obs_cli` and read
+`OBS_AGENT_CONTROL.md`. `hands.obs_control.OBSControl.execute` is the one
+transport/schema boundary; CLI and any future MCP share it. Optional dependency
+is the `obs` extra. OBS retains its Twitch login, which does NOT grant separate
+Twitch chat/moderation API access. Client rejects non-local hosts, unknown/raw
+RPCs, service settings and ungated mutations/outputs. No output toggles.
+
+31 OBS tests, 6 existing control-port and 22 live-toolkit tests pass.
+Broader isolated DJ-workflow verification also passes 286 synthetic tests.
+Both new prompt contracts pass strict checks; syntax/diff checks pass.
+Synthetic CLI tests now isolate credentials instead of reading personal files.
+A deadline-aware socket enforces the shared budget through TCP, HTTP upgrade
+and fragmented-frame I/O; slow-trickle and reused-client regressions pass.
+Real authenticated version/status/scenes/inputs now succeed on port 4455:
+OBS 32.2.2, obs-websocket 5.7.4, RPC 1. The user enabled the server and saved the
+password through the hidden local prompt. Current program scene is Scene;
+inputs are empty and stream/record outputs are inactive. Local OBS API access
+is verified; actual scene mutations, audio capture/routing and Twitch broadcast
+remain untested. Keep authentication enabled.
+Password hidden-input setup must be run in the user's own terminal, not captured
+agent stdin. Do not read the saved OBS password without explicit permission.
+No stream/recording/scene/Mixxx mutations or Twitch credential reads occurred.
+
+User approved Python library + JSON CLI with public/output actions explicitly
+gated, and clarified live Mixxx mixing is not VOD playback. Keep policy discussion
+separate from this local integration. Exact PDD intake persisted; architecture
+inference stalled and picked Rust, then was stopped. Accepted Python scope,
+prompts, story and manifest are maintained directly; no automatic generation
+or semantic certification claim. See `intents/OBS_CONTROL_APPROVAL.md`.
+
 ## Startup mix-duration estimate (2026-10-08)
 
 `scripts/run_mix.sh` prints `Estimated total mix length: about ...` in its plan

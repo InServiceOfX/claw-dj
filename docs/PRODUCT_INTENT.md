@@ -425,3 +425,21 @@ Research: [H Company API](H_COMPANY_MODELS_API.md).
 
 > Can you make it so the button Build mix plans allow for more turns?
 <!-- pdd-intent-entry:can-you-make-it-so-the-button-build-mix-plans-al-5c9db8d4:end -->
+
+<!-- pdd-intent-entry:harness-neutral-local-obs-control-for-claw-dj-a8742751:start -->
+## Harness-neutral local OBS control for claw-dj
+
+- Intent event: [`docs/intents/intent__harness-neutral-local-obs-control-for-claw-dj-a8742751.md`](intents/intent__harness-neutral-local-obs-control-for-claw-dj-a8742751.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `python` (approved library + JSON CLI; supersedes intake's Rust inference)
+
+> I've just installed OBS and from OBS I was able to sign into Twitch and auithorize OBS to make changes. Could you figure out how to use my OBS once I've opened it up, and create a MCP or if MCP is overkill, enough tools and PYthong or Rust functions and code to make local OBS usable by you hermes-agent or any other AI agent, AI harness?
+
+Accepted interpretation: [OBS_CONTROL_APPROVAL.md](intents/OBS_CONTROL_APPROVAL.md).
+Separate localhost OBS WebSocket client and JSON CLI, explicit write/output
+permission declarations, no Twitch credential access or mixing-engine changes.
+MCP is deferred. Live read-only authentication is separate from synthetic proof.
+Usage: [OBS_AGENT_CONTROL.md](OBS_AGENT_CONTROL.md).
+<!-- pdd-intent-entry:harness-neutral-local-obs-control-for-claw-dj-a8742751:end -->

@@ -13,6 +13,14 @@ dependencies = [
     "python-rtmidi",
 ]
 
+[project.optional-dependencies]
+obs = [
+    "websocket-client>=1.9.2,<2",
+]
+
+[project.scripts]
+claw-obs = "hands.obs_cli:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

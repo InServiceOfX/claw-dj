@@ -1,0 +1,59 @@
+<pdd-reason>Any local AI harness needs the same safe JSON CLI for OBS without extracting the Twitch login or depending on MCP.</pdd-reason>
+<pdd-interface>
+{"type":"module","module":{"functions":[
+ {"name":"main","signature":"main(argv=None, *, control_factory=None) -> int"},
+ {"name":"load_password","signature":"load_password(path=None) -> str | None"},
+ {"name":"setup_password","signature":"setup_password(path=None) -> None"}
+]}}
+</pdd-interface>
+
+% Goal
+Implement hands/obs_cli.py as a harness-neutral JSON adapter over hands.obs_control.
+Use Python, not Rust. Do not change the Mixxx engine or existing mix/plan behavior.
+The optional obs dependency belongs to pyproject.toml.
+
+% Inputs and outputs
+The positional action selects capabilities, setup-password, or an OBSControl
+allowlisted action. --data is a JSON object. --host defaults to 127.0.0.1,
+--port to 4455, --timeout to 5 seconds. --password-file selects a private local
+file. --allow-write and --allow-output declare separately approved permissions.
+--save names a new screenshot PNG file. Normal stdout is one JSON object
+containing ok, action, and data or a sanitized error. --help is readable text.
+Exit 0 succeeds; exit 2 means invalid/gated input or local file error;
+exit 1 means operation failure. Failed command parsing must not echo raw input.
+
+<contract_rules>
+R1 (MUST): capabilities lists supported read/write/output actions without opening an OBS connection.
+R2 (MUST NOT): a gated mutation or output action constructs a control connection or reads credentials before permission checks pass.
+R3 (MUST): use the client's allowlist/schema validator as the same policy for direct Python and CLI calls; reject unknown actions, raw RPC, invalid data and unexpected fields.
+R4 (MUST NOT): print passwords, transport exceptions, service settings, Twitch tokens, stream keys or raw OBS comments.
+R5 (MUST): explicit password file overrides the process secret; otherwise use OBS_WEBSOCKET_PASSWORD or the user's default private file; absent default means no configured password.
+R6 (MUST): password files are owned regular files private to the current user; reject symlinks, group/other permissions, oversized and empty passwords.
+R7 (MUST): setup-password accepts input only through the user's hidden local prompt and creates a mode-0600 new file without overwrite; secrets remain outside the checkout.
+R8 (MUST): screenshots require a new explicit destination with an existing parent, default to 640x360, decode valid PNG data, enforce size bounds, and return a path/byte count rather than a base64 dump.
+R9 (MUST NOT): overwrite existing screenshot/secret files, start outputs implicitly, read OBS saved credentials, disable authentication, or change OBS preferences.
+R10 (MUST): caught operation failures return JSON and no traceback.
+</contract_rules>
+
+<vocabulary>
+invalid: data that is not a JSON object, has fields differing from the selected
+action schema, or has a value outside that schema's declared type/range.
+valid: screenshot payload with a data:image/png;base64 prefix, strictly decodable
+base64, a PNG eight-byte signature, and decoded size at most 32 MiB; this header
+check does not claim a full image decode.
+</vocabulary>
+
+% Verification
+Run .venv/bin/python -m unittest discover -s tests -p test_obs_cli.py -v.
+Use synthetic fixtures. Isolate the environment and patch load_password for
+EVERY synthetic main invocation: control_factory alone still loads credentials.
+Guard default-password lookup/file opening in a regression; it must never touch
+the user's real private file. Direct password-loader tests use explicit temporary
+fixture paths, not the default path. Real version/status validation is separate
+and requires locally configured WebSocket authentication; do not infer success
+from fixtures.
+
+% Dependency
+hands/obs_control.py owns transport and action schema. docs/OBS_AGENT_CONTROL.md
+explains the human authorization contract; boolean CLI flags are declarations,
+not proof of external human approval.
