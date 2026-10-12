@@ -1,0 +1,62 @@
+<pdd-reason>The pop-up cards must appear over the live Twitch stream while claw-dj plays autonomously on the Mac mini, without changing the mix runner, and OBS must be able to show them from any machine on the network.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "audible_deck", "signature": "audible_deck(mixxx, decks: tuple[int, ...] = (1, 2, 3, 4)) -> int | None"},
+      {"name": "identify_by_duration", "signature": "identify_by_duration(duration_s: float, candidates: list[dict], tolerance_s: float = 0.6, bpm: float | None = None) -> dict | None"},
+      {"name": "plan_candidates", "signature": "plan_candidates(index_path: Path | None = None, plans_dir: Path | None = None, *, probe: bool = True) -> list[dict]"},
+      {"name": "make_server", "signature": "make_server(scheduler: Scheduler, now_playing, *, host: str = '0.0.0.0', port: int = 8765) -> ThreadingHTTPServer"}
+    ],
+    "classes": [
+      {"name": "NowPlaying", "signature": "NowPlaying(*, mixxx_port: int | None = None, now_file: Path | None = None, candidates: list[dict] | None = None, cache_s: float = 2.0)", "methods": ["current() -> tuple[str | None, str | None]"]}
+    ]
+  }
+}
+</pdd-interface>
+
+% Goal
+
+Serve `brain.popups` cards as a transparent browser-source overlay for OBS / Twitch, aware of the song claw-dj is playing in Mixxx (`user_stories/story__while_the_mix_plays_pop_ups_show_music_facts_and_my_commentary.md`).
+
+% Requirements
+
+1. `audible_deck(mixxx)` returns the playing, loaded deck with the largest effective level. The level is channel volume times crossfader gain: decks 1 and 3 sit on the left, 2 and 4 on the right; the far side fades linearly across the crossfader. It returns None when nothing audible is playing. It only reads Mixxx controls.
+2. `identify_by_duration(duration, candidates, bpm=None)`: a candidate (`artist`, `title`, `duration`, optional `tol`, optional `bpm`) matches when its duration is within its own `tol`, else within `tolerance_s`.
+   - One match: return it.
+   - Several: keep only those whose `bpm` equals the deck's analyzed `file_bpm` within 2%, allowing half- and double-time readings. Return the one left, if exactly one.
+   - Otherwise return None (no guessing).
+3. `plan_candidates()` returns the active plan's tracks (`brain/data/plans/active.json` -> `<slug>/mix_plan.json`) with durations and BPM, or an empty list when the plan is missing.
+   - Durations: read exactly from the audio files with ffprobe, in parallel, once (`tol` 0.15 s). Fall back to the library index's coarser durations (`tol` 0.6 s) when a file can't be read. The library rounds to about half a second, so durations alone collide (measured 2026-10-12: 141 of 203 tracks within 0.6 s of another).
+4. `NowPlaying.current()`:
+   - With `now_file` (JSON `{"artist", "title"}`): returns its content, so it works without Mixxx.
+   - Otherwise: reads Mixxx through `hands.mixxx_control` and identifies the audible deck's `duration` (and `file_bpm` for ties) against the candidates.
+   - Results are cached for `cache_s`.
+   - Any connection or parse error gives `(None, None)`, never an exception. The overlay must never disturb the mix.
+5. `make_server` serves:
+   - `GET /overlay`: the HTML page;
+   - `GET /card`: JSON `{"serial", "card", "show_s"}`. It ticks the scheduler with the current song and returns the active card while it is within its `show_s` window, else null. `serial` increments with each new card;
+   - `GET /health`: `{"ok": true}`;
+   - anything else: 404.
+
+   It binds `host` (default all interfaces, so OBS on another machine can reach it). Logging is quiet.
+6. The page:
+   - Background: fully transparent.
+   - Polling: polls `/card` about once a second; a new serial shows a VH1-style rounded bubble with large text that pops in, stays `show_s`, then pops out, in one of several safe on-screen positions.
+   - Commentary: a small subtle EY-style monogram badge with the card's initials. A quote is shown in quotation marks; a distilled card shows a small "in brief" label; a progression shows "i/n".
+   - Facts: no badge.
+   - `?scale=` scales the bubble.
+7. CLI: `python -m hands.popup_overlay [--host H] [--port P] [--interval S] [--show S] [--commentary-every N] [--verified-only] [--now-file PATH] [--facts PATH] [--commentary DIR]`. It prints the overlay URL to add as an OBS Browser Source.
+8. No writes to Mixxx, no audio, no network beyond the local HTTP server and the local Mixxx control port.
+
+% Verification
+
+- `uv run python -m unittest tests/test_popup_overlay.py` with a fake Mixxx and a server on an ephemeral port. No live Mixxx.
+- Cover:
+  - audible-deck choice with the crossfader;
+  - unique-duration identification and ambiguity giving None;
+  - now-file mode;
+  - errors giving `(None, None)`;
+  - `/card`, `/overlay` and `/health` responses, and 404 for anything else;
+  - EY metadata reaching the JSON for commentary and not for facts.

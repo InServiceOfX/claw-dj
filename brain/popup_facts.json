@@ -1,0 +1,581 @@
+[
+ {
+  "id": "gen-new-jack-swing",
+  "text": "New jack swing, the late-'80s blend of R&B and hip hop drums, is most closely tied to producer Teddy Riley.",
+  "artists": [],
+  "source": "Wikipedia: New jack swing",
+  "verified": false
+ },
+ {
+  "id": "gen-808",
+  "text": "The Roland TR-808 drum machine came out in 1980. Its booming kick became a foundation of hip hop and R&B.",
+  "artists": [],
+  "source": "Wikipedia: Roland TR-808",
+  "verified": false
+ },
+ {
+  "id": "gen-rappers-delight",
+  "text": "\"Rapper's Delight\" by the Sugarhill Gang (1979) was the first rap single to reach the Billboard Hot 100's Top 40.",
+  "artists": [],
+  "source": "Wikipedia: Rapper's Delight",
+  "verified": false
+ },
+ {
+  "id": "gen-first-rap-grammy",
+  "text": "The first Grammy for Best Rap Performance (1989) went to DJ Jazzy Jeff & the Fresh Prince for \"Parents Just Don't Understand\".",
+  "artists": [],
+  "source": "Wikipedia: Grammy Award for Best Rap Performance",
+  "verified": false
+ },
+ {
+  "id": "ross-im-coming-out",
+  "text": "\"I'm Coming Out\" (1980) was written and produced by Nile Rodgers and Bernard Edwards of Chic.",
+  "artists": [
+   "Diana Ross"
+  ],
+  "source": "Wikipedia: I'm Coming Out",
+  "verified": false,
+  "titles": [
+   "I'm Coming Out"
+  ]
+ },
+ {
+  "id": "biggie-two-posthumous",
+  "text": "The Notorious B.I.G. was the first artist with two posthumous No. 1 singles: \"Hypnotize\" and \"Mo Money Mo Problems\".",
+  "artists": [
+   "The Notorious B.I.G.",
+   "Notorious B.I.G.",
+   "Biggie"
+  ],
+  "source": "Wikipedia: Mo Money Mo Problems",
+  "verified": false
+ },
+ {
+  "id": "mo-money-sample",
+  "text": "\"Mo Money Mo Problems\" (1997) is built on a sample of Diana Ross's \"I'm Coming Out\".",
+  "artists": [
+   "The Notorious B.I.G.",
+   "Notorious B.I.G.",
+   "Mase"
+  ],
+  "source": "Wikipedia: Mo Money Mo Problems",
+  "verified": false,
+  "titles": [
+   "Mo Money Mo Problems",
+   "Mo Money, Mo Problems",
+   "Mo Money Mo Problems (ft. Mase and Puff Daddy)"
+  ]
+ },
+ {
+  "id": "mase-harlem-world",
+  "text": "Mase's debut album was \"Harlem World\" (1997). In 1999 he stepped away from music to pursue ministry.",
+  "artists": [
+   "Mase",
+   "Ma$e"
+  ],
+  "source": "Wikipedia: Mase",
+  "verified": false
+ },
+ {
+  "id": "ariana-byhrb",
+  "text": "\"Break Your Heart Right Back\" (2014) flips the same Diana Ross \"I'm Coming Out\" sample Biggie used on \"Mo Money Mo Problems\".",
+  "artists": [
+   "Ariana Grande"
+  ],
+  "source": "Wikipedia: My Everything (Ariana Grande album)",
+  "verified": false
+ },
+ {
+  "id": "gambino-30-rock",
+  "text": "Before Childish Gambino, Donald Glover was a writer on NBC's \"30 Rock\".",
+  "artists": [
+   "Childish Gambino"
+  ],
+  "source": "Wikipedia: Donald Glover",
+  "verified": false
+ },
+ {
+  "id": "majid-jordan-ovo",
+  "text": "Majid Jordan is the Toronto duo of Majid Al Maskati and Jordan Ullman, signed to Drake's OVO Sound.",
+  "artists": [
+   "Majid Jordan"
+  ],
+  "source": "Wikipedia: Majid Jordan",
+  "verified": false
+ },
+ {
+  "id": "majid-jordan-hold-on",
+  "text": "Majid Jordan are featured on Drake's \"Hold On, We're Going Home\" (2013).",
+  "artists": [
+   "Majid Jordan"
+  ],
+  "source": "Wikipedia: Hold On, We're Going Home",
+  "verified": false
+ },
+ {
+  "id": "112-club",
+  "text": "112 took their name from Club 112, a nightclub in Atlanta.",
+  "artists": [
+   "112"
+  ],
+  "source": "Wikipedia: 112 (band)",
+  "verified": false
+ },
+ {
+  "id": "112-missing-you",
+  "text": "112 sing on Puff Daddy and Faith Evans's \"I'll Be Missing You\" (1997), the tribute to The Notorious B.I.G.",
+  "artists": [
+   "112"
+  ],
+  "source": "Wikipedia: I'll Be Missing You",
+  "verified": false
+ },
+ {
+  "id": "112-only-you",
+  "text": "112's \"Only You\" remix features The Notorious B.I.G. and Mase.",
+  "artists": [
+   "112"
+  ],
+  "source": "Wikipedia: Only You (112 song)",
+  "verified": false
+ },
+ {
+  "id": "joe-hometown",
+  "text": "Joe (Joseph Lewis Thomas) was born in Columbus, Georgia, and grew up in Opelika, Alabama.",
+  "artists": [
+   "Joe"
+  ],
+  "source": "Wikipedia: Joe (singer)",
+  "verified": false
+ },
+ {
+  "id": "joe-i-wanna-know",
+  "text": "Joe's \"I Wanna Know\" (2000) spent months on the Billboard Hot 100 and became one of his biggest hits.",
+  "artists": [
+   "Joe"
+  ],
+  "source": "Wikipedia: I Wanna Know (Joe song)",
+  "verified": false
+ },
+ {
+  "id": "joe-still-not-a-player",
+  "text": "Joe sings the hook on Big Pun's \"Still Not a Player\" (1998).",
+  "artists": [
+   "Joe"
+  ],
+  "source": "Wikipedia: Still Not a Player",
+  "verified": false
+ },
+ {
+  "id": "janet-rhythm-nation",
+  "text": "Janet Jackson's \"Rhythm Nation 1814\" (1989) produced seven top-five Billboard Hot 100 singles.",
+  "artists": [
+   "Janet Jackson"
+  ],
+  "source": "Wikipedia: Janet Jackson's Rhythm Nation 1814",
+  "verified": false
+ },
+ {
+  "id": "janet-jam-lewis",
+  "text": "Jimmy Jam and Terry Lewis produced Janet Jackson's breakthrough album \"Control\" (1986).",
+  "artists": [
+   "Janet Jackson"
+  ],
+  "source": "Wikipedia: Control (Janet Jackson album)",
+  "verified": false
+ },
+ {
+  "id": "thicke-alan",
+  "text": "Robin Thicke is the son of actor Alan Thicke of \"Growing Pains\".",
+  "artists": [
+   "Robin Thicke"
+  ],
+  "source": "Wikipedia: Robin Thicke",
+  "verified": false
+ },
+ {
+  "id": "thicke-lost-without-u",
+  "text": "Robin Thicke's \"Lost Without U\" (2006) topped the Billboard R&B/Hip-Hop chart.",
+  "artists": [
+   "Robin Thicke"
+  ],
+  "source": "Wikipedia: Lost Without U",
+  "verified": false
+ },
+ {
+  "id": "donell-jones-chicago",
+  "text": "Donell Jones is from Chicago. His \"U Know What's Up\" (1999) features Lisa \"Left Eye\" Lopes of TLC.",
+  "artists": [
+   "Donell Jones"
+  ],
+  "source": "Wikipedia: Donell Jones",
+  "verified": false
+ },
+ {
+  "id": "chris-brown-run-it",
+  "text": "Chris Brown's debut single \"Run It!\" (2005) hit No. 1 on the Billboard Hot 100 when he was 16.",
+  "artists": [
+   "Chris Brown"
+  ],
+  "source": "Wikipedia: Run It!",
+  "verified": false
+ },
+ {
+  "id": "mariah-fantasy",
+  "text": "Mariah Carey's \"Fantasy\" (1995) samples Tom Tom Club's \"Genius of Love\". Its remix features Ol' Dirty Bastard.",
+  "artists": [
+   "Mariah Carey"
+  ],
+  "source": "Wikipedia: Fantasy (Mariah Carey song)",
+  "verified": false
+ },
+ {
+  "id": "the-dream-umbrella",
+  "text": "The-Dream co-wrote Rihanna's \"Umbrella\" and Beyoncé's \"Single Ladies (Put a Ring on It)\".",
+  "artists": [
+   "The-Dream",
+   "The Dream"
+  ],
+  "source": "Wikipedia: The-Dream",
+  "verified": false
+ },
+ {
+  "id": "new-edition-boston",
+  "text": "New Edition formed in Boston's Roxbury neighborhood. Members went on to Bobby Brown's solo career and Bell Biv DeVoe.",
+  "artists": [
+   "New Edition"
+  ],
+  "source": "Wikipedia: New Edition",
+  "verified": false
+ },
+ {
+  "id": "bbd-poison",
+  "text": "Bell Biv DeVoe (three members of New Edition) broke out with \"Poison\" in 1990.",
+  "artists": [
+   "Bell Biv Devoe",
+   "Bell Biv DeVoe"
+  ],
+  "source": "Wikipedia: Bell Biv DeVoe",
+  "verified": false
+ },
+ {
+  "id": "toni-unbreak",
+  "text": "Toni Braxton's \"Un-Break My Heart\" (1996) was written by Diane Warren.",
+  "artists": [
+   "Toni Braxton"
+  ],
+  "source": "Wikipedia: Un-Break My Heart",
+  "verified": false
+ },
+ {
+  "id": "milian-play",
+  "text": "Christina Milian co-wrote Jennifer Lopez's \"Play\" (2001).",
+  "artists": [
+   "Christina Milian",
+   "Christina Milan"
+  ],
+  "source": "Wikipedia: Christina Milian",
+  "verified": false
+ },
+ {
+  "id": "j-holiday-bed",
+  "text": "J. Holiday's \"Bed\" (2007) was written by The-Dream and Tricky Stewart.",
+  "artists": [
+   "J. Holiday"
+  ],
+  "source": "Wikipedia: Bed (J. Holiday song)",
+  "verified": false
+ },
+ {
+  "id": "avant-cleveland",
+  "text": "Avant is from Cleveland, Ohio. His debut single \"Separated\" came out in 2000.",
+  "artists": [
+   "Avant"
+  ],
+  "source": "Wikipedia: Avant (singer)",
+  "verified": false
+ },
+ {
+  "id": "barry-white-cant-get-enough",
+  "text": "Barry White's \"Can't Get Enough of Your Love, Babe\" (1974) reached No. 1 on the Billboard Hot 100.",
+  "artists": [
+   "Barry White"
+  ],
+  "source": "Wikipedia: Can't Get Enough of Your Love, Babe",
+  "verified": false
+ },
+ {
+  "id": "jojo-leave",
+  "text": "JoJo was 13 when \"Leave (Get Out)\" (2004) made her the youngest solo artist with a No. 1 on Billboard's pop radio chart.",
+  "artists": [
+   "JoJo"
+  ],
+  "source": "Wikipedia: Leave (Get Out)",
+  "verified": false
+ },
+ {
+  "id": "cassie-ryan-leslie",
+  "text": "Cassie's \"Me & U\" (2006) was written and produced by Ryan Leslie.",
+  "artists": [
+   "Cassie"
+  ],
+  "source": "Wikipedia: Me & U (Cassie song)",
+  "verified": false
+ },
+ {
+  "id": "mya-lady-marmalade",
+  "text": "Mýa won a Grammy for \"Lady Marmalade\" (2001) with Christina Aguilera, Lil' Kim and Pink.",
+  "artists": [
+   "Mýa",
+   "Mya"
+  ],
+  "source": "Wikipedia: Lady Marmalade",
+  "verified": false
+ },
+ {
+  "id": "aaliyah-timbaland",
+  "text": "Aaliyah's \"Are You That Somebody?\" (1998) was produced by Timbaland for the \"Dr. Dolittle\" soundtrack.",
+  "artists": [
+   "Aaliyah"
+  ],
+  "source": "Wikipedia: Are You That Somebody?",
+  "verified": false
+ },
+ {
+  "id": "mj-thriller",
+  "text": "Michael Jackson's \"Thriller\" (1982) is widely cited as the best-selling album of all time.",
+  "artists": [
+   "Michael Jackson"
+  ],
+  "source": "Wikipedia: Thriller (album)",
+  "verified": false
+ },
+ {
+  "id": "fabolous-clue",
+  "text": "Fabolous is from Brooklyn. DJ Clue discovered him and signed him to Desert Storm.",
+  "artists": [
+   "Fabolous"
+  ],
+  "source": "Wikipedia: Fabolous",
+  "verified": false
+ },
+ {
+  "id": "mcknight-back-at-one",
+  "text": "Brian McKnight's \"Back at One\" (1999) is his biggest hit.",
+  "artists": [
+   "Brian McKnight"
+  ],
+  "source": "Wikipedia: Back at One (song)",
+  "verified": false
+ },
+ {
+  "id": "tyrese-coke",
+  "text": "Tyrese first got noticed singing on a bus in a 1994 Coca-Cola commercial.",
+  "artists": [
+   "Tyrese"
+  ],
+  "source": "Wikipedia: Tyrese Gibson",
+  "verified": false
+ },
+ {
+  "id": "johnny-gill-ne",
+  "text": "Johnny Gill joined New Edition in 1987, after Bobby Brown left the group.",
+  "artists": [
+   "Johnny Gill"
+  ],
+  "source": "Wikipedia: Johnny Gill",
+  "verified": false
+ },
+ {
+  "id": "sisqo-dru-hill",
+  "text": "Sisqó was the lead singer of Dru Hill before \"Thong Song\" (2000).",
+  "artists": [
+   "Sisqo",
+   "Sisqó"
+  ],
+  "source": "Wikipedia: Sisqó",
+  "verified": false
+ },
+ {
+  "id": "dru-hill-park",
+  "text": "Dru Hill named themselves after Druid Hill Park in their hometown, Baltimore.",
+  "artists": [
+   "Dru Hill"
+  ],
+  "source": "Wikipedia: Dru Hill",
+  "verified": false
+ },
+ {
+  "id": "total-biggie",
+  "text": "Total, Bad Boy's girl group, broke out with \"Can't You See\" featuring The Notorious B.I.G. (1995).",
+  "artists": [
+   "Total"
+  ],
+  "source": "Wikipedia: Total (group)",
+  "verified": false
+ },
+ {
+  "id": "jagged-edge-jd",
+  "text": "Jagged Edge were signed by Jermaine Dupri to So So Def.",
+  "artists": [
+   "Jagged Edge"
+  ],
+  "source": "Wikipedia: Jagged Edge (group)",
+  "verified": false
+ },
+ {
+  "id": "mario-let-me-love-you",
+  "text": "Mario's \"Let Me Love You\" (2004) was co-written by Ne-Yo and produced by Scott Storch.",
+  "artists": [
+   "Mario"
+  ],
+  "source": "Wikipedia: Let Me Love You (Mario song)",
+  "verified": false
+ },
+ {
+  "id": "snoop-doggystyle",
+  "text": "Snoop Dogg's \"Doggystyle\" (1993), produced by Dr. Dre, debuted at No. 1 on the Billboard 200.",
+  "artists": [
+   "Snoop Dogg"
+  ],
+  "source": "Wikipedia: Doggystyle",
+  "verified": false
+ },
+ {
+  "id": "usher-yeah",
+  "text": "Usher's \"Yeah!\" (2004) features Lil Jon and Ludacris.",
+  "artists": [
+   "Usher"
+  ],
+  "source": "Wikipedia: Yeah! (Usher song)",
+  "verified": false
+ },
+ {
+  "id": "2pac-dear-mama",
+  "text": "2Pac's \"Dear Mama\" was added to the Library of Congress National Recording Registry in 2010.",
+  "artists": [
+   "2Pac",
+   "Tupac"
+  ],
+  "source": "Wikipedia: Dear Mama",
+  "verified": false
+ },
+ {
+  "id": "rushen-forget-me-nots",
+  "text": "Patrice Rushen's \"Forget Me Nots\" (1982) was interpolated in Will Smith's \"Men in Black\" (1997).",
+  "artists": [
+   "Patrice Rushen"
+  ],
+  "source": "Wikipedia: Forget Me Nots",
+  "verified": false
+ },
+ {
+  "id": "fat-joe-lean-back",
+  "text": "Fat Joe and Terror Squad's \"Lean Back\" (2004) reached No. 1 on the Billboard Hot 100.",
+  "artists": [
+   "Fat Joe"
+  ],
+  "source": "Wikipedia: Lean Back",
+  "verified": false
+ },
+ {
+  "id": "tresvant-sensitivity",
+  "text": "Ralph Tresvant's \"Sensitivity\" (1990) was produced by Jimmy Jam and Terry Lewis.",
+  "artists": [
+   "Ralph Tresvant"
+  ],
+  "source": "Wikipedia: Sensitivity (Ralph Tresvant song)",
+  "verified": false
+ },
+ {
+  "id": "cmb-new-jack-city",
+  "text": "Color Me Badd's \"I Wanna Sex You Up\" (1991) was on the \"New Jack City\" soundtrack.",
+  "artists": [
+   "Color Me Badd"
+  ],
+  "source": "Wikipedia: I Wanna Sex You Up",
+  "verified": false
+ },
+ {
+  "id": "ja-rule-always-on-time",
+  "text": "Ashanti sings on Ja Rule's \"Always on Time\" (2001).",
+  "artists": [
+   "Ja Rule"
+  ],
+  "source": "Wikipedia: Always on Time",
+  "verified": false
+ },
+ {
+  "id": "blaque-left-eye",
+  "text": "Blaque were discovered by Lisa \"Left Eye\" Lopes of TLC.",
+  "artists": [
+   "Blaque"
+  ],
+  "source": "Wikipedia: Blaque",
+  "verified": false
+ },
+ {
+  "id": "big-sean-kanye",
+  "text": "Big Sean got signed to Kanye West's GOOD Music after rapping for him at a Detroit radio station.",
+  "artists": [
+   "Big Sean"
+  ],
+  "source": "Wikipedia: Big Sean",
+  "verified": false
+ },
+ {
+  "id": "xscape-jd",
+  "text": "Xscape, from Atlanta, were discovered by Jermaine Dupri.",
+  "artists": [
+   "Xscape"
+  ],
+  "source": "Wikipedia: Xscape",
+  "verified": false
+ },
+ {
+  "id": "yvonne-fair-should-have-been-me",
+  "text": "Yvonne Fair's \"It Should Have Been Me\" (1975) was a Motown hit.",
+  "artists": [
+   "Yvonne Fair"
+  ],
+  "source": "Wikipedia: Yvonne Fair",
+  "verified": false
+ },
+ {
+  "id": "ll-around-the-way-girl",
+  "text": "LL Cool J's \"Around the Way Girl\" (1990) samples the Mary Jane Girls' \"All Night Long\".",
+  "artists": [
+   "LL Cool J"
+  ],
+  "source": "Wikipedia: Around the Way Girl",
+  "verified": false
+ },
+ {
+  "id": "bobby-brown-prerogative",
+  "text": "Bobby Brown's \"My Prerogative\" (1988) was produced by Teddy Riley.",
+  "artists": [
+   "Bobby Brown"
+  ],
+  "source": "Wikipedia: My Prerogative",
+  "verified": false
+ },
+ {
+  "id": "evelyn-king-shame",
+  "text": "Evelyn \"Champagne\" King recorded \"Shame\" (1977) as a teenager.",
+  "artists": [
+   "Evelyn \"Champagne\" King",
+   "Evelyn King"
+  ],
+  "source": "Wikipedia: Evelyn \"Champagne\" King",
+  "verified": false
+ },
+ {
+  "id": "lloyd-you",
+  "text": "Lloyd's \"You\" (2007) features Lil Wayne.",
+  "artists": [
+   "Lloyd"
+  ],
+  "source": "Wikipedia: You (Lloyd song)",
+  "verified": false
+ }
+]

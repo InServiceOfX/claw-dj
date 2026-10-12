@@ -2978,5 +2978,127 @@
       {"name": "load_password", "signature": "(path=None) -> str | None"},
       {"name": "setup_password", "signature": "(path=None) -> None"}
     ]}}
+  },
+  {
+    "reason": "Ernest streams claw-dj on Twitch and wants VH1 Pop-Up Video style cards: agent music facts and his own commentary, marked EY.",
+    "description": "Pop-up card content and choice: agent-written sourced facts (brain/popup_facts.json, no attribution mark) and authors' commentary from commentary/<author-slug>/ (pull quotes, paragraph progressions, kept distillations), always marked with the author's initials; relevance to the playing artist/title, cadence, no-repeat rotation, Mixxx cue-sheet timelines and ffmpeg drawtext for mix videos. No network, audio or Mixxx.",
+    "dependencies": [],
+    "priority": 49,
+    "filename": "brain/popups_Python.prompt",
+    "filepath": "brain/popups.py",
+    "tags": [
+      "content",
+      "stream",
+      "video",
+      "popups"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "load_facts",
+            "signature": "load_facts(path: Path = DEFAULT_FACTS) -> list[Card]"
+          },
+          {
+            "name": "load_commentary",
+            "signature": "load_commentary(root: Path = DEFAULT_COMMENTARY) -> list[list[Card]]"
+          },
+          {
+            "name": "snippets",
+            "signature": "snippets(text: str, max_chars: int = 180) -> list[str]"
+          },
+          {
+            "name": "is_relevant",
+            "signature": "is_relevant(card: Card, artist: str | None, title: str | None) -> bool"
+          },
+          {
+            "name": "parse_cue_sheet",
+            "signature": "parse_cue_sheet(path: Path, duration_s: float | None = None) -> list[Segment]"
+          },
+          {
+            "name": "timeline",
+            "signature": "timeline(segments: list[Segment], scheduler: Scheduler, *, first_offset_s: float = 10.0) -> list[dict]"
+          },
+          {
+            "name": "card_lines",
+            "signature": "card_lines(card: Card, width: int = 30) -> list[str]"
+          },
+          {
+            "name": "drawtext_filters",
+            "signature": "drawtext_filters(items: list[dict], out_dir: Path, fontfile: str, *, fontsize: int = 46, x: str = '60', y: str = '60') -> str"
+          }
+        ],
+        "classes": [
+          {
+            "name": "Card",
+            "signature": "Card(id: str, text: str, kind: str, initials: str | None = None, author: str | None = None, source: str | None = None, tags: tuple[str, ...] = (), part: tuple[int, int] | None = None, verified: bool = True)"
+          },
+          {
+            "name": "Segment",
+            "signature": "Segment(start: float, end: float, artist: str, title: str)"
+          },
+          {
+            "name": "Scheduler",
+            "signature": "Scheduler(facts: list[Card], threads: list[list[Card]], *, interval_s: float = 75.0, show_s: float = 12.0, commentary_every: int = 3, verified_only: bool = False, seed: int = 0)",
+            "methods": [
+              "next_card(artist, title) -> Card | None",
+              "tick(now, artist, title) -> Card | None"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The pop-up cards must appear over the live Twitch stream while claw-dj plays autonomously, without touching the mix runner.",
+    "description": "Transparent OBS browser-source overlay serving brain.popups cards over HTTP (/overlay, /card, /health); knows the playing song from Mixxx read-only (audible deck by fader x crossfader, identified by exact file duration with a file_bpm tiebreak against the active plan) or a now-playing file; never writes to Mixxx.",
+    "dependencies": [
+      "brain/popups_Python.prompt",
+      "hands/mixxx_control_Python.prompt"
+    ],
+    "priority": 50,
+    "filename": "hands/popup_overlay_Python.prompt",
+    "filepath": "hands/popup_overlay.py",
+    "tags": [
+      "runtime",
+      "stream",
+      "obs",
+      "popups"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "audible_deck",
+            "signature": "audible_deck(mixxx, decks: tuple[int, ...] = (1, 2, 3, 4)) -> int | None"
+          },
+          {
+            "name": "identify_by_duration",
+            "signature": "identify_by_duration(duration_s: float, candidates: list[dict], tolerance_s: float = 0.6, bpm: float | None = None) -> dict | None"
+          },
+          {
+            "name": "plan_candidates",
+            "signature": "plan_candidates(index_path: Path | None = None, plans_dir: Path | None = None, *, probe: bool = True) -> list[dict]"
+          },
+          {
+            "name": "make_server",
+            "signature": "make_server(scheduler: Scheduler, now_playing, *, host: str = '0.0.0.0', port: int = 8765) -> ThreadingHTTPServer"
+          }
+        ],
+        "classes": [
+          {
+            "name": "NowPlaying",
+            "signature": "NowPlaying(*, mixxx_port: int | None = None, now_file: Path | None = None, candidates: list[dict] | None = None, cache_s: float = 2.0)",
+            "methods": [
+              "current() -> tuple[str | None, str | None]"
+            ]
+          }
+        ]
+      }
+    }
   }
 ]

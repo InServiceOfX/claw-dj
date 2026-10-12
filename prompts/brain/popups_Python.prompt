@@ -1,0 +1,76 @@
+<pdd-reason>Ernest streams claw-dj mixes on Twitch and wants VH1 Pop-Up Video style cards: agent-written music facts about what is playing, and snippets of his own writing on music, pop culture, hip hop and R&B, always marked with his initials. The same cards must work on stream and in mix videos.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "load_facts", "signature": "load_facts(path: Path = DEFAULT_FACTS) -> list[Card]"},
+      {"name": "load_commentary", "signature": "load_commentary(root: Path = DEFAULT_COMMENTARY) -> list[list[Card]]"},
+      {"name": "snippets", "signature": "snippets(text: str, max_chars: int = 180) -> list[str]"},
+      {"name": "is_relevant", "signature": "is_relevant(card: Card, artist: str | None, title: str | None) -> bool"},
+      {"name": "parse_cue_sheet", "signature": "parse_cue_sheet(path: Path, duration_s: float | None = None) -> list[Segment]"},
+      {"name": "timeline", "signature": "timeline(segments: list[Segment], scheduler: Scheduler, *, first_offset_s: float = 10.0) -> list[dict]"},
+      {"name": "card_lines", "signature": "card_lines(card: Card, width: int = 30) -> list[str]"},
+      {"name": "drawtext_filters", "signature": "drawtext_filters(items: list[dict], out_dir: Path, fontfile: str, *, fontsize: int = 46, x: str = '60', y: str = '60') -> str"}
+    ],
+    "classes": [
+      {"name": "Card", "signature": "Card(id: str, text: str, kind: str, initials: str | None = None, author: str | None = None, source: str | None = None, tags: tuple[str, ...] = (), part: tuple[int, int] | None = None, verified: bool = True)"},
+      {"name": "Segment", "signature": "Segment(start: float, end: float, artist: str, title: str)"},
+      {"name": "Scheduler", "signature": "Scheduler(facts: list[Card], threads: list[list[Card]], *, interval_s: float = 75.0, show_s: float = 12.0, commentary_every: int = 3, verified_only: bool = False, seed: int = 0)", "methods": ["next_card(artist, title) -> Card | None", "tick(now, artist, title) -> Card | None"]}
+    ]
+  }
+}
+</pdd-interface>
+
+% Goal
+
+Choose and format pop-up cards for `user_stories/story__while_the_mix_plays_pop_ups_show_music_facts_and_my_commentary.md`.
+This module has no network, audio, Mixxx or GUI dependency. `hands/popup_overlay.py`
+serves the cards live and the video builders burn them in.
+
+% Requirements
+
+1. A `Card` has `kind` "fact" (written by the agent), "quote" (an author's own words) or "distilled" (a distillation the author kept). Fact cards have `initials` None; quote and distilled cards always carry the author's initials (Ernest: "EY").
+2. `load_facts` reads the tracked JSON facts file (`brain/popup_facts.json`): a list of objects with `id`, `text`, `artists` (empty list = general), optional `titles`, `source` (required, non-empty: where the fact can be checked) and `verified` (bool, default false). A fact without a source is rejected with ValueError, so no fact airs without a stated source.
+3. `load_commentary(root)` reads `root/<author-slug>/`:
+   - Author: `author.json` gives `name` and `initials`. Without it, initials come from the slug's words ("ernest-yeung" -> "EY").
+   - Files: `*.md`, skipping files whose name starts with `_` and `README.md`.
+   - Front matter: an optional block between `---` lines gives `title` and `tags` (`[a, b]` or `a, b`).
+   - Body: if a file has blockquote lines (`> `), each run of them is one pull quote and nothing else in the file is used. Otherwise each paragraph is a passage. Headings, lists and code are skipped.
+   - Each pull quote or passage becomes one thread (a list of quote cards) via `snippets`, numbered with `part=(i, n)` when n > 1.
+   - `distilled.md` is special: each `- ` bullet is one distilled card (its own thread) tagged with that file's tags.
+   - Card ids are stable: author slug, file name and position.
+4. `snippets(text, max_chars)` splits on sentence ends and joins consecutive sentences while they fit. A sentence longer than `max_chars` is split at word boundaries. Order is preserved, no text is lost, and nothing is empty.
+5. `is_relevant(card, artist, title)` compares case-insensitively and ignores punctuation, accents (Mýa = Mya) and a leading "the":
+   - A fact is relevant when one of its artists appears in the playing artist string (features such as "Mýa; Jadakiss" or "Joe Featuring Mariah Carey & Nas" count each name), and, if it lists titles, the title matches one.
+   - Commentary is relevant when one of its tags names the playing artist.
+   - General facts and untagged commentary are never "relevant"; they are fallbacks.
+6. `Scheduler.next_card(artist, title)`:
+   - Mix: every `commentary_every`-th card is commentary when any exists; the rest are facts. If the chosen kind has nothing, use the other.
+   - Threads: a started thread continues in order on the next commentary turn until it ends.
+   - Preference: relevant first, then general facts / untagged threads, then any.
+   - No repeats: never repeat a card while another eligible one hasn't been shown; when all have been shown, the rotation restarts.
+   - `verified_only` drops unverified facts.
+   - Same inputs and seed give the same sequence.
+7. `Scheduler.tick(now, artist, title)` returns a new card when at least `interval_s` has passed since the last one (or on the first call), else None. `interval_s` must be >= `show_s` (ValueError otherwise).
+8. `parse_cue_sheet` reads a Mixxx `.cue` (TRACK / TITLE / PERFORMER / INDEX 01 mm:ss:ff at 75 frames per second). Each track ends where the next starts; the last ends at `duration_s` when given, else 600 s later.
+9. `timeline(segments, scheduler)` gives `{start, end, artist, title, card}` items. The first card in a segment starts `first_offset_s` in; then every `interval_s`. Each card shows `show_s`, lies entirely inside its segment (ending >= 1 s before the segment ends), and never overlaps another.
+10. `card_lines` wraps the card text to `width` characters and wraps a quote in curly quotation marks. A distilled card gets the line "in brief". A card with `part` gets "i/n". Commentary ends with "— <initials>". Facts get no attribution line.
+11. `drawtext_filters(items, out_dir, fontfile)` writes one text file per item into `out_dir` (no escaping problems) and returns a comma-joined ffmpeg drawtext chain enabled only between each item's start and end, with a semi-transparent box.
+12. CLI `python -m brain.popups preview --artist A --title T [--count N]` prints the next N cards. `python -m brain.popups timeline --cue FILE [--duration S] [--out FILE.json]` writes the video timeline.
+
+% Verification
+
+- `uv run python -m unittest tests/test_popups.py` (temporary directories only).
+- Cover:
+  - initials rules (facts never have EY; commentary always does; other authors get their own initials);
+  - template and README skipping, front matter tags, pull-quote precedence, distilled bullets;
+  - snippet bounds;
+  - relevance with features and accents;
+  - cadence, threads and no-repeat rotation;
+  - verified_only;
+  - interval < show rejected; fact without source rejected;
+  - cue parsing;
+  - timeline bounds and no overlap;
+  - card_lines attribution;
+  - drawtext output.

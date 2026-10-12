@@ -1,5 +1,28 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Pop-ups over the stream and videos (Opus 5.5, 2026-10-12, branch `feat/popups-facts-and-commentary`)
+
+- VH1 Pop-Up Video style cards: agent music facts plus Ernest's commentary, marked EY.
+  - Story: `user_stories/story__while_the_mix_plays_pop_ups_show_music_facts_and_my_commentary.md`.
+  - Intent recorded. PDD apply's architecture step needed an `ANTHROPIC_API_KEY` that isn't set, so the prompts, tests and code were hand-authored.
+- Code:
+  - `brain/popups.py`: cards, relevance, cadence, progressions, cue-sheet timelines, drawtext.
+  - `hands/popup_overlay.py`: an OBS browser source at `/overlay`. It finds the song from Mixxx read-only: audible deck, exact file duration, `file_bpm` tiebreak.
+- Tests: `tests/test_popups.py`, `tests/test_popup_overlay.py` (29). Run: `uv run python -m hands.popup_overlay`; how-to in `docs/POPUPS.md`.
+- Content:
+  - `brain/popup_facts.json`: 63 starter facts, all `verified: false`.
+  - `commentary/ernest-yeung/`: author.json and a template. No EY cards show until Ernest writes there.
+- Next:
+  - Ernest reviews the facts and writes commentary.
+  - Run on the Mac mini and check identification against the live Mixxx: durations there are probed from the mounted drive.
+  - Optional: add the browser source via `hands/obs_cli.py`.
+
+## Sleep stall during a long set (2026-10-11)
+
+macOS slept mid-set and froze Mixxx's main thread during a deck load, so the runner timed out (`[Channel2],track_loaded not ready within 30.0s`).
+- Run long sets under `caffeinate -dimsu`.
+- Resume plan: `brain/data/plans/chill-afternoon-rnb-vol-01/mix_plan_resume_lately.json`.
+
 ## Harness-neutral OBS integration (2026-10-11)
 
 - Python library `hands/obs_control.py` and JSON CLI `hands/obs_cli.py`, installed

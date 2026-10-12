@@ -218,6 +218,18 @@ NOT overwrite live events or originals. Preserve the explicit performance when
 working on generic builders. See docs/SHARED_PERFORMANCE.md. Keep backbeat
 alignment and every source exclusion through loops, skips, fades and pre-roll.
 
+## Pop-ups: music facts and commentary
+
+`docs/POPUPS.md`. `brain/popups.py` chooses VH1-style cards; `hands/popup_overlay.py`
+serves them as an OBS browser source for the Twitch stream (read-only on
+Mixxx). Rules:
+- Agent facts (`brain/popup_facts.json`) never carry an author mark, and each
+  needs a source. Mark new ones `"verified": false`.
+- Authors' writing lives in `commentary/<author-slug>/` and every snippet
+  carries their initials (Ernest: EY).
+- Never write commentary in an author's voice. Distillations come only from
+  their own `distilled.md`.
+
 ## Lessons from hand-built live mixes
 
 Before building or editing a live mix, read `docs/LIVE_MIX_LESSONS.md`:

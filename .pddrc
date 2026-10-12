@@ -302,6 +302,20 @@ contexts:
         code:
           path: "hands/mixxx_control.py"
 
+  popups:
+    paths: ["*brain/popups*", "*popups_Python*"]
+    defaults:
+      outputs:
+        code:
+          path: "brain/popups.py"
+
+  popup_overlay:
+    paths: ["*popup_overlay*"]
+    defaults:
+      outputs:
+        code:
+          path: "hands/popup_overlay.py"
+
   live_kit:
     paths: ["*live_kit*"]
     defaults:
