@@ -1,5 +1,12 @@
 # Handoff / continuation notes
 
+## Model answer limit raised to 15 minutes (2026-10-14)
+
+- `brain.llm_providers.ask` now waits up to 900 s (was 600 s) for every
+  provider. The 257-song review took ~8.5 min, too close to the old limit for
+  bigger sets. A timeout still falls back to the optimizer order with
+  "review skipped" in the order notes.
+
 ## Build review sees the locked pairs (2026-10-13)
 
 - The review's mix sheet now carries a `locked` list, by song id: required

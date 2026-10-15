@@ -5,7 +5,7 @@
   "module": {
     "functions": [
       {"name": "status_all", "signature": "status_all() -> list[dict]", "returns": "one row per provider: name, label, kind, sign_in, env_vars, available, detail"},
-      {"name": "ask", "signature": "ask(provider: str, prompt: str, *, timeout_s: float = 600.0) -> str", "sideEffects": "spawns a vendor CLI or makes one HTTP call"},
+      {"name": "ask", "signature": "ask(provider: str, prompt: str, *, timeout_s: float = 900.0) -> str", "sideEffects": "spawns a vendor CLI or makes one HTTP call"},
       {"name": "load_env", "signature": "load_env(path: Path = ENV_PATH) -> None"}
     ],
     "constants": ["PROVIDERS", "ProviderError", "ENV_PATH", "DEFAULT_ANTHROPIC_MODEL"]

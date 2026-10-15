@@ -273,7 +273,7 @@ def _ask_openai_compatible(base_url: str, api_key: str | None, model: str | None
     return content
 
 
-def ask(provider: str, prompt: str, *, timeout_s: float = 600.0) -> str:
+def ask(provider: str, prompt: str, *, timeout_s: float = 900.0) -> str:
     """Send one prompt, return the model's text. Raises ProviderError."""
     load_env()
     if provider not in PROVIDERS:
