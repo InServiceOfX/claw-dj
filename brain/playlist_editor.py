@@ -92,6 +92,11 @@ class PlaylistApp:
         self.mix_thread: threading.Thread | None = None
         self.mix_run_thread: threading.Thread | None = None
         self.enrich_thread: threading.Thread | None = None
+        from hands.audition_transition import AuditionSession
+
+        # Live transition audition (Arrange page): one at a time, in a child
+        # process so Stop can always interrupt it.
+        self.audition = AuditionSession()
         self.mix_state: dict = {
             "building": 0,
             "running": 0,
@@ -1360,6 +1365,11 @@ class PlaylistApp:
             raise ValueError("mix plan is still building — wait for the dry-run summary")
         if self.mix_run_thread and self.mix_run_thread.is_alive():
             return self.mix_status()
+        audition = getattr(self, "audition", None)
+        if audition is not None and audition.is_playing():
+            raise ValueError(
+                "a transition audition is playing in Mixxx — press Stop on the Arrange page first"
+            )
         mix_plan_path = self._mix_plan_path(slug)
         if not mix_plan_path.exists():
             raise ValueError("no mix plan yet — build one first")
@@ -1413,6 +1423,95 @@ class PlaylistApp:
         self.mix_run_thread.start()
         return self.mix_status()
 
+    def audition_status(self) -> dict:
+        return self.audition.status()
+
+    def start_audition(
+        self,
+        *,
+        slug: str | None = None,
+        transition: int | None = None,
+        from_track_id: str | None = None,
+        to_track_id: str | None = None,
+        lead_bars: int | None = None,
+        tail_bars: int | None = None,
+        take_over: bool = False,
+        port: int | None = None,
+    ) -> dict:
+        """Audition one transition of the BUILT plan live in Mixxx.
+
+        Only ever called from an explicit button press. Reads mix_plan.json
+        fresh every time, so edit -> rebuild -> Replay hears the new build.
+        Refuses while a full mix run is playing instead of taking its decks.
+        """
+        from hands.audition_transition import (
+            DEFAULT_LEAD_BARS,
+            DEFAULT_TAIL_BARS,
+            find_transition,
+            list_transitions,
+        )
+        from hands.run_mix_plan import load_executable_plan
+
+        if (self.mix_run_thread and self.mix_run_thread.is_alive()) or self.mix_state.get("running"):
+            raise ValueError(
+                "a full mix is playing in Mixxx — stop it before auditioning a transition; "
+                "the audition will not take over its decks"
+            )
+        from brain import plan_paths
+
+        try:
+            mix_plan_path = self._mix_plan_path(slug)
+        except plan_paths.PlanNotFound as error:
+            raise ValueError(f"unknown plan {slug!r}") from error
+        if not mix_plan_path.exists():
+            raise ValueError("this plan has no built mix yet — build it in 2 · Create the mix, then audition")
+        try:
+            plan = load_executable_plan(mix_plan_path)
+        except SystemExit as error:
+            raise ValueError(str(error)) from None
+        transitions = list_transitions(plan)
+        if not transitions:
+            raise ValueError("the built mix has no transitions to audition")
+        if transition is None:
+            if not from_track_id or not to_track_id:
+                raise ValueError("choose a transition: its number, or from_track_id and to_track_id")
+            transition = find_transition(transitions, from_track_id, to_track_id)
+        number = int(transition)
+        if not 1 <= number <= len(transitions):
+            raise ValueError(f"no transition {number}: the built mix has {len(transitions)}")
+        chosen = transitions[number - 1]
+        preserved_port = (plan.get("runtime") or {}).get("mixxx_control_port")
+        port = int(
+            port
+            if port is not None
+            else self.control_port_override
+            if self.control_port_override is not None
+            else preserved_port
+            if preserved_port is not None
+            else self.mix_state["mixxx_control_port"]
+        )
+        return self.audition.start(
+            plan_path=mix_plan_path,
+            number=number,
+            port=port,
+            lead_bars=DEFAULT_LEAD_BARS if lead_bars is None else int(lead_bars),
+            tail_bars=DEFAULT_TAIL_BARS if tail_bars is None else int(tail_bars),
+            take_over=bool(take_over),
+            info={
+                "plan": slug or self._active_slug(),
+                "count": len(transitions),
+                "from_label": chosen["from_label"],
+                "to_label": chosen["to_label"],
+                "from_track_id": chosen["from_track_id"],
+                "to_track_id": chosen["to_track_id"],
+                "technique": chosen["technique"],
+                "transition_beats": chosen["transition_beats"],
+            },
+        )
+
+    def stop_audition(self) -> dict:
+        return self.audition.stop()
+
 
 def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
     from brain import api_router, plan_paths
@@ -1457,6 +1556,8 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
         "/api/mix/start": ("POST",), "/api/mix/sync": ("POST",),
         "/api/mix/enrich": ("POST",), "/api/mix/control-port": ("POST",),
         "/api/mix/refresh": ("POST",), "/api/mix/rescan-tags": ("POST",),
+        "/api/audition": ("GET",), "/api/audition/start": ("POST",),
+        "/api/audition/stop": ("POST",),
     }
 
     def legacy_route(*args, **kwargs):
@@ -1591,6 +1692,9 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/mix":
                 self._json(app.mix_status())
+                return
+            if parsed.path == "/api/audition":
+                self._json(app.audition_status())
                 return
             if parsed.path == "/api/providers":
                 refresh = parse_qs(parsed.query).get("refresh") == ["1"]
@@ -1734,6 +1838,28 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
                     return
                 if self.path == "/api/mix/rescan-tags":
                     self._json(app.rescan_finalized_tags())
+                    return
+                if self.path == "/api/audition/start":
+                    # Playback starts here and only here: an explicit button press.
+                    payload = self._body()
+                    raw_transition = payload.get("transition")
+                    raw_lead = payload.get("lead_bars")
+                    raw_tail = payload.get("tail_bars")
+                    self._json(
+                        app.start_audition(
+                            slug=str(payload["plan"]) if payload.get("plan") else None,
+                            transition=int(raw_transition) if raw_transition is not None else None,
+                            from_track_id=payload.get("from_track_id"),
+                            to_track_id=payload.get("to_track_id"),
+                            lead_bars=int(raw_lead) if raw_lead is not None else None,
+                            tail_bars=int(raw_tail) if raw_tail is not None else None,
+                            take_over=bool(payload.get("take_over")),
+                        ),
+                        HTTPStatus.ACCEPTED,
+                    )
+                    return
+                if self.path == "/api/audition/stop":
+                    self._json(app.stop_audition())
                     return
             except (KeyError, ValueError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)

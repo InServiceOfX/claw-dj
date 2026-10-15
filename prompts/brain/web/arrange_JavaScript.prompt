@@ -42,6 +42,24 @@
         "source": "/api/plans/<slug>/bunches",
         "method": "POST",
         "description": "activate on Bunch these, enabled:false on un-bunch"
+      },
+      {
+        "kind": "api",
+        "source": "/api/audition",
+        "method": "GET",
+        "description": "live Mixxx audition status: transition number of total, phase, labels, refusal; polled only while playing"
+      },
+      {
+        "kind": "api",
+        "source": "/api/audition/start",
+        "method": "POST",
+        "description": "Audition in Mixxx / Previous / Next / Replay / Take over; only from a button press"
+      },
+      {
+        "kind": "api",
+        "source": "/api/audition/stop",
+        "method": "POST",
+        "description": "Stop: both decks stop"
       }
     ]
   }
@@ -63,6 +81,22 @@ Implement and maintain `brain/web/arrange.js` as the Registers '3 . Arrange' as 
   depend on a legacy/global selection state or prevent the plan from rendering.
 - Every adjacent pair has an editable transition control, including pairs
   inside a bunch; grouping tracks must not hide their transition editors.
+- Every adjacent pair also has an "Audition in Mixxx" control (story
+  `user_stories/story__when_i_audit_a_mix_i_audition_one_transition_live_in_mixxx_and_step_between_them.md`).
+  It sends the pair's track ids; the server plays that transition of the
+  BUILT plan live in Mixxx. An audition bar under the plan state shows which
+  transition is playing (number of total, from → to, technique, beats) and
+  its phase (loading, lead-in, transition, tail), with Previous / Replay /
+  Next by number (Previous disabled at 1, Next at the last) and Stop. Nothing
+  starts playback except these buttons: no audition request on load, render
+  or Refresh (a status read on load is allowed). Status is polled about once
+  a second only while playing. A refusal shows its message; a
+  `decks_playing` refusal offers an explicit "Take over the decks and play".
+  The bar notes when the plan is stale (an audition plays the last build)
+  and, after a transition edit of the auditioned pair, says to rebuild and
+  press Replay. The playing pair's row is highlighted. Audition buttons use
+  their own data attributes, so each pair still has exactly one
+  `data-transition-index` editor control.
 - Preserve the exact public interface declared in `<pdd-interface>`.
 - Treat the reviewed architecture description in this prompt as normative behavior.
 - Keep plan identity, immutable track identity, revision guards, and non-destructive storage semantics intact across GUI, CLI, and agent callers.

@@ -83,6 +83,19 @@
       {
         "name": "archiveBunch",
         "signature": "archiveBunch(bunchId) -> Promise<{affected_slugs}>"
+      },
+      {
+        "name": "auditionStatus",
+        "signature": "auditionStatus() -> Promise<AuditionStatus>"
+      },
+      {
+        "name": "startAudition",
+        "signature": "startAudition({plan, transition, from_track_id, to_track_id, lead_bars, tail_bars, take_over}) -> Promise<AuditionStatus>",
+        "sideEffects": "plays audio in Mixxx; call only from an explicit button press"
+      },
+      {
+        "name": "stopAudition",
+        "signature": "stopAudition() -> Promise<AuditionStatus>"
       }
     ]
   }
@@ -105,6 +118,8 @@
 % Goal
 
 Implement and maintain `brain/web/plan_client.js` as the Vanilla ES module (no framework, no bundler, no node_modules) loaded with <script type="module">. Fetch wrappers that thread base_rev into EVERY mutation body automatically, so a caller cannot forget it. MUST CHECK response.ok: fetch() FULFILLS on a 409 and only rejects on network failure, so a wrapper that does .then(r => r.json()) without checking ok swallows every conflict this design defends with and the banner never fires. A 409 surfaces a 'changed underneath you' banner with Reload and DISCARDS THE LOCAL OPTIMISTIC BUFFER INSTEAD OF RETRYING, because retrying re-applies a decision made against stale state. refreshPlan() re-fetches /arrange and repaints from the response only, never from local state. Uses AbortController to cancel a superseded arrange fetch (an AbortSignal is single-use per request, so allocate a fresh controller each time). createAndActivateBunch posts to /api/bunches then /api/plans/<slug>/bunches and returns a DISCRIMINATED result so the caller can distinguish library-create-failed from activation-conflicted; the activation 409's {conflicting_bunch_id, shared_track_ids} is passed through UNFLATTENED, never collapsed into a message string, or the UI cannot name the conflict. setTransition accepts and sends author.
+
+Live transition audition (`user_stories/story__when_i_audit_a_mix_i_audition_one_transition_live_in_mixxx_and_step_between_them.md`): `auditionStatus` GETs `/api/audition`; `startAudition` POSTs `/api/audition/start` with the plan slug and either a transition number or an Arrange pair (`from_track_id`, `to_track_id`), optional `lead_bars` / `tail_bars` / `take_over`; `stopAudition` POSTs `/api/audition/stop`. They are not plan mutations: no base_rev, never retried. A refusal (a full mix playing, a bad number) is an ordinary error whose message the caller shows.
 
 % Product contract
 

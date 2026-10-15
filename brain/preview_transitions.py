@@ -1,5 +1,16 @@
 """Render every planned transition as a listenable audio snippet.
 
+DEPRECATED (2026-10-14) — use the live audition instead:
+    uv run python -m hands.audition_transition --plan <slug> --transition N
+or Arrange → "Audition in Mixxx" (Previous / Next / Replay / Stop) in the
+playlist editor. Ernest wants transitions audited live in Mixxx, and this
+render cannot reproduce the runner's initial conditions: it starts the fade
+at cue + ride_beats (ignoring the beats already played during the previous
+fade, skips and the next-beat anchor), ignores ``snare_align``, and never
+beat-aligns the two grids. The live audition starts from the plan's
+``phase_anchor`` and runs the full runner's own transition code. This module
+stays until Ernest confirms the live audition works, then it is removed.
+
 Reading a mix plan's JSON tells a human nothing about how a transition
 FEELS — and a full live Mixxx run costs ~40 minutes per iteration loop.
 This renders each transition in `mix_plan.json` as a short audio file
@@ -222,6 +233,11 @@ def main() -> None:
     parser.add_argument("--only", type=int, default=None,
                         help="render just this transition number")
     args = parser.parse_args()
+    print(
+        "DEPRECATED: brain.preview_transitions does not reproduce the live runner's "
+        "starting point; audition live instead: "
+        "uv run python -m hands.audition_transition --plan <slug> --transition N"
+    )
 
     plan = json.loads(args.plan.read_text())
     events = plan["events"] if isinstance(plan, dict) else plan

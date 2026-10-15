@@ -169,6 +169,16 @@
     .transition-card.is-overridden { border-style:solid; border-color:var(--green); }
     .transition-card.is-orphaned,.transition-editor.is-orphaned { filter:grayscale(1); opacity:.72; }
     .transition-arrow { color:var(--green); font-size:20px; text-align:center; }
+    .transition-row { display:flex; align-items:stretch; gap:8px; margin:5px 16px; }
+    .transition-row .transition-card { flex:1; width:auto; margin:0; }
+    .transition-row.is-auditioning .transition-card { border-style:solid; border-color:#b8860b; background:#fff8e1; }
+    .audition-btn { white-space:nowrap; }
+    .audition-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; margin-top:10px; padding:10px 12px; border:1px solid var(--line); background:var(--panel); }
+    .audition-text { display:flex; flex-direction:column; gap:2px; }
+    .audition-text span,.audition-note { color:var(--muted); }
+    .audition-controls { display:flex; flex-wrap:wrap; gap:6px; }
+    .audition-error { flex-basis:100%; color:var(--red); }
+    .audition-note { flex-basis:100%; }
     .arrange-pending { padding:36px; border:1px solid var(--line); background:var(--panel); text-align:center; color:var(--muted); }
     #arrange-journal { margin-top:14px; border:1px solid var(--line); background:var(--panel); }
     #arrange-journal summary { cursor:pointer; padding:10px 12px; font-weight:700; }
@@ -197,6 +207,7 @@
       .arrange-track { grid-template-columns:70px 30px minmax(0,1fr); }
       .track-facts,.effective-note { grid-column:3; }
       .transition-card { grid-template-columns:24px 1fr; }
+      .transition-row { flex-direction:column; }
       section + section { border-left:0; border-top:1px solid var(--line); }
       .rows { height:48vh; }
     }

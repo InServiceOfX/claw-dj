@@ -2350,6 +2350,19 @@
           {
             "name": "archiveBunch",
             "signature": "archiveBunch(bunchId) -> Promise<{affected_slugs}>"
+          },
+          {
+            "name": "auditionStatus",
+            "signature": "auditionStatus() -> Promise<AuditionStatus>"
+          },
+          {
+            "name": "startAudition",
+            "signature": "startAudition({plan, transition, from_track_id, to_track_id, lead_bars, tail_bars, take_over}) -> Promise<AuditionStatus>",
+            "sideEffects": "plays audio in Mixxx; call only from an explicit button press"
+          },
+          {
+            "name": "stopAudition",
+            "signature": "stopAudition() -> Promise<AuditionStatus>"
           }
         ]
       }
@@ -2507,6 +2520,24 @@
             "source": "/api/plans/<slug>/bunches",
             "method": "POST",
             "description": "activate on Bunch these, enabled:false on un-bunch"
+          },
+          {
+            "kind": "api",
+            "source": "/api/audition",
+            "method": "GET",
+            "description": "live Mixxx audition status: transition number of total, phase, labels, refusal; polled only while playing"
+          },
+          {
+            "kind": "api",
+            "source": "/api/audition/start",
+            "method": "POST",
+            "description": "Audition in Mixxx / Previous / Next / Replay / Take over; only from a button press"
+          },
+          {
+            "kind": "api",
+            "source": "/api/audition/stop",
+            "method": "POST",
+            "description": "Stop: both decks stop"
           }
         ]
       }
@@ -3167,5 +3198,25 @@
         ]
       }
     }
+  },
+  {
+    "reason": "Ernest wants to audit a built mix transition by transition live in Mixxx, stepping forward and back, instead of sitting through a multi-hour mix or trusting an ffmpeg render that does not reproduce the live runner's starting point.",
+    "description": "Live audition of one built transition: lead-in placed from the ride's phase_anchor on the outgoing grid (previous fade, skips and backbeat nudges included), incoming cued from the plan's own load/preload event, outgoing tempo/pitch as the runner would hold them, then the full runner's _run_events for start, play_body, the plan's transition event, a short tail and stop_all. CLI with dry run and listing; refuses a running mix or playing decks; a child-process session for the playlist editor's Arrange Previous / Next / Replay / Stop. Replaces the deprecated brain/preview_transitions.py render. Live only; no rendered audio, no plan writes.",
+    "dependencies": ["hands/mixxx_control_Python.prompt"],
+    "priority": 53,
+    "filename": "hands/audition_transition_Python.prompt",
+    "filepath": "hands/audition_transition.py",
+    "tags": ["runtime", "mixxx", "live", "audition"],
+    "context_urls": [],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "list_transitions", "signature": "(plan: dict) -> list[dict]"},
+      {"name": "find_transition", "signature": "(transitions: list[dict], from_track_id: str, to_track_id: str) -> int"},
+      {"name": "plan_audition", "signature": "(plan: dict, number: int, *, lead_bars: int = 8, tail_bars: int = 16) -> dict"},
+      {"name": "run_audition", "signature": "(plan: dict, number: int, *, port: int, lead_bars: int = 8, tail_bars: int = 16, dry_run: bool = False, take_over: bool = False, plan_path=None, control_factory=MixxxControl, ps_output: str | None = None) -> dict"},
+      {"name": "running_mix_processes", "signature": "(*, ps_output: str | None = None, own_pid: int | None = None) -> list[str]"},
+      {"name": "main", "signature": "(argv: list[str] | None = None) -> int"}
+    ], "classes": [
+      {"name": "AuditionSession", "signature": "(*, popen=subprocess.Popen, python: str | None = None, cwd: Path = REPO_ROOT, silence=silence_decks, log_lines: int = 40)", "methods": ["start(*, plan_path, number, port, lead_bars=8, tail_bars=16, take_over=False, info=None) -> dict", "stop(timeout_s=8.0) -> dict", "status() -> dict", "is_playing() -> bool"]}
+    ]}}
   }
 ]

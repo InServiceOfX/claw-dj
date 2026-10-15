@@ -1,5 +1,56 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Live transition audition in Mixxx; render preview deprecated (2026-10-14)
+
+Ernest: "I'd rather have Live in Mixxx and see about 'sunsetting' the render
+method ... skip forward or backward transitions so we could edit and audit."
+
+- `hands/audition_transition.py` plays ONE transition of the built
+  `mix_plan.json` live in Mixxx: the outgoing song from a lead-in (default 8
+  bars) before its planned fade start, the real transition, a short tail of
+  the incoming song (default 16 bars), then both decks stop. The lead-in is
+  placed from the plan's `phase_anchor` (`planned_anchor_beat_index` on the
+  outgoing grid already counts the previous fade, skips and backbeat nudges);
+  the incoming song is cued from the plan's own load/preload event; the
+  outgoing deck gets the tempo/pitch the runner would be holding (play_bpm
+  hold, keep_blend_tempo, settle target, start bpm_target). Then
+  `hands.run_mix_plan._run_events` runs start -> play_body -> transition ->
+  finale -> stop_all, so sync/beatsync_phase, `snare_align`, EQ/fader curves
+  and the runtime bar guard are the full mix's own code, not a copy.
+- CLI: `uv run python -m hands.audition_transition --plan <slug> --list`,
+  `--transition N [--lead-bars 8] [--tail-bars 16] [--dry-run] [--take-over]`.
+  Dry runs never connect to Mixxx. Ctrl-C stops both decks and resets EQ/filter.
+- GUI: Arrange (`http://127.0.0.1:8787/#arrange`) — each transition has
+  "Audition in Mixxx"; the audition bar shows which transition is playing
+  (number of total, lead-in / transition / tail) with Previous, Replay, Next
+  and Stop. Nothing plays until a button is pressed. Every press reads the
+  built plan fresh, so edit -> rebuild (2 · Create the mix) -> Replay hears
+  the change; the bar says so after a transition edit and while the plan has
+  unbuilt edits. Runs in a child process (`AuditionSession`) so Stop always
+  works; stepping stops the previous audition first.
+- Refusals: a full mix run (GUI thread or a `hands.run_mix_plan` process) or
+  another audition is active; any Mixxx deck already playing (the GUI offers
+  "Take over the decks"); performance plans (`execution_mode`).
+- Approximate, flagged in the output: transitions right after a
+  vocal-over-bed layer (no ride of their own), after a same-song handoff, and
+  artifacts without `phase_anchor`. The real Mixxx state before the lead-in
+  (sync-leader, exact live rate after a settle glide, beatgrid drift) is
+  re-created from the plan, not captured from a real run.
+- `brain/preview_transitions.py` is DEPRECATED (docstring + runtime notice):
+  it ignores previous-fade beats, skips, the +1 anchor, `snare_align` and grid
+  alignment. Not deleted: remove it after Ernest confirms the live audition.
+- PDD: story
+  `user_stories/story__when_i_audit_a_mix_i_audition_one_transition_live_in_mixxx_and_step_between_them.md`,
+  prompt `prompts/hands/audition_transition_Python.prompt` (new architecture
+  entry), `arrange_JavaScript.prompt` and `plan_client_JavaScript.prompt`
+  updated by hand (local `pdd` generation was failing).
+- Verification: `tests/test_audition_transition.py` (fake Mixxx only) covers
+  lead-in seek math, incoming cue, snare_align + phase_anchor through the real
+  `_run_events`, play_bpm hold carry-over, skip/entry clamps, vocal-layer
+  chain, prev/next bounds, refusals, dry-run/CLI, the child-process session
+  and the Arrange controls (node). No live Mixxx playback was run.
+  Not yet heard by Ernest; nothing committed.
+
 ## Model answer limit raised to 15 minutes (2026-10-14)
 
 - `brain.llm_providers.ask` now waits up to 900 s (was 600 s) for every

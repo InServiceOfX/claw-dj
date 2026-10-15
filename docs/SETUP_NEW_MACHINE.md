@@ -101,7 +101,8 @@ gap silently degrades one specific thing:
   this at all — only goal 2 (analyze/enrich/build a mix) does.
 - **ffmpeg** (`brew install ffmpeg`). Used directly by
   `brain.preview_transitions` (render transitions to listenable audio —
-  the main iteration tool for tuning a mix) and `brain.convert_m4a`
+  DEPRECATED 2026-10-14 in favour of the live audition
+  `hands.audition_transition`; kept until Ernest confirms it) and `brain.convert_m4a`
   (fixes the m4a chroma-decode gap). Nothing else in the core pipeline
   needs it, but both of those silently fail without it.
 - **Rust toolchain** (`rustup`/`cargo` on PATH) — optional but
@@ -261,15 +262,21 @@ build a fresh one first: either the GUI's `#curate` → select tracks →
 
 ```sh
 uv run python -m brain.build_mix_plan --tracks N --profile dj-showcase
-uv run python -m brain.preview_transitions
-open brain/data/previews/index.html
+uv run python -m hands.audition_transition --plan <slug> --list
+uv run python -m hands.audition_transition --plan <slug> --transition 1 --dry-run
+uv run python -m hands.audition_transition --plan <slug> --transition 1
 ```
 
-Renders every planned transition as a short listenable audio file (real
-cue points, fades, tempo treatment) — this is the actual iteration loop
-for tuning a mix; a full live Mixxx run is only needed to hear the whole
-set end to end (`uv run python -m hands.run_mix_plan`). Requires ffmpeg
-(see Prerequisites). `dj_notes` and its directive syntax are covered in
+Plays one planned transition live in Mixxx (a few bars of the outgoing
+song from its planned starting point, the real transition, a short tail),
+then stops — this is the iteration loop for tuning a mix. In the GUI the
+same thing is Arrange → "Audition in Mixxx" with Previous / Next / Replay /
+Stop. A full live Mixxx run is only needed to hear the whole set end to end
+(`uv run python -m hands.run_mix_plan`). The older ffmpeg render
+(`uv run python -m brain.preview_transitions`, output in
+`brain/data/previews/`) is deprecated: it does not reproduce the runner's
+starting point and will be removed once the live audition is confirmed
+(the render requires ffmpeg; see Prerequisites). `dj_notes` and its directive syntax are covered in
 `docs/DJ_STYLE_GUIDE.md`; the five-transitions reference (long blend,
 bass swap, drop mix, echo out, crossfader cut) is in
 `docs/DJ_TRANSITIONS_PLAYBOOK.md`.

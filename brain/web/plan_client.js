@@ -233,3 +233,17 @@ export async function archiveBunch(bunchId) {
   for (const slug of result.affected_slugs || []) forgetRevision(slug);
   return result;
 }
+
+// Live transition audition in Mixxx (one at a time, app-wide). Starting one
+// plays audio, so callers only invoke startAudition from a button press.
+export function auditionStatus() {
+  return request('/api/audition');
+}
+
+export function startAudition({plan, transition, from_track_id, to_track_id, lead_bars, tail_bars, take_over = false}) {
+  return request('/api/audition/start', json('POST', {plan, transition, from_track_id, to_track_id, lead_bars, tail_bars, take_over}));
+}
+
+export function stopAudition() {
+  return request('/api/audition/stop', json('POST', {}));
+}

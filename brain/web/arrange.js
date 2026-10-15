@@ -3,6 +3,19 @@ import * as client from './plan_client.js';
 import {mountPlanPicker} from './plan_picker.js';
 import {createTransitionEditor} from './transition_editor.js';
 
+const AUDITION_PHASES = {
+  idle: 'Ready',
+  loading: 'loading both decks',
+  'lead-in': 'lead-in',
+  transition: 'transition',
+  tail: 'tail',
+  stopping: 'stopping',
+  finished: 'Finished',
+  'stopped by user': 'Stopped',
+  refused: 'Refused',
+  failed: 'Failed',
+};
+
 const root = document.getElementById('arrange-root');
 const pickerRoot = document.getElementById('plan-picker');
 
@@ -17,6 +30,12 @@ function initialize() {
     draggedKey: null,
     keyboardKey: null,
     keyboardTarget: null,
+    // Live Mixxx audition of one built transition. Server-owned (one at a
+    // time for the whole app); this is the last status we were told.
+    audition: null,
+    auditionBusy: false,
+    auditionTimer: null,
+    auditionHint: '',
   };
   const editor = createTransitionEditor(document.getElementById('transition-editor'));
   const picker = mountPlanPicker(pickerRoot);
@@ -59,7 +78,13 @@ function initialize() {
   });
 
   document.addEventListener('clawdj:transition-changed', event => {
-    if (event.detail?.slug === state.slug) refresh();
+    if (event.detail?.slug !== state.slug) return;
+    const pair = event.detail?.pair;
+    if (pair && state.audition?.from_track_id === pair.from_track_id && state.audition?.to_track_id === pair.to_track_id) {
+      // The audition reads the BUILT plan; an override is heard after a rebuild.
+      state.auditionHint = 'You edited this transition. Rebuild the mix in 2 · Create the mix, then press Replay to hear the change.';
+    }
+    refresh();
   });
 
   async function refresh() {
@@ -124,6 +149,7 @@ function initialize() {
         <span title="${escapeHtml(snapshot.rev)}">Revision ${escapeHtml(snapshot.rev.slice(0, 12))}</span>
         <span>${Object.keys(snapshot.revs || {}).length} source revisions</span>
       </div>
+      <div id="audition-bar" class="audition-bar" role="status" aria-live="polite">${renderAuditionBar()}</div>
       <div class="arrange-list" role="list" aria-label="Ordered tracks and transitions">
         ${renderUnits(units, snapshot)}
       </div>
@@ -178,6 +204,7 @@ function initialize() {
       moveUnit(units, index, target);
     }));
     root.querySelectorAll('[data-transition-index]').forEach(button => button.addEventListener('click', () => openEditor(Number(button.dataset.transitionIndex))));
+    root.querySelectorAll('[data-audition-index]').forEach(button => button.addEventListener('click', () => auditionPair(Number(button.dataset.auditionIndex))));
     root.querySelectorAll('[data-orphan-index]').forEach(button => button.addEventListener('click', () => {
       const orphaned = (state.snapshot.segments || []).filter(segment => segment.state === 'orphaned');
       const segment = orphaned[Number(button.dataset.orphanIndex)];
@@ -186,6 +213,127 @@ function initialize() {
     wireDragAndKeyboard(units);
     const details = document.getElementById('arrange-journal');
     details.addEventListener('toggle', () => { if (details.open) loadJournal(details); }, {once: true});
+    paintAudition();
+  }
+
+  // --- Live audition in Mixxx -------------------------------------------
+  // Playback only ever starts from these button handlers. The server plays
+  // the transition from the built mix_plan.json, read fresh on every press.
+
+  function renderAuditionBar() {
+    const audition = state.audition;
+    const stale = state.snapshot?.stale
+      ? '<span class="audition-note">This plan has unbuilt edits: an audition plays the last built mix.</span>' : '';
+    const hint = state.auditionHint ? `<span class="audition-note">${escapeHtml(state.auditionHint)}</span>` : '';
+    if (!audition || audition.transition == null) {
+      return `<span class="audition-text">Audition any transition live in Mixxx with its “Audition in Mixxx” button: a few bars before, the real blend, then a short tail. Nothing plays until you press it.</span>${stale}`;
+    }
+    const number = Number(audition.transition);
+    const count = Number(audition.count || 0);
+    const busy = state.auditionBusy;
+    const playing = Boolean(audition.playing);
+    const phase = AUDITION_PHASES[audition.phase] || audition.phase || '';
+    const heading = playing
+      ? `Playing transition ${number} of ${count} · ${escapeHtml(phase)}`
+      : `${escapeHtml(phase || 'Last audition')} · transition ${number} of ${count}`;
+    const error = audition.error ? `<span class="audition-error">${escapeHtml(audition.error)}</span>` : '';
+    const takeOver = audition.refused === 'decks_playing'
+      ? `<button type="button" data-audition-step="take-over" ${busy ? 'disabled' : ''}>Take over the decks and play</button>` : '';
+    return `<span class="audition-text"><strong>${heading}</strong>
+      <span>${escapeHtml(audition.from_label || '')} → ${escapeHtml(audition.to_label || '')}${audition.technique ? ` · ${escapeHtml(audition.technique)}` : ''}${audition.transition_beats != null ? ` · ${escapeHtml(audition.transition_beats)} beats` : ''}</span></span>
+      <span class="audition-controls">
+        <button type="button" data-audition-step="prev" ${busy || number <= 1 ? 'disabled' : ''}>Previous</button>
+        <button type="button" data-audition-step="replay" ${busy ? 'disabled' : ''}>Replay</button>
+        <button type="button" data-audition-step="next" ${busy || number >= count ? 'disabled' : ''}>Next</button>
+        <button type="button" data-audition-step="stop" class="danger" ${playing ? '' : 'disabled'}>Stop</button>
+        ${takeOver}
+      </span>${error}${hint}${stale}`;
+  }
+
+  function paintAudition() {
+    const bar = document.getElementById('audition-bar');
+    if (!bar) return;
+    bar.innerHTML = renderAuditionBar();
+    bar.querySelectorAll('[data-audition-step]').forEach(button =>
+      button.addEventListener('click', () => auditionStep(button.dataset.auditionStep)));
+    const audition = state.audition;
+    root.querySelectorAll('.transition-row').forEach(row => row.classList.toggle('is-auditioning', Boolean(
+      audition?.playing && row.dataset.auditionFrom === audition.from_track_id && row.dataset.auditionTo === audition.to_track_id)));
+  }
+
+  function auditionPair(index) {
+    const tracks = state.snapshot?.tracks || [];
+    const from = tracks[index]?.track_id;
+    const to = tracks[index + 1]?.track_id;
+    if (from && to) startAudition({from_track_id: from, to_track_id: to});
+  }
+
+  function auditionStep(step) {
+    const audition = state.audition;
+    if (step === 'stop') {
+      stopAudition();
+      return;
+    }
+    if (!audition || audition.transition == null) return;
+    const number = Number(audition.transition);
+    if (step === 'take-over') startAudition({transition: number, take_over: true});
+    else startAudition({transition: step === 'prev' ? number - 1 : step === 'next' ? number + 1 : number});
+  }
+
+  async function startAudition(choice) {
+    if (!state.slug || state.auditionBusy) return;
+    state.auditionBusy = true;
+    state.auditionHint = '';
+    paintAudition();
+    try {
+      state.audition = await client.startAudition({plan: state.slug, ...choice});
+      announce(`Auditioning transition ${state.audition.transition} of ${state.audition.count} in Mixxx.`);
+      pollAudition();
+    } catch (error) {
+      announce(error.message);
+    } finally {
+      state.auditionBusy = false;
+      paintAudition();
+    }
+  }
+
+  async function stopAudition() {
+    clearTimeout(state.auditionTimer);
+    try {
+      state.audition = await client.stopAudition();
+      announce('Audition stopped; both decks stopped.');
+    } catch (error) {
+      announce(error.message);
+    }
+    paintAudition();
+  }
+
+  function pollAudition() {
+    clearTimeout(state.auditionTimer);
+    state.auditionTimer = setTimeout(async () => {
+      try {
+        state.audition = await client.auditionStatus();
+      } catch (error) {
+        announce(error.message);
+        return;
+      }
+      paintAudition();
+      if (state.audition.playing) pollAudition();
+      else if (state.audition.error) announce(state.audition.error);
+    }, 1000);
+  }
+
+  async function syncAudition() {
+    // Show an audition already playing (another tab, or before a reload).
+    try {
+      const status = await client.auditionStatus?.();
+      if (!status) return;
+      state.audition = status;
+      paintAudition();
+      if (status.playing) pollAudition();
+    } catch (error) {
+      // The audition bar is optional; Arrange still works without it.
+    }
   }
 
   async function mutate(operation, success) {
@@ -359,12 +507,14 @@ function initialize() {
     }
   }
 
-  picker.refresh().then(active => {
+  picker.refresh().then(async active => {
     state.slug = active?.slug || null;
-    if (state.slug) refresh();
+    if (state.slug) await refresh();
     else render();
+    syncAudition();
   }).catch(error => renderError(error.message));
 }
+
 
 function buildUnits(snapshot) {
   const starts = new Map();
@@ -470,13 +620,16 @@ function renderTransition(snapshot, index) {
   const to = snapshot.tracks[index + 1]?.track_id;
   const segment = findSegment(snapshot.segments, from, to);
   const beats = segment?.transition_beats ?? segment?.beats;
-  return `<button type="button" class="transition-card ${segment?.overridden ? 'is-overridden' : ''}" data-transition-index="${index}">
+  return `<div class="transition-row" data-audition-from="${escapeHtml(from)}" data-audition-to="${escapeHtml(to)}">
+    <button type="button" class="transition-card ${segment?.overridden ? 'is-overridden' : ''}" data-transition-index="${index}">
     <span class="transition-arrow">↓</span>
     <span><strong>${escapeHtml(segment?.technique || 'Transition not built')}</strong>
     <small>${beats != null ? `${escapeHtml(beats)} beats · ` : ''}author: ${escapeHtml(segment?.author || 'derived')}</small></span>
     <span>${escapeHtml(segment?.showcase_move || '')}</span>
     <span>${escapeHtml(segment?.note || 'Edit transition')}</span>
-  </button>`;
+    </button>
+    <button type="button" class="audition-btn" data-audition-index="${index}" title="Play this transition live in Mixxx from the built mix: a few bars before, the real blend, a short tail">Audition in Mixxx</button>
+  </div>`;
 }
 
 function renderOrphaned(snapshot) {

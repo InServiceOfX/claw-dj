@@ -1,0 +1,57 @@
+<pdd-reason>Ernest wants to audit a built mix transition by transition live in Mixxx, stepping forward and back, instead of sitting through a multi-hour mix or trusting an ffmpeg render that does not reproduce the live runner's starting point.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {"name": "list_transitions", "signature": "list_transitions(plan: dict) -> list[dict]"},
+      {"name": "find_transition", "signature": "find_transition(transitions: list[dict], from_track_id: str, to_track_id: str) -> int", "errors": ["AuditionError"]},
+      {"name": "plan_audition", "signature": "plan_audition(plan: dict, number: int, *, lead_bars: int = 8, tail_bars: int = 16) -> dict", "errors": ["AuditionError"]},
+      {"name": "describe", "signature": "describe(spec: dict, *, plan_path=None) -> list[str]"},
+      {"name": "running_mix_processes", "signature": "running_mix_processes(*, ps_output: str | None = None, own_pid: int | None = None) -> list[str]"},
+      {"name": "silence_decks", "signature": "silence_decks(port: int, *, control_factory=MixxxControl, decks=(1, 2)) -> None"},
+      {"name": "run_audition", "signature": "run_audition(plan: dict, number: int, *, port: int, lead_bars: int = 8, tail_bars: int = 16, dry_run: bool = False, take_over: bool = False, plan_path=None, control_factory=MixxxControl, ps_output: str | None = None) -> dict", "errors": ["AuditionError", "AuditionRefused"]},
+      {"name": "main", "signature": "main(argv: list[str] | None = None) -> int"}
+    ],
+    "classes": [
+      {"name": "AuditionError", "signature": "AuditionError(ValueError)"},
+      {"name": "AuditionRefused", "signature": "AuditionRefused(code: str, message: str)"},
+      {"name": "AuditionSession", "signature": "AuditionSession(*, popen=subprocess.Popen, python: str | None = None, cwd: Path = REPO_ROOT, silence=silence_decks, log_lines: int = 40)", "methods": ["start(*, plan_path, number, port, lead_bars=8, tail_bars=16, take_over=False, info=None) -> dict", "stop(timeout_s=8.0) -> dict", "status() -> dict", "is_playing() -> bool"]}
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>hands/mixxx_control_Python.prompt</pdd-dependency>
+
+% Goal
+
+Audition ONE transition of a built mix plan (`brain/data/plans/<slug>/mix_plan.json`)
+live in Mixxx, then let the DJ step to the previous / next transition, replay,
+or stop (`user_stories/story__when_i_audit_a_mix_i_audition_one_transition_live_in_mixxx_and_step_between_them.md`).
+It replaces the deprecated ffmpeg render `brain/preview_transitions.py`, which
+starts the fade at cue + ride_beats and so ignores the previous fade, skips,
+the next-beat anchor, `snare_align` and grid alignment.
+
+% Requirements
+
+1. Numbering: transitions are the plan's `op == "transition"` events in order, numbered from 1. `list_transitions` reports, per transition, its decks, technique, beats, moves, labels and the library identity of the song on each deck (`source_track_id` before `track_id`, so bounded source copies keep their identity). `find_transition` maps an Arrange pair (from/to track ids) to its number and raises `AuditionError` when the built mix has no such adjacent pair (stale build). Out-of-range numbers raise `AuditionError` naming the count. Plans with an `execution_mode` (explicit performances, rendered masters) raise `AuditionError`.
+2. Deck bookkeeping replays `hands.run_mix_plan._run_events` without Mixxx: `load` lands immediately; `preload_after_transition` waits in a single pending slot and lands on the deck the next transition frees (the incoming deck for `vocal_over_bed` / `keep_outgoing_live`, otherwise the outgoing deck); a play_body `handoff` gives the copy deck the original deck's tempo and pitch and loads `then_load` onto the original deck.
+3. Outgoing tempo/pitch state is what the full runner would hold at the start of the lead-in: `start.bpm_target` for the opening track; after a transition, `incoming_bpm_target` (play_bpm hold), else native when the entry was not synced (`sync` absent or `half_time_or_cut`), else the outgoing deck's effective tempo for `keep_blend_tempo`, else the `settle_rate` interpolation toward `incoming_settle_bpm` between native and blend tempo, else native; an earlier ride's `exit_bpm_target` ramp sets that deck's tempo. A tempo within 0.01 BPM of native is native. Pitch: `incoming_pitch_semitones` holds for the track's life.
+4. Lead-in placement on the outgoing grid: `seconds = first_beat_seconds + beat * 60 / grid_bpm` from the ride's `phase_anchor`; the transition anchor is `planned_anchor_beat_index` and the lead-in starts `lead_bars * 4` beats earlier, half a beat of pre-roll before that downbeat so the first counted edge is the lead-in downbeat. Never start before the outgoing song's entry beat (`cue_beat_index` of its load) or inside a skipped section: a ride with `skip_beats` (skip happening inside the ride) moves the source anchor by `skip_beats` and its landing becomes the earliest start; a same-song handoff starts on the copy after `skip_to_seconds`. Clamped starts drop the pre-roll and count one beat fewer. A tempo ramp (`tempo_ramp_beats`) is kept inside the lead-in, lengthening it when needed. A transition straight after vocal-over-bed layers (no ride of its own) adds each layer's beats + 1 to the bed ride's anchor. Without `phase_anchor`, place by beat arithmetic from the cue at native BPM (previous fade + ride + 1). Every approximation adds a human note.
+5. Runtime guard: the lead-in `play_body` carries the plan's `phase_anchor` unchanged. Where the full runner has no planned anchor for this ride (after a handoff or vocal layer) a synthesized anchor on the same grid (`synthesized_for_audition: true`) keeps the computed bar position; none without a grid.
+6. Shared execution path, no second transition implementation: setup is `reset_instrument`, `load_deck` for the outgoing song at the lead-in seek and for the incoming song with the plan's own cue, then the pitch hold; then `_run_events` runs `[start (bpm_target when held), play_body (lead-in, phase_anchor, ramp), the plan's transition event verbatim, finale (tail_bars * 4 beats on the deck that keeps playing; omitted when 0), stop_all]`. So sync / `beatsync_phase`, the `snare_align` one-beat jump after sync, EQ and fader curves, settle and the runtime bar guard are the full runner's. Mandatory source ends apply through `hands.source_cutoffs.prepare_plan` exactly as in a full run.
+7. Safety: dry runs print `describe` lines and the setup + event list and never connect. Live runs refuse (`AuditionRefused`) with code `mix_running` when `running_mix_processes` finds a non-dry-run `hands.run_mix_plan` / `attended_mix_run` / `showcase_mix` / other `audition_transition` python process outside this process's own lineage (its `uv run` launcher carries the same module name), and with `decks_playing` when any Mixxx deck 1-4 is playing unless `take_over`. Refusals touch no deck. Ctrl-C (and SIGTERM, which `main` maps to Ctrl-C and restores afterwards) stops decks 1 and 2 and resets EQ/filter on a fresh connection (`silence_decks`); every live run ends with `silence_decks`.
+8. CLI: `python -m hands.audition_transition --plan <slug|dir|mix_plan.json> (--list | --transition N) [--lead-bars 8] [--tail-bars 16] [--port P] [--dry-run] [--take-over]`. Plan resolution and validation reuse `resolve_plan_argument` / `load_executable_plan`; the live port uses `discover_mixxx_control_port(preferred=plan_control_port(plan) or DEFAULT_PORT, explicit=--port)`. Exit 0 done, 2 refused or bad request (prints `[audition] refused (<code>): ...` or `[audition] error: ...`), 130 stopped.
+9. `AuditionSession` (used by `brain/playlist_editor.py`): one audition at a time, run as a child process `python -u -m hands.audition_transition ... --port P` so Stop always works even inside blocking waits. `start` stops any current audition first (stepping never stacks two on the decks). A reader thread keeps the last 40 lines and maps the runner's `[i/n] op` lines to phases (`start`/`play_body` lead-in, `transition`, `finale` tail, `stop_all` stopping) and `refused (<code>)` to `refused`; exit gives `finished`, `refused` or `failed` with an error. `stop` sends SIGTERM, waits, and if the child does not exit kills it and calls `silence_decks(port)` itself; the phase reads `stopped by user`.
+10. The editor: `PlaylistApp.start_audition` refuses while its own full-mix run thread is alive or `mix_state.running`, reads the built `mix_plan.json` fresh on every press, accepts a number or an Arrange pair, uses the same control-port precedence as `start_mix`, and passes labels/count for display; `start_mix` refuses while an audition plays. Routes: `GET /api/audition`, `POST /api/audition/start` (202), `POST /api/audition/stop`.
+11. No rendered audio, no ffmpeg, no plan writes, no network beyond the localhost Mixxx control API.
+
+% Output
+
+- Primary output: `hands/audition_transition.py`.
+- Callers: `brain/playlist_editor.py` (session + routes), `brain/web/plan_client.js` and `brain/web/arrange.js` (Arrange controls).
+
+% Verification
+
+- `.venv/bin/python -m unittest tests/test_audition_transition.py` with fake Mixxx connections only; never a live Mixxx.
+- Cover: lead-in seek seconds from `phase_anchor`; incoming cue from the plan (load and preload); `snare_align` and the plan's `phase_anchor` reaching the real `_run_events` / `wait_for_beats`; play_bpm hold carried to the next transition's outgoing deck; entry and skip clamps; the vocal-layer chain; prev/next bounds and pair lookup; refusal for a running mix and for playing decks; dry-run output; CLI exit codes; session phases, refusal parsing, stop-before-step, kill-and-silence; editor refusal both ways; Arrange controls in node.
