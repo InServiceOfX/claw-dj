@@ -273,6 +273,53 @@ def detect_snare_phase_percussive(
     return {"snare_parity": parity, "confidence": round(confidence, 3), "offset_seconds": offset_seconds}
 
 
+# Blend-window reads (2026-10-13). The song-wide read comes from the first
+# minutes of the song; Mix to listen blends out near the end, where an extra
+# half-bar in the arrangement or live drums drifting off Mixxx's constant grid
+# can put the snare on the other beats. A drum-only read of the actual blend
+# window outranks the song-wide read only when it is at least this sure:
+# below it, today's behaviour (song-wide read, or bar count only) stands.
+BLEND_WINDOW_GATE = 0.25
+# Window length in beats and where it starts. Outgoing: a few bars before the
+# fade starts through the blend. Incoming: from its cue through the blend.
+BLEND_WINDOW_BEATS = 64
+BLEND_WINDOW_LEAD_BEATS = 16
+
+
+def blend_window_start_beat(beat_index: int) -> int:
+    """Window start, rounded down to 8 beats so rebuilds reuse cached reads."""
+    return max(0, (int(beat_index) // 8) * 8)
+
+
+def measure_blend_window(
+    path: str, *, bpm: float, first_beat_seconds: float, start_beat: int,
+    beats: int = BLEND_WINDOW_BEATS,
+) -> dict:
+    """Drum-only snare parity of `beats` beats starting at global `start_beat`."""
+    beat_seconds = 60.0 / float(bpm)
+    return detect_snare_phase_percussive(
+        path, bpm=bpm, first_beat_seconds=first_beat_seconds,
+        offset_seconds=float(first_beat_seconds) + start_beat * beat_seconds,
+        window_seconds=beats * beat_seconds,
+    )
+
+
+def prefer_blend_window(song_wide: dict, window: dict | None) -> tuple[dict, bool]:
+    """Pick the snare read to align on: the blend window's when it is sure.
+
+    Returns (phase, used_window). `phase` keeps the song's grid fields and
+    takes the window's parity/confidence when the window clears
+    BLEND_WINDOW_GATE.
+    """
+    if not window or float(window.get("confidence") or 0.0) < BLEND_WINDOW_GATE:
+        return song_wide, False
+    return {
+        **song_wide,
+        "snare_parity": int(window["snare_parity"]),
+        "confidence": float(window["confidence"]),
+    }, True
+
+
 def agree_on_parity(windows: list[dict], *, gate: float, min_agreeing: int = 2) -> dict | None:
     """Combine per-window reads without inflating confidence.
 

@@ -7,6 +7,30 @@
   bigger sets. A timeout still falls back to the optimizer order with
   "review skipped" in the order notes.
 
+## Backbeat measured at each blend window (2026-10-13)
+
+Ernest: backbeat matching is "near perfect", with at most one or two misses
+out of hundreds of transitions — could Build find those?
+
+- The song-wide snare read comes from a song's first minutes; Mix to listen
+  blends out late, where an extra half-bar or live-drum drift can put the
+  snare on the other beats. Build now measures the drum-only snare parity of
+  each actual blend window (outgoing: 16 beats before the fade start;
+  incoming: from its cue; 64 beats each) and aligns on it when confidence
+  ≥ 0.25 (`BLEND_WINDOW_GATE`); otherwise the song-wide read stands.
+  `trust_ride_beats` blends are left alone.
+- `compose_mix_plan` builds once silently to learn the windows, measures the
+  uncached ones in parallel at low priority (`BlendWindowReader`), then builds
+  with them. Reads are cached in the library index table
+  `beat_phase_windows` and reused while the song's grid is unchanged.
+  Each blend records `backbeat.blend_window`; the reason gains
+  "(blend-window read)" when a window read flipped or upgraded a side.
+- Test build of `rnb-cooldown-mix-vol-02` (optimizer only, same order):
+  216 snare-matched (was 208), 39 bar count only (was 47); first build
+  +~2.7 min for 508 windows, near zero after. Flipped and corrected: #4 New
+  Edition "If It Isn't Love" → Cassie (the clearest case), #87 Jagged Edge
+  "Heartbreak" → Aaliyah, plus #91, #116, #160. Listen-check #4 and #87.
+
 ## Build review sees the locked pairs (2026-10-13)
 
 - The review's mix sheet now carries a `locked` list, by song id: required

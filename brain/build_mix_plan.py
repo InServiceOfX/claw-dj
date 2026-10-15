@@ -221,6 +221,125 @@ def load_beat_phase_lookup() -> dict[str, dict]:
     }
 
 
+def _measure_window_job(job: tuple) -> tuple:
+    """Process-pool worker: one blend-window read (low priority)."""
+    from brain.onset_analysis import measure_blend_window
+
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+    track_id, bpm, first_beat, start_beat, beats = job
+    try:
+        read = measure_blend_window(
+            track_id, bpm=bpm, first_beat_seconds=first_beat, start_beat=start_beat, beats=beats
+        )
+    except Exception:  # unreadable file, window past the end
+        read = {"snare_parity": 0, "confidence": 0.0}
+    return job, read
+
+
+class BlendWindowReader:
+    """Snare read of the actual blend windows, cached in `beat_phase_windows`.
+
+    `build_plan` calls it as ``reader(track_id, grid, beat_index)``. With
+    ``collect_only`` it only records which windows the plan needs and
+    returns None, so `compose_mix_plan` can measure them all in parallel
+    and then build again with every read in hand. Songs whose file is not
+    on disk are skipped (the song-wide read stands).
+    """
+
+    def __init__(self, *, collect_only: bool = False, workers: int = 4) -> None:
+        from brain.onset_analysis import BLEND_WINDOW_BEATS
+
+        self.collect_only = collect_only
+        self.workers = workers
+        self.beats = BLEND_WINDOW_BEATS
+        self.cache: dict[tuple, dict] = {}
+        self.pending: dict[tuple, tuple] = {}
+        self._loaded = False
+
+    def _load(self) -> None:
+        if self._loaded:
+            return
+        self._loaded = True
+        from brain.library_index import connect
+
+        with closing(connect()) as db:
+            for row in db.execute(
+                "SELECT track_id, start_beat, beats, bpm, first_beat_seconds, snare_parity, confidence "
+                "FROM beat_phase_windows"
+            ):
+                key = (row["track_id"], row["start_beat"], row["beats"])
+                self.cache[key] = {
+                    "bpm": row["bpm"], "first_beat_seconds": row["first_beat_seconds"],
+                    "snare_parity": row["snare_parity"], "confidence": row["confidence"],
+                }
+
+    def __call__(self, track_id: str, grid: dict, beat_index: int) -> dict | None:
+        from brain.onset_analysis import blend_window_start_beat
+
+        bpm, first_beat = grid.get("bpm"), grid.get("first_beat_seconds")
+        if not bpm or first_beat is None or not os.path.exists(track_id):
+            return None
+        self._load()
+        start = blend_window_start_beat(beat_index)
+        key = (track_id, start, self.beats)
+        cached = self.cache.get(key)
+        if (
+            cached
+            and abs(float(cached["bpm"]) - float(bpm)) < 1e-3
+            and abs(float(cached["first_beat_seconds"]) - float(first_beat)) < 1e-3
+        ):
+            return {"snare_parity": cached["snare_parity"], "confidence": cached["confidence"]}
+        job = (track_id, float(bpm), float(first_beat), start, self.beats)
+        if self.collect_only:
+            self.pending[key] = job
+            return None
+        self._store([_measure_window_job(job)])
+        return self(track_id, grid, beat_index)
+
+    def measure_pending(self, progress=print) -> int:
+        """Measure every recorded window in parallel and cache the reads."""
+        jobs = list(self.pending.values())
+        self.pending.clear()
+        if not jobs:
+            return 0
+        if progress:
+            progress(f"  [blend-window] measuring the snare in {len(jobs)} blend windows")
+        from concurrent.futures import ProcessPoolExecutor
+
+        try:
+            with ProcessPoolExecutor(max_workers=self.workers) as pool:
+                results = list(pool.map(_measure_window_job, jobs))
+        except Exception:
+            # e.g. a caller script without a __main__ guard cannot spawn
+            # workers on macOS: measure in this process instead.
+            results = [_measure_window_job(job) for job in jobs]
+        self._store(results)
+        return len(results)
+
+    def _store(self, results: list[tuple]) -> None:
+        import time
+
+        from brain.library_index import connect
+
+        with closing(connect()) as db:
+            for (track_id, bpm, first_beat, start, beats), read in results:
+                parity, confidence = int(read["snare_parity"]), float(read["confidence"])
+                db.execute(
+                    "INSERT OR REPLACE INTO beat_phase_windows"
+                    "(track_id, start_beat, beats, bpm, first_beat_seconds, analyzed_at, snare_parity, confidence) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (track_id, start, beats, bpm, first_beat, time.time(), parity, confidence),
+                )
+                self.cache[(track_id, start, beats)] = {
+                    "bpm": bpm, "first_beat_seconds": first_beat,
+                    "snare_parity": parity, "confidence": confidence,
+                }
+            db.commit()
+
+
 def snap_to_lyric_line(
     cue_seconds: float, track_id: str, lyric_line_lookup: dict[str, list[float]], *, max_snap_s: float = 6.0
 ) -> tuple[float, bool]:
@@ -527,13 +646,16 @@ def build_plan(
     provenance: dict | None = None,
     transition_beats_by_pair: dict[tuple[str, str], int] | None = None,
     showcase_plan: dict[int, dict] | None = None,
+    window_phase=None,
 ) -> dict:
     from brain.dj_formats import format_provenance, get_format
     from brain.mix_profiles import PROFILES
     from brain.onset_analysis import (
+        BLEND_WINDOW_LEAD_BEATS,
         SNARE_CONFIDENCE_GATE,
         count_shift_beats,
         phase_shift_beats,
+        prefer_blend_window,
     )
 
     profile = profile or PROFILES["dj-showcase"]
@@ -2165,6 +2287,41 @@ def build_plan(
         outgoing_entry_beat = cue_beat_index_cache.get(outgoing["track_id"])
         incoming_entry_beat = cue_beat_index_cache.get(incoming["track_id"])
         min_snare_confidence = SNARE_CONFIDENCE_GATE
+        # Blend-window read (`window_phase`, a BlendWindowReader): measure the
+        # drums where the blend actually happens -- the outgoing song just
+        # before its fade, the incoming song from its cue -- and align on that
+        # read when it is sure. Found live 2026-10-13: Mix to listen blends
+        # late in the song, and on a few songs the snare had moved to the
+        # other beats by then while the song-wide read still said "matched".
+        blend_window = None
+        if (
+            window_phase is not None
+            and not directive["trust_ride_beats"]
+            and outgoing_phase and incoming_phase
+            and outgoing_entry_beat is not None and incoming_entry_beat is not None
+        ):
+            anchor = outgoing_entry_beat + previous_fade_beats + ride_beats + 1
+            out_read = window_phase(
+                outgoing["track_id"], outgoing_phase, anchor - BLEND_WINDOW_LEAD_BEATS
+            )
+            in_read = window_phase(incoming["track_id"], incoming_phase, incoming_entry_beat)
+            song_out, song_in = outgoing_phase, incoming_phase
+            outgoing_phase, out_used = prefer_blend_window(song_out, out_read)
+            incoming_phase, in_used = prefer_blend_window(song_in, in_read)
+            blend_window = {
+                side: {
+                    "snare_parity": read["snare_parity"],
+                    "confidence": round(float(read["confidence"]), 3),
+                    "used": used,
+                    "flipped": used and int(read["snare_parity"]) != int(song["snare_parity"]),
+                    # the song-wide read alone was too weak to match on
+                    "upgraded": used and float(song.get("confidence") or 0.0) < min_snare_confidence,
+                }
+                for side, read, used, song in (
+                    ("out", out_read, out_used, song_out), ("in", in_read, in_used, song_in)
+                )
+                if read is not None
+            }
         # Recorded on the body event so the GUI can show, per blend, whether
         # the snares were actually matched or only the bar count was.
         if directive["trust_ride_beats"]:
@@ -2290,6 +2447,12 @@ def build_plan(
         if backbeat is not None:
             if backbeat.get("status") == "matched" and shift:
                 backbeat["nudged_beats"] = shift
+            if blend_window:
+                backbeat["blend_window"] = blend_window
+                if backbeat.get("status") == "matched" and any(
+                    side["flipped"] or side["upgraded"] for side in blend_window.values()
+                ):
+                    backbeat["reason"] += " (blend-window read)"
             body_event["backbeat"] = backbeat
         skip_from = directive.get("skip_from_seconds")
         skip_to = directive.get("skip_to_seconds")
@@ -2639,6 +2802,7 @@ def compose_mix_plan(
     dj_notes_lookup: dict[str, str] | None = None,
     fixed_groups: list[list[str]] | None = None,
     transition_beats_by_pair: dict[tuple[str, str], int] | None = None,
+    blend_windows: bool = True,
 ) -> dict:
     """Build a mix plan from the finalized playlist and write it to disk.
 
@@ -2651,6 +2815,9 @@ def compose_mix_plan(
     optimizer (brain.mix_optimizer) orders the set in every mode; a provider
     additionally interprets the brief and reviews the order under the hard
     rules (brain.mix_llm_refine).
+
+    `blend_windows`: measure the snare in each actual blend window and align
+    on it when sure (BlendWindowReader); reads are cached per song window.
     """
     from brain.dj_formats import get_format
     from brain.mix_profiles import PROFILES, apply_brief, profile_provenance
@@ -2758,8 +2925,7 @@ def compose_mix_plan(
             "regions": order_constraints.get("regions"),
             "notes": order_constraints.get("notes"),
         }
-    plan = build_plan(
-        pool,
+    plan_inputs = dict(
         count=count,
         seconds_per_track=seconds_per_track if seconds_per_track is not None else profile.seconds_per_track,
         affinity_lookup=load_affinity_lookup(),
@@ -2778,6 +2944,20 @@ def compose_mix_plan(
         transition_beats_by_pair=transition_beats_by_pair,
         showcase_plan=showcase_plan,
     )
+    window_phase = None
+    if blend_windows:
+        # Pass 1 (log silenced) only learns where every blend lands; the
+        # windows not cached yet are then measured in parallel, and pass 2
+        # builds with every blend-window snare read in hand.
+        import contextlib
+        import io
+
+        window_phase = BlendWindowReader(collect_only=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            build_plan(pool, window_phase=window_phase, **plan_inputs)
+        window_phase.measure_pending()
+        window_phase.collect_only = False
+    plan = build_plan(pool, window_phase=window_phase, **plan_inputs)
     if control_port is not None:
         plan.setdefault("runtime", {})["mixxx_control_port"] = int(control_port)
     assert_vocals_layered(plan, {row["track_id"]: row.get("dj_notes") or "" for row in pool})

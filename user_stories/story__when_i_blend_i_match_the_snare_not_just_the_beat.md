@@ -53,7 +53,14 @@ lock.
 5. **Ear is the oracle.** Analyzer agreement is not proof. If the live
    mix is still one count off, flip again (or revert a bad cue hack)
    rather than explaining that the math already matched.
-6. **Example (heavy-rotation-vol-1, 2026-09-02/03).**
+6. **Measure where the blend happens.** A song's snare can move to the
+   other beats later in the song (an extra half-bar, live drums drifting
+   off the grid). Build re-reads the drums in the actual blend window and
+   aligns on that read when it is sure; otherwise the song-wide read stands.
+   Example (rnb-cooldown-mix-vol-02, 2026-10-13): New Edition *If It Isn't
+   Love* → Cassie *Miss Your Touch* — the song-wide read said "matched", but
+   4:47 into If It Isn't Love the snare sat on the other beats.
+7. **Example (heavy-rotation-vol-1, 2026-09-02/03).**
    Chris Brown *Wall to Wall* → Lloyd Banks *On Fire (Feat. 50 Cent)*:
    beats locked, snares did not. An agent moved On Fire’s cue 0.29→0.92
    (one beat later) and kept 308/180. Live listen: still off by one, and
@@ -87,3 +94,9 @@ Fire* and *On Fire* → Biggie *Who Shot Ya*:
 > only the beat, but each track's snare hit. Usually 2 and 4 in 4/4,
 > but not always — sometimes only 2 or only 4. Match on the snare. If
 > the user asks to fix this, then fix it.
+
+Ernest, 2026-10-13, after a long Mix to listen at work: backbeat matching
+is "near perfect", with at most one or two misses out of hundreds of
+transitions — asked whether Build could find those. A read-only re-measure
+at every blend window flagged two clear flips where the song-wide read had
+said "matched"; Build now uses the blend-window read when it is sure.

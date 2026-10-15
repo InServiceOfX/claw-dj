@@ -88,6 +88,20 @@ CREATE TABLE IF NOT EXISTS beat_phase (
     bpm REAL NOT NULL,
     first_beat_seconds REAL NOT NULL
 );
+-- Drum-only snare parity of one blend window (brain.onset_analysis
+-- measure_blend_window), keyed by where the window starts on the song's
+-- grid. A row is reused only while the grid (bpm, first beat) is unchanged.
+CREATE TABLE IF NOT EXISTS beat_phase_windows (
+    track_id TEXT NOT NULL,
+    start_beat INTEGER NOT NULL,
+    beats INTEGER NOT NULL,
+    bpm REAL NOT NULL,
+    first_beat_seconds REAL NOT NULL,
+    analyzed_at REAL NOT NULL,
+    snare_parity INTEGER NOT NULL,
+    confidence REAL NOT NULL,
+    PRIMARY KEY (track_id, start_beat, beats)
+);
 -- Synced-lyric timeline: raw LRC plus detected verse/chorus segments with
 -- vocal-start times snapped to the Mixxx beatgrid — the cut points the
 -- verse-tour / lyric-aware transitions build on. See brain/lyric_timeline.py.
