@@ -20,7 +20,13 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from brain.mix_order_brief import build_graph, enforce_constraints, parse_constraints, short_ids
+from brain.mix_order_brief import (
+    build_graph,
+    enforce_constraints,
+    mashup_payoff_pairs,
+    parse_constraints,
+    short_ids,
+)
 
 OBJECTIVE_TOLERANCE = 0.03  # fraction of the optimizer objective a story choice may cost
 MIN_OBJECTIVE_SLACK = 0.5
@@ -104,8 +110,57 @@ def mix_sheet(rows: list[dict], graph, *, segments: dict[str, list[dict]] | None
     return {"songs": songs, "current_order": current}
 
 
+def locked_rules(
+    local: dict[str, dict], local_constraints: dict, *, opener: str | None = None, closer: str | None = None
+) -> list[str]:
+    """Every rule the review is judged against, as lines naming short ids.
+
+    Mirrors refine_order's checks: requested opener, a DJ-note-pinned closer,
+    requested pairings and placements, and mashup payoffs (a remix that
+    teases a hit is followed directly by that original, unless the original
+    already plays earlier).
+    """
+    from brain.order_constraints import merge_groups
+
+    def label(sid: str) -> str:
+        row = local.get(sid) or {}
+        return f"{sid} ({row.get('artist')} — {row.get('title')})"
+
+    lines: list[str] = []
+    if opener:
+        lines.append(f"first song: {label(opener)}")
+    if closer:
+        lines.append(f"last song (DJ note: play to the end): {label(closer)}")
+    ordered = bool(local_constraints.get("adjacent_ordered"))
+    claimed: set[str] = set()
+    for group in merge_groups(list(local_constraints.get("adjacent") or [])):
+        present = [sid for sid in group if sid in local]
+        if len(present) < 2:
+            continue
+        claimed.update(present)
+        joiner = " then " if ordered else " next to "
+        how = "in this order" if ordered else "in any order"
+        lines.append(f"keep together, {how}: " + joiner.join(label(sid) for sid in present))
+    for region in local_constraints.get("regions") or []:
+        ids = [sid for sid in region.get("ids") or [] if sid in local]
+        where = (region.get("where") or "anywhere").replace("_", " ")
+        if ids and where != "anywhere":
+            lines.append(f"place in the {where} of the mix: " + ", ".join(label(sid) for sid in ids))
+    short_for_path = {row["track_id"]: sid for sid, row in local.items()}
+    for remix_path, original_path in mashup_payoff_pairs(list(local.values())):
+        remix, original = short_for_path.get(remix_path), short_for_path.get(original_path)
+        if not remix or not original or remix in claimed or original in claimed:
+            continue
+        lines.append(
+            f"mashup payoff: {label(remix)} must be followed directly by {label(original)}, "
+            "unless the original plays earlier"
+        )
+    return lines
+
+
 def build_refine_prompt(rows: list[dict], graph, brief: str, *, mix_context: dict | None = None,
-                        segments: dict[str, list[dict]] | None = None) -> str:
+                        segments: dict[str, list[dict]] | None = None,
+                        locks: list[str] | None = None) -> str:
     sheet = mix_sheet(rows, graph, segments=segments)
     # One song / one blend per line: compact but still readable in the audit file.
     songs = "\n".join(json.dumps(s, ensure_ascii=False) for s in sheet["songs"])
@@ -115,6 +170,9 @@ def build_refine_prompt(rows: list[dict], graph, brief: str, *, mix_context: dic
         + "\n\n## This mix\n\n"
         + f"mix_feel: {json.dumps(mix_context or {}, ensure_ascii=False)}\n"
         + f"User brief (may be empty): {brief or '(none)'}\n\n"
+        + "locked (must hold, or your order is rejected):\n"
+        + ("\n".join(f"- {line}" for line in locks) if locks else "- none")
+        + "\n\n"
         + f"songs ({len(sheet['songs'])}):\n{songs}\n\n"
         + "current_order ([from, to, score, backbeat]):\n"
         + current + "\n"
@@ -151,14 +209,6 @@ def refine_order(
     current_paths = [row["track_id"] for row in ordered_rows]
     local = short_ids(ordered_rows)
     path_to_local = {row["track_id"]: sid for sid, row in local.items()}
-    try:
-        reply = ask(build_refine_prompt(ordered_rows, graph, brief, mix_context=mix_context))
-        proposal_short, model_notes = _parse_order(reply, list(local))
-    except Exception as error:  # provider down, bad JSON, wrong set
-        return ordered_rows, [f"{provider} review skipped: {error}"]
-    if proposal_short == list(local):
-        return ordered_rows, [f"{provider} review: kept the optimized order"]
-
     # Constraints were expressed in all_rows' short ids; translate to local.
     global_ids = short_ids(all_rows)
     to_local = {
@@ -175,9 +225,18 @@ def refine_order(
         ],
     }
     opener = to_local.get(constraints.get("opener_id") or "")
+    closer = to_local.get(constraints.get("closer_id") or "")
+    locks = locked_rules(local, local_constraints, opener=opener, closer=closer)
+    try:
+        reply = ask(build_refine_prompt(ordered_rows, graph, brief, mix_context=mix_context, locks=locks))
+        proposal_short, model_notes = _parse_order(reply, list(local))
+    except Exception as error:  # provider down, bad JSON, wrong set
+        return ordered_rows, [f"{provider} review skipped: {error}"]
+    if proposal_short == list(local):
+        return ordered_rows, [f"{provider} review: kept the optimized order"]
+
     if opener and proposal_short[0] != opener:
         return ordered_rows, [f"{provider} review rejected: it moved the requested opener"]
-    closer = to_local.get(constraints.get("closer_id") or "")
     if closer and proposal_short[-1] != closer:
         return ordered_rows, [f"{provider} review rejected: it moved the closing song a DJ note pinned"]
     try:

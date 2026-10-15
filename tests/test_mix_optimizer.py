@@ -193,3 +193,70 @@ class MixSheetTest(TestCase):
         scores = [entry[1] for entry in song2["best_next"]]
         self.assertEqual(scores, sorted(scores, reverse=True))
         self.assertTrue(all(entry[2] in ("verifiable", "one_side_unverified", "blind") for entry in song2["best_next"]))
+
+
+class LockedRulesInSheetTest(TestCase):
+    """2026-10-13: Claude's review was rejected for splitting Best Of Me
+    (Remix) -> Best Of Me, a lock the mix sheet never showed it."""
+
+    def setUp(self) -> None:
+        patcher = patch("brain.mix_order_brief._snare_confidence", return_value={})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _set() -> list[dict]:
+        rows = _rows(6)
+        rows.append({"track_id": "/m/remix.mp3", "title": "Best Of Me feat. Jay-Z (Remix)", "artist": "Mya",
+                     "bpm": 96.0, "key": "Ab"})
+        rows.append({"track_id": "/m/orig.mp3", "title": "Best Of Me", "artist": "Mýa; Jadakiss",
+                     "bpm": 86.7, "key": "C"})
+        return rows
+
+    def test_review_prompt_lists_every_lock_by_id(self) -> None:
+        from brain.mix_order_brief import order_from_brief
+
+        prompts = []
+
+        def ask(prompt: str) -> str:
+            prompts.append(prompt)
+            if "reviewing a continuous mix order" in prompt:
+                raise RuntimeError("capture only")
+            return json.dumps({"adjacent": [["t001", "t004"]], "adjacent_ordered": True,
+                               "regions": [{"ids": ["t002"], "where": "first_half"}], "notes": ["x"]})
+
+        order_from_brief(self._set(), "play song 1 into song 4; song 2 early", engine="claude-cli", ask=ask)
+        review = next(p for p in prompts if "reviewing a continuous mix order" in p)
+        locked = review.split("locked (must hold, or your order is rejected):\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("mashup payoff:", locked)
+        self.assertIn("Best Of Me feat. Jay-Z (Remix)", locked)
+        self.assertIn("must be followed directly by", locked)
+        self.assertIn("keep together, in this order:", locked)
+        self.assertIn("Song 1", locked)
+        self.assertIn("place in the first half of the mix:", locked)
+
+    def test_no_locks_says_none(self) -> None:
+        from brain.mix_llm_refine import build_refine_prompt
+        from brain.mix_order_brief import build_graph
+
+        rows = _rows(4)
+        prompt = build_refine_prompt(rows, build_graph(rows, {}), "", segments={}, locks=[])
+        self.assertIn("locked (must hold, or your order is rejected):\n- none", prompt)
+
+    def test_order_keeping_the_payoff_is_accepted(self) -> None:
+        from brain.mix_order_brief import order_from_brief
+
+        def ask(prompt: str) -> str:
+            if "reviewing a continuous mix order" not in prompt:
+                return json.dumps({"notes": ["feel only"]})
+            ids = [line.split('"')[3] for line in prompt.splitlines() if line.startswith('{"id": ')]
+            # Swap the first two songs, leave everything else (and the locked pair) as is.
+            ids[0], ids[1] = ids[1], ids[0]
+            return json.dumps({"order": ids, "notes": ["swap opener"]})
+
+        ordered, notes, _ = order_from_brief(self._set(), "", engine="claude-cli", ask=ask)
+        paths = [r["track_id"] for r in ordered]
+        gap = paths.index("/m/orig.mp3") - paths.index("/m/remix.mp3")
+        self.assertTrue(gap == 1 or gap < 0, "payoff: remix directly into the original, or original earlier")
+        self.assertFalse(any("broke a requested pairing" in n for n in notes))
+        self.assertTrue(any("review accepted" in n for n in notes))

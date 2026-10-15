@@ -1,5 +1,19 @@
 # Handoff / continuation notes
 
+## Build review sees the locked pairs (2026-10-13)
+
+- The review's mix sheet now carries a `locked` list, by song id: required
+  opener/closer, keep-together pairs (and their order), placements ("first
+  half"), and mashup payoffs (a remix that teases a hit followed directly by
+  the original). `locked_rules` in `brain/mix_llm_refine.py` computes it
+  before the model call; `brain/llm_prompts/build_review.md` tells the model
+  to check every line and move a locked pair together.
+- Why: on the 257-song `rnb-cooldown-mix-vol-02`, Claude's review was rejected
+  for breaking the Best Of Me remix → original payoff it could not see. With
+  the list shown: "claude-cli review accepted (blend 0.80 → 0.80)", the lock
+  held, and Claude broke up long same-artist runs (six Joe songs, three
+  Jodeci, Sade blocks). It took ~8.5 min (prompt ~220k characters).
+
 ## Harness-neutral OBS integration (2026-10-11)
 
 Use `.venv/bin/claw-obs capabilities` or `python -m hands.obs_cli` and read

@@ -19,6 +19,10 @@ You receive a MIX SHEET, already measured by claw-dj. Do not invent measurements
     `verifiable` (both snares measured), `one_side_unverified`, `blind` (neither).
 - `current_order`: the order the optimizer chose, with each adjacent blend's
   score and backbeat label.
+- `locked`: rules about specific songs that must hold, by id: a required first
+  or last song, songs that must stay together (and in which order), placements
+  ("first half", …), and mashup payoffs (a remix that teases a hit is followed
+  directly by the original). Never break them.
 - `mix_feel`: the selected Mix feel (for example Mix to listen plays most of each
   song from the top, with gentle blends placed away from verses).
 
@@ -35,7 +39,9 @@ and backbeat alignment from its own analysis, and applies the DJ notes.
 3. For a weak spot, prefer a fix taken from `best_next` lists: a song's measured
    best next songs are the safe choices. A move that lands two songs next to each
    other that are not in each other's `best_next` is likely worse.
-4. If the order is already good, keep it. Keeping it is a valid answer.
+4. Before answering, check your order against every line in `locked`. When you
+   move a song that is in a locked pair, move the whole pair together.
+5. If the order is already good, keep it. Keeping it is a valid answer.
 
 ## How your answer is judged (automatically)
 
@@ -46,8 +52,7 @@ order is kept:
 - no more `blind` blends than `current_order`, and at most one more
   `one_side_unverified` blend;
 - total blend quality within 3% of `current_order`;
-- the requested opener (if any) still first, requested pairings still adjacent,
-  a song whose DJ notes pin it first or last (opener style / full track) stays there.
+- every rule in `locked` still holds.
 
 ## Answer format
 

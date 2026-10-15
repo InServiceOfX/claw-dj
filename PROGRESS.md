@@ -1,5 +1,19 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## Build review sees the locked pairs (2026-10-13)
+
+- The review's mix sheet now carries a `locked` list, by song id: required
+  opener/closer, keep-together pairs (and their order), placements ("first
+  half"), and mashup payoffs (a remix that teases a hit followed directly by
+  the original). `locked_rules` in `brain/mix_llm_refine.py` computes it
+  before the model call; `brain/llm_prompts/build_review.md` tells the model
+  to check every line and move a locked pair together.
+- Why: on the 257-song `rnb-cooldown-mix-vol-02`, Claude's review was rejected
+  for breaking the Best Of Me remix → original payoff it could not see. With
+  the list shown: "claude-cli review accepted (blend 0.80 → 0.80)", the lock
+  held, and Claude broke up long same-artist runs (six Joe songs, three
+  Jodeci, Sade blocks). It took ~8.5 min (prompt ~220k characters).
+
 ## Pop-ups over the stream and videos (Opus 5.5, 2026-10-12, branch `feat/popups-facts-and-commentary`)
 
 - VH1 Pop-Up Video style cards: agent music facts plus Ernest's commentary, marked EY.
