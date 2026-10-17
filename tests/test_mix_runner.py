@@ -17,6 +17,7 @@ from hands.run_mix_plan import (
     resolve_plan_argument,
     run_plan,
     set_bpm_target,
+    start_at_transition,
 )
 from hands.transition import _phase_corrected_beat_count
 
@@ -96,6 +97,46 @@ class MixRunnerTests(TestCase):
         sync_at = mixxx.writes.index(("[Channel2]", "beatsync", 1))
         jump_at = mixxx.writes.index(("[Channel2]", "beatjump_1_forward", 1))
         self.assertGreater(jump_at, sync_at)
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 0.0, 30.0, 30.0])
+    def test_incoming_nudge_ms_seeks_after_phase_sync_with_quantize_off(
+        self, _monotonic, _sleep, _wait_for_next_beat
+    ) -> None:
+        # Prince's intro hits sit ~112 ms after his grid ticks (2026-10-15).
+        mixxx = FakeMixxx()
+        mixxx.values[("[Channel1]", "bpm")] = 108.98
+        mixxx.values[("[Channel1]", "play")] = 1.0
+        mixxx.values[("[Channel2]", "duration")] = 200.0
+        mixxx.values[("[Channel2]", "playposition")] = 0.01
+        mixxx.values[("[Channel2]", "quantize")] = 1.0
+        with patch("hands.run_mix_plan.set_bpm_target"):
+            perform_transition(
+                mixxx,
+                {
+                    "from_deck": 1,
+                    "to_deck": 2,
+                    "transition_beats": 32,
+                    "technique": "smooth_blend",
+                    "moves": ["sync", "crossfade"],
+                    "incoming_bpm_target": 106.51,
+                    "incoming_nudge_ms": 100,
+                },
+                port=9995,
+            )
+        sync_at = mixxx.writes.index(("[Channel2]", "beatsync_phase", 1))
+        seek_at = next(i for i, w in enumerate(mixxx.writes) if w[:2] == ("[Channel2]", "playposition"))
+        self.assertGreater(seek_at, sync_at)
+        self.assertAlmostEqual(mixxx.writes[seek_at][2], 0.01 + 0.1 / 200.0)
+        self.assertEqual(mixxx.writes[seek_at - 1], ("[Channel2]", "quantize", 0))
+        self.assertEqual(mixxx.writes[seek_at + 1], ("[Channel2]", "quantize", 1.0))
+
+    def test_incoming_nudge_refuses_more_than_a_quarter_second(self) -> None:
+        from hands.run_mix_plan import nudge_incoming
+
+        with self.assertRaises(ValueError):
+            nudge_incoming(FakeMixxx(), 2, 400.0)  # type: ignore[arg-type]
 
     def test_cue_deck_retries_when_the_first_seek_is_ignored(self) -> None:
         # Live: Back Down rode to end-of-track, then loading Magic Stick
@@ -1442,3 +1483,67 @@ class EqAndFilterStateTests(TestCase):
             self.assertEqual(mixxx.values[(f"[QuickEffectRack1_[Channel{deck}]]", "super1")], 0.5)
             for band in (1, 2, 3):
                 self.assertEqual(mixxx.values[(f"[EqualizerRack1_[Channel{deck}]_Effect1]", f"parameter{band}")], 1.0)
+
+
+def _four_song_events() -> list[dict]:
+    return [
+        {"op": "reset_instrument"},
+        {"op": "load", "deck": 1, "track_id": "/a.mp3", "cue_seconds": 1.0},
+        {"op": "load", "deck": 2, "track_id": "/b.mp3", "cue_seconds": 2.0},
+        {"op": "start", "deck": 1},
+        {"op": "play_body", "deck": 1, "beats": 100, "track": "A", "track_id": "/a.mp3"},
+        {"op": "preload_after_transition", "deck": 1, "track_id": "/c.mp3", "cue_seconds": 3.0},
+        {"op": "transition", "from_deck": 1, "to_deck": 2, "to_track": "B", "transition_beats": 32},
+        {"op": "play_body", "deck": 2, "beats": 200, "track": "B", "track_id": "/b.mp3"},
+        {"op": "preload_after_transition", "deck": 2, "track_id": "/d.mp3", "cue_seconds": 4.0},
+        {"op": "transition", "from_deck": 2, "to_deck": 1, "to_track": "C", "transition_beats": 24,
+         "incoming_bpm_target": 99.0},
+        {"op": "play_body", "deck": 1, "beats": 300, "track": "C", "track_id": "/c.mp3"},
+        {"op": "transition", "from_deck": 1, "to_deck": 2, "to_track": "D", "transition_beats": 16},
+        {"op": "finale", "deck": 2, "beats": 64},
+        {"op": "stop_all"},
+    ]
+
+
+class StartAtTransitionTests(TestCase):
+    def test_resumes_with_the_outgoing_song_cued_and_the_next_song_on_the_other_deck(self) -> None:
+        events = _four_song_events()
+        resumed = start_at_transition(events, 3)
+        self.assertEqual(resumed[0], {"op": "reset_instrument"})
+        self.assertEqual(resumed[1], {"op": "load", "deck": 1, "track_id": "/c.mp3", "cue_seconds": 3.0})
+        self.assertEqual(resumed[2], {"op": "load", "deck": 2, "track_id": "/d.mp3", "cue_seconds": 4.0})
+        self.assertEqual(resumed[3]["op"], "start")
+        self.assertEqual(resumed[3]["deck"], 1)
+        # The full mix holds C at the bridge tempo from its blend on.
+        self.assertEqual(resumed[3]["bpm_target"], 99.0)
+        # C's ride is counted after its 24-beat blend in; that blend is skipped.
+        self.assertEqual(resumed[4]["beats"], 324)
+        self.assertEqual(resumed[5:], events[11:])
+        self.assertEqual(events[10]["beats"], 300)
+
+    def test_second_transition_uses_the_first_load_as_its_cue(self) -> None:
+        events = _four_song_events()
+        resumed = start_at_transition(events, 2)
+        self.assertEqual(resumed[1], {"op": "load", "deck": 2, "track_id": "/b.mp3", "cue_seconds": 2.0})
+        self.assertEqual(resumed[2], {"op": "load", "deck": 1, "track_id": "/c.mp3", "cue_seconds": 3.0})
+        self.assertNotIn("bpm_target", resumed[3])
+        self.assertEqual(resumed[4]["beats"], 232)
+        self.assertEqual(resumed[5:], events[8:])
+
+    def test_first_transition_is_the_whole_plan_and_out_of_range_refuses(self) -> None:
+        events = _four_song_events()
+        self.assertEqual(start_at_transition(events, 1), events)
+        for number in (0, 4):
+            with self.assertRaises(ValueError):
+                start_at_transition(events, number)
+
+    def test_a_planned_skip_handoff_keeps_its_place_in_the_song(self) -> None:
+        events = _four_song_events()
+        events[10]["handoff"] = {"to_deck": 2, "after_beats": 50, "blend_beats": 4}
+        resumed = start_at_transition(events, 3)
+        self.assertEqual(resumed[4]["handoff"]["after_beats"], 74)
+        self.assertEqual(events[10]["handoff"]["after_beats"], 50)
+
+    def test_explicit_performances_refuse_start_at(self) -> None:
+        with self.assertRaises(ValueError):
+            run_plan({"performance": {}, "events": []}, port=9995, dry_run=True, max_events=None, start_at=2)

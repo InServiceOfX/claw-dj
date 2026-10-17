@@ -26,6 +26,7 @@ Usage:
   scripts/run_mix.sh --plan PATH      # explicit mix_plan.json
   scripts/run_mix.sh --port 9995      # explicit Mixxx control API port
   scripts/run_mix.sh --max-events 10  # only first N events
+  scripts/run_mix.sh --start-at 152   # resume at transition 152 (audition numbering)
   scripts/run_mix.sh --record         # record via Mixxx recorder around the plan
   scripts/run_mix.sh --help
 
@@ -45,6 +46,8 @@ Options (passed through to hands.run_mix_plan):
   --port PORT         Mixxx control API port override
   --dry-run           do not talk to Mixxx
   --max-events N      execute only the first N events
+  --start-at N        resume at transition N: its outgoing song plays from its
+                      cue on its usual deck, then the plan continues unchanged
   --record            start/stop Mixxx recorder around the set
   --source-map PATH   source identity -> local original audio path (performance plans)
   -h, --help          this help
@@ -86,7 +89,7 @@ while [ "$#" -gt 0 ]; do
       PLAN="${1#--plan=}"
       shift
       ;;
-    --port|--max-events|--source-map)
+    --port|--max-events|--source-map|--start-at)
       if [ "$#" -lt 2 ]; then
         echo "run_mix.sh: $1 requires a value" >&2
         exit 2
@@ -94,7 +97,7 @@ while [ "$#" -gt 0 ]; do
       EXTRA_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --port=*|--max-events=*|--source-map=*)
+    --port=*|--max-events=*|--source-map=*|--start-at=*)
       EXTRA_ARGS+=("$1")
       shift
       ;;

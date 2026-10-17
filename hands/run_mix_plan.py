@@ -355,6 +355,33 @@ def settle_rate(
     print(f"  rate settled to {label} on deck {deck}")
 
 
+MAX_NUDGE_MS = 250.0
+
+
+def nudge_incoming(mixxx: MixxxControl, deck: int, nudge_ms: float) -> None:
+    """Seek the incoming deck by a few milliseconds after sync.
+
+    Mixxx syncs grid ticks; when a record's hits sit off its grid (Prince's
+    intro hits land ~112 ms after his ticks, 2026-10-15) the ear needs a
+    millisecond nudge, not a whole beat. Positive = the incoming deck jumps
+    ahead, so its hits arrive earlier. Quantize would snap the seek back onto
+    the grid phase, so it is off for the seek and restored after.
+    """
+    if abs(nudge_ms) > MAX_NUDGE_MS:
+        raise ValueError(f"unsafe nudge {nudge_ms:+g} ms; plan limit is ±{MAX_NUDGE_MS:g} ms")
+    group = deck_group(deck)
+    duration = mixxx.get(group, "duration")
+    if duration <= 0:
+        print(f"  (no duration on deck {deck}; {nudge_ms:+g} ms nudge skipped)")
+        return
+    quantize = mixxx.get(group, "quantize")
+    mixxx.set(group, "quantize", 0)
+    position = mixxx.get(group, "playposition")
+    mixxx.set(group, "playposition", min(1.0, max(0.0, position + nudge_ms / 1000.0 / duration)))
+    mixxx.set(group, "quantize", quantize)
+    print(f"  nudged deck {deck} {nudge_ms:+g} ms (plan incoming_nudge_ms)")
+
+
 def set_bpm_target(mixxx: MixxxControl, deck: int, target_bpm: float) -> None:
     """Set a deliberate bridge tempo and verify the perceived BPM.
 
@@ -1279,6 +1306,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         # beatsync locks ticks; this flips kick-on-snare to snare-on-snare.
         mixxx.set(in_g, "beatjump_1_forward", 1)
         print(f"  snare-align: jumped incoming deck {to_deck} 1 beat")
+    if event.get("incoming_nudge_ms"):
+        nudge_incoming(mixxx, to_deck, float(event["incoming_nudge_ms"]))
 
     start_cf = mixxx.get("[Master]", "crossfader")
     end_cf = crossfader_target(to_deck)
@@ -1408,10 +1437,84 @@ def stop_recording(mixxx: MixxxControl, *, timeout_s: float = 5.0) -> None:
     print("  WARNING: asked Mixxx to stop recording but status never went low — check Mixxx directly")
 
 
+def _cue_event_for(events: list[dict], track_id: str) -> dict | None:
+    """The last load that cued this track: a load/preload, or a handoff's then_load."""
+    for event in reversed(events):
+        if event.get("op") in ("load", "preload_after_transition"):
+            if event.get("track_id") == track_id and not event.get("handoff_copy"):
+                return event
+        elif event.get("op") == "play_body":
+            then_load = (event.get("handoff") or {}).get("then_load") or {}
+            if then_load.get("track_id") == track_id:
+                return then_load
+    return None
+
+
+def start_at_transition(events: list[dict], number: int) -> list[dict]:
+    """Resume a long plan at transition `number` (1-based, the audition tool's numbering).
+
+    The outgoing song of that transition plays from its usual cue on its usual
+    deck, the other deck holds what it would hold by then, and every later
+    event runs unchanged. A ride is counted from the end of the blend that
+    brought the song in, so that blend's beats are added back: otherwise the
+    song would fade out early, off its planned beat.
+    """
+    transitions = [i for i, event in enumerate(events) if event.get("op") == "transition"]
+    if not 1 <= number <= len(transitions):
+        raise ValueError(f"--start-at {number}: this plan has transitions 1-{len(transitions)}")
+    if number == 1:
+        return list(events)
+    here, incoming = transitions[number - 1], transitions[number - 2]
+    body_index = next(
+        (i for i in range(incoming + 1, here) if events[i].get("op") == "play_body"), None
+    )
+    if body_index is None:
+        raise ValueError(f"--start-at {number}: no ride before transition {number}")
+    body = dict(events[body_index])
+    blend = events[incoming]
+    cue = _cue_event_for(events[:incoming], body["track_id"])
+    if cue is None:
+        raise ValueError(f"--start-at {number}: no cue for {body.get('track')}")
+    previous_body = max(i for i in range(incoming) if events[i].get("op") == "play_body")
+    other = next(
+        (e for e in events[previous_body + 1:incoming] if e.get("op") == "preload_after_transition"),
+        None,
+    )
+
+    blend_beats = int(blend.get("transition_beats", 16))
+    if body.get("beats") is not None:
+        body["beats"] = int(body["beats"]) + blend_beats
+    if body.get("handoff"):
+        handoff = dict(body["handoff"])
+        handoff["after_beats"] = int(handoff.get("after_beats") or 0) + blend_beats
+        body["handoff"] = handoff
+    if body.get("skip_after_beats") is not None:
+        body["skip_after_beats"] = int(body["skip_after_beats"]) + blend_beats
+
+    deck = int(body["deck"])
+    reset = next((e for e in events if e.get("op") == "reset_instrument"), {"op": "reset_instrument"})
+    resumed = [
+        dict(reset),
+        {**{k: v for k, v in cue.items() if k != "op"}, "op": "load", "deck": deck},
+    ]
+    if other is not None:
+        resumed.append({**other, "op": "load"})
+    start = {"op": "start", "deck": deck, "detail": f"resume at transition {number}: {blend.get('to_track')}"}
+    if blend.get("incoming_bpm_target") is not None:
+        # The full mix holds this song at a bridge tempo from the blend on.
+        start["bpm_target"] = blend["incoming_bpm_target"]
+    resumed.append(start)
+    resumed.append(body)
+    resumed.extend(events[body_index + 1:])
+    return resumed
+
+
 def run_plan(
     plan: dict, *, port: int, dry_run: bool, max_events: int | None, record: bool = False,
-    source_map: dict | None = None,
+    source_map: dict | None = None, start_at: int | None = None,
 ) -> None:
+    if start_at is not None and (plan.get("execution_mode") == "live_source_tracks" or plan.get("performance")):
+        raise ValueError("--start-at works on generated mix plans, not explicit performances")
     if plan.get("execution_mode") == "live_source_tracks":
         from hands.performance_runner import run_performance
 
@@ -1426,6 +1529,9 @@ def run_plan(
     plan = prepare_plan(plan, dry_run=dry_run)
     events = plan["events"]
     check_gentle_blends(events)
+    if start_at is not None:
+        events = start_at_transition(events, start_at)
+        print(f"starting at transition {start_at} ({len(events)} events left)")
     if max_events:
         events = events[:max_events]
 
@@ -1782,6 +1888,11 @@ def main() -> None:
     parser.add_argument("--source-map", help="JSON mapping source identities to original audio paths on this machine")
     parser.add_argument("--max-events", type=int, default=None, help="execute only the first N events")
     parser.add_argument(
+        "--start-at", type=int, default=None, metavar="N",
+        help="resume at transition N (audition numbering): its outgoing song plays from its cue, "
+             "then the plan continues",
+    )
+    parser.add_argument(
         "--record", action="store_true",
         help="record the set via Mixxx's own recorder (WAV by default — this build has no mp3 "
              "encoder; convert afterward with ffmpeg, or rebuild Mixxx with -DFFMPEG=ON for "
@@ -1805,7 +1916,10 @@ def main() -> None:
     options = {}
     if args.source_map:
         options['source_map'] = json.loads(Path(args.source_map).read_text())
-    run_plan(plan, port=port, dry_run=args.dry_run, max_events=args.max_events, record=args.record, **options)
+    run_plan(
+        plan, port=port, dry_run=args.dry_run, max_events=args.max_events, record=args.record,
+        start_at=args.start_at, **options,
+    )
 
 
 if __name__ == "__main__":
