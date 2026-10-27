@@ -1,0 +1,49 @@
+<pdd-reason>Ernest approved a bounded monophonic original-source pitch-play experiment, with no new Mixxx DSP, before reconstructing a reference melody.</pdd-reason>
+<pdd-interface>
+{"type":"module","module":{"functions":[
+{"name":"compile_score","signature":"compile_score(score: dict) -> list[dict]","errors":["ValueError"]},
+{"name":"validate_region","signature":"validate_region(cue: float, end: float, notes: str) -> None","errors":["ValueError"]},
+{"name":"source_notes","signature":"source_notes(source: Path, index: Path | None = None) -> str","errors":["ValueError"]},
+{"name":"perform","signature":"perform(source, score, *, live=False, port=9995, binary=None, api_factory=MixxxControl, runner=child_execute, index=None) -> None"},
+{"name":"main","signature":"main(argv=None) -> None"}
+]}}
+</pdd-interface>
+
+Implement hands/pitch_play.py, a stdlib-only live experiment front door.
+Mixxx owns DSP; the Rust pitch_play module owns timing. No master playback,
+prepared music files, stems, polyphony, generic plan replacement or DJ tag feature.
+Use an explicit source-second cue so no saved library hotcue needs changing.
+
+The score has deck, bpm, cue_seconds, source_end_seconds (exclusive), duration_seconds,
+sample_rate, prepare_seconds, max_late_seconds and notes of beat/semitones/gate_beats.
+The same validation and schedule is implemented by the Rust core. Beat durations
+are 60/bpm; note-on is prepare_seconds+beat*60/bpm, note-off adds gate_beats*60/bpm.
+Semitone offsets are absolute relative to the original at rate 1/keylock on;
+frequency ratio is 2**(semitones/12). Preparation must fit between notes.
+
+<vocabulary>
+active: a running mix/audition process reported by the shared running_mix_processes guard, or an enabled native loop when describing the source guard.
+invalid: failing any finite-value, range, shape, ownership or readback condition specified in this prompt.
+complete: covering every touched setting, or the interval through the final note-off when describing experiment duration.
+</vocabulary>
+
+<contract_rules>
+R1 (MUST): Default and explicit dry-run validate the indexed original and current hard notes, then print a deterministic source-time/beat-derived note schedule, setup, guard and cleanup description with no Mixxx connection, media generation, file writes or child scheduler.
+R2 (MUST): Live requires explicit --live, an available exact original path in a read-only current library index, a real executor, all four decks stopped, AutoDJ disabled, no known mix/audition runner active and the reserved deck empty with loop disabled. Missing/malformed restrictions or invalid controls fail closed; all state required for restoration is read before the first mutation. No takeover.
+R3 (MUST): Validate finite BPM 40..200, deck integer 1..4, positive finite duration, sample rate 8000..192000, nonempty source span inside duration, preparation .05..1 seconds, lateness .001...1 seconds, 1..64 ordered notes within beats 0..128, absolute pitches +/-3, positive gates, complete experiment <=200 seconds, nonoverlap and enough preparation gap. Every gate plus lateness must fit strictly inside the allowed original-source span.
+R4 (MUST): Re-read durable mandatory_start_seconds, mandatory_end_seconds and mandatory_skip source directives before connecting and after loading. Enforce the strictest repeated boundaries and reject malformed/ambiguous skip directives. Reject unknown/unavailable sources. Hash original before/after loading. Never rewrite the original or library.
+R5 (MUST): Own only the explicitly reserved empty deck. Load original paused, use Mixxx decoder duration/sample rate, round cue inward to a permitted sample, revalidate and configure an inward-rounded native stereo-sample loop guarding the allowed source span before invoking Rust. Keep rate_ratio=1 and keylock=1; absolute pitch is independent of rate. Disable reverse/reverseroll/slip/scratch/vinyl control and set pregain=1 during the experiment. Save/restore touched settings and effect routing; bypass existing effect routes during the experiment. No master controls or other decks are mutated.
+R6 (MUST): Join/terminate the owned scheduler before cleanup on success/error/KeyboardInterrupt; escalate to kill+join if termination stalls. Then attempt mute, stop and eject while retaining the native source guard. Disable the loop only after the original is verified ejected; never remove the guard from an unverified playing voice. Restore saved settings only after verifying the voice empty and stopped. Never restore play=1. On dead control stream try a fresh connection once; report unresolved cleanup loudly and never unmute an unverified voice. No promise that cleanup succeeds during a persistent server outage.
+R7 (MUST NOT): Create/edit saved hotcues, write source/cue metadata, infer a TikTok melody, imitate a DJ tag, render prepared music, start recording, execute live by default, or claim real audio quality from fake tests. Source guard is bounded containment on scheduler stalls, not a promise that a failed scheduler becomes silent.
+</contract_rules>
+
+CLI exposes --source, --cue-seconds, --source-end-seconds, --deck (3), --bpm (90),
+--pitches (0,0,0,1,2,0), --gate-beats (.5), --interval-beats (2),
+--prepare-seconds (.1), --max-late-seconds (.05), --port, --binary,
+and mutually exclusive --live / --dry-run. ffprobe reads metadata only.
+The Rust pitch-play subcommand is an internal prepared-deck protocol consumer;
+do not bypass this source-validation/setup wrapper for original music.
+
+Verification: tests/test_pitch_play.py uses temporary original-like files,
+temporary SQLite, injected controls/runner and mocked subprocesses only.
+Never load personal libraries, connect to Mixxx, or generate media in tests.

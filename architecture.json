@@ -3218,5 +3218,32 @@
     ], "classes": [
       {"name": "AuditionSession", "signature": "(*, popen=subprocess.Popen, python: str | None = None, cwd: Path = REPO_ROOT, silence=silence_decks, log_lines: int = 40)", "methods": ["start(*, plan_path, number, port, lead_bars=8, tail_bars=16, take_over=False, info=None) -> dict", "stop(timeout_s=8.0) -> dict", "status() -> dict", "is_playing() -> bool"]}
     ]}}
+  },
+  {
+    "reason": "Approved first pitch-play scope needs original-source restriction checks, explicit live authorization and complete deck lifecycle outside the timing loop.",
+    "description": "Standalone opt-in monophonic cue instrument wrapper. Dry-run is connection-free; live requires an empty reserved deck/all decks stopped, checks current indexed original source notes/hash, loads paused, configures a bounded native guard, invokes Rust and ejects/restores safely. Not yet integrated into generic mix plans.",
+    "dependencies": ["core/pitch_play_Rust.prompt", "hands/mixxx_control_Python.prompt"],
+    "priority": 50,
+    "filename": "hands/pitch_play_Python.prompt",
+    "filepath": "hands/pitch_play.py",
+    "tags": ["hands", "pitch-play", "experiment"],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "compile_score", "signature": "(score: dict) -> list[dict]"},
+      {"name": "perform", "signature": "(source, score, *, live=False, port=9995, binary=None, api_factory=MixxxControl, runner=child_execute, index=None) -> None"},
+      {"name": "main", "signature": "(argv=None) -> None"}
+    ]}}
+  },
+  {
+    "reason": "Mixxx already owns pitch DSP; deterministic hands need bounded, absolute-deadline cue-note scheduling rather than another audio engine.",
+    "description": "Pure score compiler plus injected control/clock executor for a prepared monophonic original-source deck. Rust verifies guard/readback, schedules absolute semitone/seek/gate events, aborts late attacks and attempts mute/stop on error. Internal pitch-play CLI defaults to compile/print without connection; Python owns source authorization and lifecycle.",
+    "dependencies": [],
+    "priority": 49,
+    "filename": "core/pitch_play_Rust.prompt",
+    "filepath": "core-rust/clawdj/src/pitch_play.rs",
+    "tags": ["hands", "rust", "pitch-play"],
+    "interface": {"type": "module", "module": {"functions": [
+      {"name": "Score::compile", "signature": "(&self) -> anyhow::Result<Vec<Attack>>"},
+      {"name": "execute", "signature": "(api: &mut impl Controls, clock: &mut impl Clock, score: &Score) -> anyhow::Result<()>"}
+    ]}}
   }
 ]

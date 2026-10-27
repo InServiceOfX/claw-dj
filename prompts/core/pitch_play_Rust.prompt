@@ -1,0 +1,41 @@
+<pdd-reason>Deterministic note scheduling for the first approved pitch-play experiment; reuse Mixxx pitch DSP and existing local TCP client.</pdd-reason>
+<pdd-interface>
+{"type":"module","module":{"functions":[
+{"name":"Score::compile","signature":"(&self) -> anyhow::Result<Vec<Attack>>"},
+{"name":"Score::loop_bounds","signature":"(&self) -> (f64, f64)"},
+{"name":"execute","signature":"(api: &mut impl Controls, clock: &mut impl Clock, score: &Score) -> anyhow::Result<()>"}
+]}}
+</pdd-interface>
+
+Implement core-rust/clawdj/src/pitch_play.rs. Export it from the library and add
+clawdj pitch-play [--live] [--port PORT], accepting Score JSON on stdin.
+Without --live compile/print only, with no TCP connection. Live is INTERNAL:
+the Python hands.pitch_play wrapper validates current original-source identity,
+restrictions, owns the deck, loads paused, configures settings and source guard,
+and performs eject/restoration. Do not treat raw Rust JSON as library authorization.
+
+Score (deny unknown fields): deck u8, bpm, cue_seconds, source_end_seconds,
+duration_seconds, sample_rate, prepare_seconds, max_late_seconds and notes.
+Note (deny unknown fields): beat, semitones, gate_beats. Attack output:
+on_seconds, off_seconds, prepare_seconds, semitones, frequency_ratio, cue_seconds.
+Controls trait has fallible get/set; Clock trait has now seconds and fallible sleep.
+Production uses existing ControlApi + monotonic Instant; tests inject both.
+
+<vocabulary>
+invalid: failing any finite-value, range, shape, ownership or readback condition specified in this prompt.
+complete: covering every touched setting, or the interval through the final note-off when describing experiment duration.
+</vocabulary>
+
+<contract_rules>
+R1 (MUST): Compile with no I/O. Validate the same finite values/ranges/source span, maximum count/duration, monophony, preparation gap and guard margin as prompts/hands/pitch_play_Python.prompt. Reject invalid scores before any connection or mutation. Absolute semitones produce frequency_ratio=2**(semitones/12), never cumulative increments. Beat times are 60/bpm; add initial preparation time to all note-ons.
+R2 (MUST): Refuse with zero mutations unless AutoDJ is disabled, all four decks are stopped and the selected deck has track_loaded=1, mute=1, loop_enabled=1, keylock=1, rate_ratio=1, sync_enabled=0, quantize=0 and reverse/reverseroll/slip/scratch/vinyl control disabled. Verify loaded duration/sample rate and exact inward-rounded source guard endpoints against the payload. The guard remains enabled throughout the gesture.
+R3 (MUST): Use absolute monotonic deadlines from one epoch, including preparation, note-on and note-off. Refuse/abort late events beyond max_late_seconds rather than bursting stale notes. Do not accumulate relative sleep or network-delay drift. Pitch/seek preparation occurs while muted/stopped; set absolute pitch_adjust with readback, seek cue/duration, wait for note-on, unmute then play; at gate end mute then stop. Check lateness before starting play and after its acknowledgement.
+R4 (MUST): After ownership/preflight, attempt both mute and stop on every exit, including API/scheduler cancellation errors; a failed first cleanup command must not prevent attempting the second. Surface failures. Parent owns SIGINT process joining, disconnect reconnection and complete settings restoration. Do not claim that a failed network can always stop audio; the native loop bounds contain source playback during stalls.
+R5 (MUST NOT): Load or render music, alter master/other decks/saved cues/loop bounds, route stems, synthesize tags, silently enable polyphony, accumulate pitch offsets, or claim DSP pitch readiness/sample-atomic triggering based only on a control acknowledgement. No Mixxx rebuild required.
+</contract_rules>
+
+Verify score math across tempos, zero offset reset, invalid/nonfinite inputs,
+preparation/overlap/source-boundary refusal, zero-write preflight, paired gates,
+absolute schedule with injected sleep jitter, cancellation/disconnect cleanup,
+and late abort without catch-up. CLI dry-run is tested with an unusable port.
+No live network/audio/device operations in default tests.

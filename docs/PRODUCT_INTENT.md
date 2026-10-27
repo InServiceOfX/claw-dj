@@ -467,3 +467,42 @@ Usage: [OBS_AGENT_CONTROL.md](OBS_AGENT_CONTROL.md).
 
 > Build the native OBS version of the pop-ups for the lowest memory footprint on the stream machine: drive OBS's own text sources through the existing authenticated OBS control instead of a browser source, sized to my actual (smaller than 1920x1080) canvas because I want to spend less bandwidth on video and more on audio. Give it an automatic mode for unattended streams and a manual mode where I can flip forward, go back, show, hide, pause and resume cards. Let me preview the text without OBS.
 <!-- pdd-intent-entry:native-obs-pop-ups-with-automatic-and-manual-mod-40842147:end -->
+
+<!-- pdd-intent-entry:pitch-play-original-user-request-2026-10-15-49f842d4:start -->
+## Pitch play — original user request (2026-10-15)
+
+- Intent event: [`docs/intents/intent__pitch-play-original-user-request-2026-10-15-49f842d4.md`](intents/intent__pitch-play-original-user-request-2026-10-15-49f842d4.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `rust`
+
+> # Pitch play — original user request (2026-10-15)
+>
+> The same request was sent twice; preserve it once. This is intent input, not an approved implementation contract.
+>
+> Working in this repo: /Users/ernestyeung/.openclaw/workspace/repos/claw-dj
+>  and take note of this tik tok: https://www.tiktok.com/@numark_dj/video/7671346273600998686?is_from_webapp=1&sender_device=pc i.e. https://www.tiktok.com/@numark_dj/video/7671346273600998686?is_from_webapp=1&sender_device=pc here: /Users/ernestyeung/Downloads
+>  i already downloaded as -rw-r--r--@  1 ernestyeung  staff   10059378 Oct 15 22:04 Download.mp4
+>  can you appropriately rename it, here's some "metadata" that might be useful : "/Users/ernestyeung/.openclaw/workspace/Data/Public/Images tiktokNumarkQuickBitOfPitchPlay.jpg just parse that image file for the text caption (tik tok is weird it doesn't let me cmd-c and copy on MAc Mini the text of a video), ok take this video, rename it so it's not generate Download.mp4 (keep it mp4 format of course) then move it to somewhere appropriate,y maybe like /Users/ernestyeung/.openclaw/workspace/Data/Public/Videos/TikTok
+>  and parse out the audio, the video (screenshots at appropriate places could be effective to help you and other AI agents understand and grasp this video), (there's really no spoken vocals or speech to text). And analyze what the DJ is doing with "pitch play". So this could be part of a user story, or an epic, if you will, because this will be a capability for claw-dj that we'll work on and iterate as we gain more knowledge, skill, and sophistication, and trial and error: we want to be able to create in our mix the "pitch play" that results in the pitch play in this video and any other examples we surface. Because we are software based and software defined, and have mixxx and can modify mixxx and build our own binary as we want (we've already done it opening up the ports), we want to be able to do pitch play in mixxx. Let's iterative build this up, with good testing, and starting simple to something like shown in this video and any other examples we surface. So we already know more or less how to repeat a cue, in fact we have a user story for repeating for instance 4 bars (but it sounded like he repeated 8 bars or something?), and then he repeated that arpeggio (downward arpeggio) multiple times, and then somehow cued different pitches of Alicia Key's You Don't Know My Name, so that he could play the main "melody" (characteristic melody?) of Upgrade U by Beyonce. So ccheck if mixxx has this ability (I don't see any pitch buttons like on that controller tbh?) or if we need to implement it outside in Rust of mixxx or modify mixxx itself (and of course rebuild mixxx). Don't be afraid to go online to do deep research and use rea skill if necessary to see how other controllers work that do this "pitch play" (what is stems control?) , oh also, as a general note; that vocal DJ tag at least to me is annoying, and we don't have to implement that at all and just ignore that DJ tag DJ shoutout, DJ signature vocally, out of the parsing and any parsing in the future.
+<!-- pdd-intent-entry:pitch-play-original-user-request-2026-10-15-49f842d4:end -->
+
+<!-- pdd-intent-entry:no-abrupt-cut-offs-echo-cut-and-brake-exits-only-22291d42:start -->
+## No abrupt cut-offs: echo, cut and brake exits only when Ernest asks
+
+- Intent event: [`docs/intents/intent__no-abrupt-cut-offs-echo-cut-and-brake-exits-only-22291d42.md`](intents/intent__no-abrupt-cut-offs-echo-cut-and-brake-exits-only-22291d42.md)
+- Change kind: `add`
+- Supersedes: none
+- Scope: `existing_pdd_change`
+- Technology: `not stated`
+
+> Ernest, 2026-10-17, after auditioning an agent's 4-beat echo-out "fix" for Sade - Turn My Back -> Justin Bieber - Sorry in rnb-cooldown-mix-vol-02: "202 is terrible. I hate the sharp cut off of Sade's song. DO NOT DO THAT. Does it warrant a user story or do we have a user story that we do not do abrupt cut offs like that except very rarely and with a lot of care when we want to highlight a drop or do some interesting pitch play work? DO NOT DO THAT AGAIN Icannot emphasize. Please." Then: "go ahead with those user story amends".
+> Amend the gentle-faders story (it listed platter/echo/filter exits and deliberate on-beat cuts as allowed exemptions, and Build could pick an echo-out or a hard cut by itself):
+> 1. A song never ends with an abrupt cut-off: no echo-out exit, hard or on-beat cut, half-time-or-cut, brake, spinback or filter-drop exit.
+> 2. Such an exit is allowed only very rarely, when Ernest deliberately asks for one to highlight a drop or for pitch-play work, recorded in the plan with his reason.
+> 3. An abrupt exit is never the fix for a pair that does not blend (tempo gap, syncopation, grid drift). Re-pair or reorder instead so a gentle blend of at least 16 counts works.
+> 4. The plan builder never chooses one by itself: not from a model's review, not for a large tempo gap.
+> 5. The live runner refuses a plan containing an abrupt exit that is not marked as Ernest's deliberate request, naming each transition, before anything plays.
+> Beat juggling and same-song handoffs of identical material keep their existing exemptions.
+<!-- pdd-intent-entry:no-abrupt-cut-offs-echo-cut-and-brake-exits-only-22291d42:end -->

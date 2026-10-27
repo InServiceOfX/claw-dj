@@ -24,6 +24,14 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Internal prepared-deck cue instrument; use python -m hands.pitch_play for source validation/setup.
+    PitchPlay {
+        #[arg(long, default_value_t = clawdj::control_api::DEFAULT_PORT)]
+        port: u16,
+        /// Explicitly execute on an already prepared deck. Default only prints the score.
+        #[arg(long)]
+        live: bool,
+    },
     /// Execute validated original-source timeline JSON from stdin (normally via run_mix.sh).
     Perform {
         #[arg(long, default_value_t = clawdj::control_api::DEFAULT_PORT)]
@@ -204,6 +212,21 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::PitchPlay { port, live } => {
+            let score: clawdj::pitch_play::Score = serde_json::from_reader(std::io::stdin())
+                .context("pitch-play expects validated score JSON on stdin")?;
+            let attacks = score.compile()?;
+            if !live {
+                println!("{}", serde_json::to_string_pretty(&attacks)?);
+                return Ok(());
+            }
+            let mut api = clawdj::control_api::ControlApi::connect(port)?;
+            clawdj::pitch_play::execute(
+                &mut api,
+                &mut clawdj::pitch_play::MonotonicClock::default(),
+                &score,
+            )
+        }
         Commands::Perform {
             port,
             preflight_only,

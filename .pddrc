@@ -1,6 +1,20 @@
 version: "1.0"
 
 contexts:
+  pitch_play_python:
+    paths: ["*hands/pitch_play*"]
+    defaults:
+      outputs:
+        code:
+          path: "hands/pitch_play.py"
+
+  pitch_play_rust:
+    paths: ["*core/pitch_play*"]
+    defaults:
+      outputs:
+        code:
+          path: "core-rust/clawdj/src/pitch_play.rs"
+
   # ==========================================================
   # Plan core (foundational domain layer)
   # ==========================================================
