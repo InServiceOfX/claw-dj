@@ -21,6 +21,9 @@ MODULES = (
     "test_showcase_moves", "test_mix_plan", "test_mix_runner",
     "test_source_cutoffs", "test_stems",
     "test_plan_integration",
+    "test_alignment_safety", "test_double_time_grid", "test_center_hold",
+    "test_pitch_play", "test_onset_analysis", "test_blend_window",
+    "test_audition_transition", "test_popups",
 )
 
 

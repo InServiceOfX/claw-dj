@@ -131,11 +131,11 @@ class PerformanceTests(unittest.TestCase):
             self.assertEqual(current_limits(artifact(fixture()))['voice'],{})
 
     def test_generic_build_never_replaces_authored_performance(self):
-        from types import SimpleNamespace
         from brain.plan_mix_build import build
+        from brain.plan_paths import _paths
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'mix_plan.json';data=json.dumps(artifact(fixture()));path.write_text(data)
-            with patch('brain.plan_mix_build.plan_paths.resolve',return_value=SimpleNamespace(mix_plan=path)),patch('brain.plan_mix_build.compose_mix_plan',side_effect=AssertionError('must not compose')):
+            with patch('brain.plan_mix_build.plan_paths.resolve',return_value=_paths(Path(tmp))),patch('brain.plan_mix_build.compose_mix_plan',side_effect=AssertionError('must not compose')):
                 with self.assertRaisesRegex(ValueError,'explicit musical performance'):build('example')
             self.assertEqual(path.read_text(),data)
 
@@ -149,6 +149,12 @@ class PerformanceTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(),b'original');self.assertEqual(plan,before)
 
     def test_offline_exclusion_and_cleanup_with_real_decoder(self):
+        import shutil
+        import subprocess
+        ffmpeg=shutil.which('ffmpeg')
+        buildconf=subprocess.run([ffmpeg,'-buildconf'],capture_output=True,text=True,check=True) if ffmpeg else None
+        if not buildconf or '--enable-libsoxr' not in buildconf.stdout+buildconf.stderr:
+            self.skipTest('optional offline exporter requires an FFmpeg build with libsoxr')
         import numpy as np
         import soundfile as sf
         from hands.offline_mix import prepare_clips

@@ -238,6 +238,11 @@ class SchemaMigrationTests(unittest.TestCase):
                 )
                 db.commit()
 
+            # Simulate reopening this old database in a fresh application.
+            # The fixture above intentionally changed the schema after the
+            # setup connection had populated the per-process migration cache.
+            from brain import library_index
+            library_index._SCHEMA_READY.discard(str(index.expanduser().resolve()))
             # Connecting migrates; the legacy row survives with an empty value.
             with closing(connect(index)) as db:
                 columns = {row[1] for row in db.execute("PRAGMA table_info(collections)")}
