@@ -115,6 +115,13 @@ assuming a safe default. No visible pitch-pad bank is required.
 
 ## Source and next step
 
+**2026-10-26 audit follow-up:** the unrelated generic-build fixture now uses
+real plan paths, and the optional decoder test explicitly skips when FFmpeg
+lacks libsoxr. The full isolated Python suite passes 681 tests with that one
+skip; the expanded DJ workflow runner passes 419 tests. See
+`docs/reviews/WORKTREE_AUDIT_2026-10-26.md`. No new live pitch-play audition or
+audio measurement is claimed by this follow-up.
+
 Code: `hands/pitch_play.py`, `core-rust/clawdj/src/pitch_play.rs`, CLI subcommand
 in `core-rust/clawdj-cli/src/main.rs`. Specs: matching Python/Rust prompts and
 architecture/.pddrc entries. Acceptance:

@@ -41,9 +41,11 @@ They never cut one song short to escape the pairing.
 
 1. **Sade "Turn My Back" → Justin Bieber "Sorry", 2026-10-17.** That blend
    didn't fit, so an agent replaced it with a 4-beat echo-out. I heard Sade cut
-   off sharply: "202 is terrible." The fix is re-pairing. "Sorry" moves next
-   to SWV "I'm So Into You" and Christina Milian "Say I", and "Turn My Back"
-   blends into Bee Gees "How Deep Is Your Love".
+   off sharply: "202 is terrible." The fix is re-pairing. The initial proposed
+   neighbors were superseded: Ernest approved **Majid Jordan "Pacifico" →
+   "Sorry" → The-Dream "Ghetto"** on 2026-10-22, with "Sorry" starting at
+   0:00 and never next to SWV. Follow the current plan's effective DJ notes;
+   this dated example is not a universal ordering rule for other mixes.
 2. **Maxwell "Whenever Wherever Whatever" → Anita Baker "Caught Up In The
    Rapture".** Approved: "both are ballads and intersect during purely
    melodic harmonies, no percussion to match." A gentle answer where a cut

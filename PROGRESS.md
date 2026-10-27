@@ -1,5 +1,790 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## 2026-10-26 — Worktree audited and committed; artist-footage R&B videos ready
+
+Ernest explicitly requested review/commits of every accumulated modified and
+untracked source file, especially the no-abrupt-cutoff and original-source
+pitch-play stories, plus finished promotional MP4s using related artist footage.
+
+Reviewed all54 original dirty/untracked files; kept the relevant implementations,
+tests, prompts, accepted intents, dated listening records and reusable demo kit.
+No new ignore rule, discarded user work, generated media or secret was staged.
+Three existing test files were updated for broader isolated coverage and stale
+fixtures. File-by-file disposition and limitations:
+`docs/reviews/WORKTREE_AUDIT_2026-10-26.md`.
+Source commits on `feat/review-backbeat-audition`:
+`99cd95d` gentle exits/evidence-gated counts;
+`8965dd1` isolated opt-in pitch-play experiment;
+`1a344ce` profile display;
+`fc3a9f9` provisional sourced popup candidates;
+`e1ed711` reusable original-music demo toolkit;
+`5fc2642` regression coverage/fixtures.
+This documentation commit completes the audit. No push, tag or merge requested.
+The dated cutoff-story example now reflects the approved2026-10-22
+Pacifico→Sorry→Ghetto placement, Sorry cue0, never next to SWV.
+
+Verification: full isolated Python suite681 tests OK, one optional export test
+skipped because this FFmpeg lacks libsoxr; expanded DJ workflow419 pass;
+Rust46 pass, fmt and Clippy(-D warnings) pass; six strict deterministic managed
+prompt checks have0 errors/0 warnings; diff/credential-pattern checks pass.
+`.env` stays ignored/untracked; `.env.example` stays tracked. Pitch play remains
+an approved **first-scope experiment**, NOT live-auditioned/audio-measured and
+NOT a generic Build gesture. Provisional popup facts remain verified:false.
+Demo copy no longer promises instant plans or automatic future-plan learning.
+
+**Finished artist-footage gallery, replacing the prior title-card pictures:**
+`Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/promotion-2026-10-26/production/index.html`.
+Four short MP4s55.70/53.41/58.17/30.74s, three longer TikTok alternatives
+70.50/68.21/72.97s; total363.2MB. Same stable finished filenames.
+Real Mixxx music from the seven saved captures is unchanged by the picture edit
+(decoded PCM MD5 verified for all7). Complete32-count blends, labeled montage
+jumps, concise hooks, viewer questions and twitch.tv/clawdj/LA business-hours
+CTA. Related music-video footage is publicly sourced from Apple promotional
+previews after public YouTube CDN downloads returned403. No cookies/DRM bypass.
+Janet Again/Sisqo Thong Song/Ginuwine Pony/Ashanti Rock Wit U/Majid Body Talk
+are explicitly **related artist footage** where the mix uses another song;
+no lip-sync, endorsement or rights-clearance claim. Sources/hashes/shot timings
+in `footage-sources.json`; readable `CREDITS.md` and `UPLOAD_NOTES.md` beside
+outputs. Followed Monoclaw short-form-viral-content/Noe hook-retention guidance;
+no reach guarantee or fabricated listening verdict.
+
+All7 outputs full-decoded, probed1080×1920 H.264High30fps/AAC48kHz stereo,
+checked picture boundaries, absence of unintended ≥200ms internal silence,
+retained measured audio levels, inspected opening/middle/end frames.
+Verification/gallery/current storyboards updated; temporary render folders and
+partial downloads absent. Private production recipes/assets stay outside Git.
+No upload/publication, new live playback or OBS write in this picture-edit pass.
+R&B saved plan SHA remains
+`ef58a4264382389bd00fd291ca8a91cb735985758b884d5098adbeb2cc20a061`.
+
+## 2026-10-26 — R&B clips COMPLETE: fresh Mixxx captures and seven musical videos
+
+Ernest clarified explicitly: **make the recordings from
+RnB-cooldown-mix-vol-02; you have access to Mixxx**. This supersedes the prior
+existing-recording blocker below. Do not ask him for an old VOD again.
+
+Used idle Mixxx control API9995 and its native WAV recorder. Checked all decks
+stopped, recorder idle, and OBS stream/record outputs inactive before each
+capture. Read all11 effective notes for included sources. Captured saved
+transitions222/223,174/175,65/66,106 via the unchanged real audition runner
+(4bar lead/tail, same cues/sync/EQ/backbeat/faders). Seven original source WAVs
+in Mixxx's configured container recording directory; exact paths/hashes in
+capture-manifest. The recorder flushes one final~43ms block after status falls:
+final evidence uses closed-file durations/hashes. Controls restored; recorder
+and decks stopped. No OBS writes, generic Build, plan edits or uploads.
+
+**Finished listening/download gallery:**
+`Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/promotion-2026-10-26/production/index.html`.
+Four Shorts: Sorry-neighbors55.70s; Robin/Janet/Jesse53.41s;
+BodyTalk/Sisqo/Ginuwine58.15s; Ashanti/Say I30.74s.
+Three longer TikTok edits:70.50/68.21/72.95s. All include real recorded music,
+motion/title cards, confirmed twitch.tv/clawdj + LA business-hours CTA, and
+YouTube destination. Two-handoff montages explicitly say “Later in the set”.
+They retain each full32-count blend. Say I remains requested0:00.
+
+Final7 MP4s total~35.5MB:1080×1920 H.264 High30fps/yuv420p,
+stereoAAC48kHz320kbps target. Every output full-decoded; audio loudness/true-peak,
+absence of unintended internal ≥200ms silence, intended picture boundaries,
+and exported frames checked. All7 source lead-ins independently matched the
+original songs by waveform correlation0.9597–0.9965; corrected control-clock
+timestamps to the recorded audio. Source recordings retained unmodified.
+No new human listening verdict is claimed; these are fresh executions of the
+saved approved recipes. `verification.json`, `edit-manifest.json`,
+`capture-manifest.json` and final storyboards provide evidence. Current
+lossless recording reel `recorded-handoffs.wav` is4:58 of seven independent
+takes, NOT a full270-track continuous mix. Removed superseded silent previews.
+
+R&B source artifact remains byte-identical:
+`ef58a4264382389bd00fd291ca8a91cb735985758b884d5098adbeb2cc20a061`.
+No commit/push/publication. Private production scripts retained beside outputs;
+no product implementation or prompt/manifest/Pi changes.
+
+## 2026-10-26 — R&B promotion production follow-up: picture previews ready
+
+Ernest authorized making the proposed promotional clips. Four 12s
+1080×1920 H.264/30fps **picture-only** motion previews, source cards,
+captions, edit manifest, assembly script, storyboard and local preview page:
+`Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/promotion-2026-10-26/production/`.
+Each preview explicitly says recording needed and has no audio stream.
+Full decode/probe checks pass; extracted frames inspected; picture edits at4s
+and8s confirmed. These are NOT finished musical clips; no listening/levels
+claim applies to silent previews. Actual A/V assembly path unexercised.
+
+Confirmed Twitch URL **https://www.twitch.tv/clawdj** from Ernest's direct
+original request in docs/intents/intent__pop-up-music-facts-and-ernest-s-commentary-over--71fbe377.md.
+Public past-broadcast listing via yt-dlp returned zero entries. Local Mixxx
+recordings stop September2; Movies/candidate/export/likely download searches
+found no verified October vol-02 recording. OBS read-only status unavailable;
+no writes attempted. Async question asks Ernest for actual recording path or
+VOD URL. This missing source blocks musical clips, not a new approval gate.
+Do not silently reconstruct approved live audio from originals or substitute
+an old set. Assembly is prepared to retain full32-count transitions and label
+the middle montage cuts; targets ~55.6/53.3/57.9/30.6s.
+
+R&B plan SHA remains
+`ef58a4264382389bd00fd291ca8a91cb735985758b884d5098adbeb2cc20a061`.
+No playback, recording, live plan edits, upload, publication, commit or push.
+Keep source missing status explicit; once media supplied, locate and verify
+the actual handoffs, render/inspect/listen, then report finished files.
+
+## 2026-10-26 — Hip-hop Anthology vol-01 reviewed; R&B promotion briefs ready
+
+Ernest requested musical refinement of his already-built 98-track
+Hip-hop-Anthology-Vol-01, advice on external verse/chorus timestamps, and
+R&B vol-02 short-form ideas using Monoclaw/Noe Murillo guidance.
+
+Installed a revision-checked **WIP listening candidate** in the same named
+hip-hop-anthology-vol-01 artifact; SHA
+`7ef0e8ac30ef81a139bd2410ef8b788ea97fc2e43f723aa08c4685e017aec17c`.
+All 98 recordings retained, 97 transitions / 296 events. All 98 effective
+notes read through a stable read-only library snapshot: currently empty.
+Moved faster records into the closing chapter to remove the 115.7→86.8 BPM
+Juice/Right Back At You reset; 16 new adjacencies remain explicitly unverified.
+Nas Album Intro now requests 0:00 with strict20ms cue; spoken opener handoff
+uses native tempos without forced sync. Kept other cues, removed unmeasured
+pitch/filter bridge recipes, retained gentle fades including double-time
+count budgets. Eight cached-lyric-guided exit edits are provisional, NOT
+human/audio-verified section boundaries. Reading LRC found Black Girl Lost /
+Fa Ha outros mislabeled verse and a Throw Your Guns chorus inside a heuristic
+verse. No library/cache metadata changed. No new guessed count shifts.
+
+Private report, candidate, full dry-run log, manifest, installer and verified
+pre-edit state backup:
+`Data/claw-dj-candidates/hip-hop-anthology-vol-01/`.
+Report `REVIEW_2026-10-26.md` lists all tracks, edits and priority auditions:
+1 opener, 38 Throw Your Guns, 40 Imagine That, 61 Black Girl Lost,
+84 Fa Ha, 89 Feel My Pain, 96 Terrordome, 97 Follow The Leader.
+Full296-event dry-run, deck/load/preload identity checks, source fade budgets
+and98 runner/double-time/alignment regression tests pass. No Mixxx playback,
+recording, heavy analysis, provider call, commit or push. Plan inputs still
+match source_revs; no freshness stamp on unrelated plans. Generic Build may
+replace these authored artifact decisions; refine/audition the same artifact.
+
+GUI selection remains **rnb-cooldown-mix-vol-02**, byte-for-byte unchanged;
+current R&B SHA `ef58a4264382389bd00fd291ca8a91cb735985758b884d5098adbeb2cc20a061`.
+Its hand_edit_2026_10_25 field is present; earlier Q-running notes below are
+historical, not today's verified active identity. To run the reviewed Hip-hop
+mix explicitly: `./scripts/run_mix.sh --plan brain/data/plans/hip-hop-anthology-vol-01/mix_plan.json`.
+It still needs listening; simulation does not certify pleasant sound.
+
+Private R&B campaign:
+`Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/promotion-2026-10-26/CLIP_BRIEFS.md`.
+Four Noe-framework briefs: Pacifico→Sorry→Ghetto, Robin→Janet→Jesse,
+Body Talk→Sisqo→Ginuwine, Ashanti→Say I from0. Preserve heard recipes;
+Janet/Sorry approvals concern energy/vibe, not perfect backbeat claims.
+45–59s two-handoff montages require clearly labeled middle cuts; continuous
+two-handoff cuts are ~3–4min, not90s. Platform sources checked2026-10-26:
+YT Shorts max3min, claimed >1min Shorts blocked per current official help;
+TikTok route/account limits differ. YouTube Related video + channel profile
+Twitch link is the intended funnel, not nonclickable Shorts comment URLs.
+Actual October recording/VOD and confirmed Twitch URL still needed for
+timecodes/rendering; async question sent. No media rendered or published.
+
+External lyrics/section timestamps should be priors mapped to the exact
+recording with local alignment/version evidence, confidence and human
+overrides. Current LRC last-line times are not true vocal ends. No enrichment
+product feature was added. Preserve all unrelated Pi/Claude edits.
+
+## 2026-10-25 — actual Hey Lover/Shanice repair S ready; active Q still running
+
+Ernest repeated that live transition2 remains off1 count and explicitly asked
+**please fix**. Earlier10-24 diagnosis wrapper never changed the active plan;
+its +/-2grid trials were too coarse for the measured local phase. User now
+wants the supported saved-plan correction, not another A/B-only handoff.
+
+Read actual short source blend windows at nice19/single-thread, no playback,
+render, cache/library writes or model calls. `hey-shanice.10-25-source-windows.json`:
+Hey Lover at grid292/308 has snare parity1/confidence.944/.788. Shanice cue
+window32 and follow-on64 both show real beats on ODD grid ticks (phase1),
+snare parity1 in real beats, confidence.720/.915 versus other.155/.309. Cue32
+starts on the offbeat half of the double-time grid. **Post-sync +1GRID tick to33**
+puts Shanice on a real non-snare; next snare35 is1real beat after start, matching
+Hey Lover309 after fadeanchor308. +2grid (one audible count) leaves the offbeat
+phase wrong. This is source-based local backbeat correction, not new perfect
+count1 detection or human listening approval. Correct prior coarse advice.
+
+Prepared full supported S outside repo:
+`Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/mix_plan.10-25-S-hey-lover-shanice.json`,
+SHA `0e4aef9bdfade32f69f42afdc85f09afc6e9010169de5a536a982cb1346b4ccc`.
+- Actual transition2 adds existing `snare_align` after sync, not a private
+  adapter/unsupported directive. 32-count gentle blend/EQ/native tempo unchanged.
+- Shanice cue stays10.265s/grid32, now strict20ms to reject silent wrong seeks.
+- Shanice body534→533 compensates the +1grid advance; outgoing anchor599 and
+  Shanice→SWV transition unchanged. Bar-guard compensation tested over20 first
+  counted indices. Hey Lover fade308/source210.247816s remains unchanged.
+- Only these execution changes plus Hey Lover assessment metadata. All268
+  other transition events and31 active pair audition recipes preserved; all270
+  effective notes read and hashed. All8 heard Janet/Sorry/Say I/Sisqo control
+  sequences still match; full812-event fake runner and dry-run pass. Repaired
+  seam emits exactly one beatjump_1_forward immediately after beatsync, strict
+  cue forwarded; both decks stop in simulation. Fifteen safety regressions pass.
+- No product Python/prompt/manifest or Pi edits needed; existing supported
+  behavior suffices. No generic Build or fresh LLM review.
+
+**NOT INSTALLED YET:** actual full Q still running when checked (do not rely on
+old PID17456/17457; recheck). Live SHA remains
+`16c4700f6f9ccd920fe17a82792ebb5d2d5b3420ef6c82571d323fdd04d4626e`.
+All active state/notes/locks/journal bytes untouched. Source revisions already
+stale from prior inputs; no blanket freshness restamp. Unrelated Maxwell R still
+private/uninstalled. An async status question asks Ernest to report when he
+stops the mix; never infer elapsed time as approval or kill his playback.
+
+Private `tools-2026-10-25/install_S.py` is ready: verifies base/input/effective-note
+hashes and simulation evidence, refuses active runners, then verified external
+backup of all state files, two pending AGENT note overlays/pair intent (not fake
+human approval), atomic S publication and journal. --check-only verified ready/
+busy; fake busy refusal proves no plan/state/journal writes. No new audition
+required before installation under repeated explicit request. Once run stops,
+agent should execute installer and run normal run_mix.sh --dry-run, update this
+status to installed with new SHA/backup. Can also be human-run from repo root:
+`.venv/bin/python "$HOME/.openclaw/workspace/Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/tools-2026-10-25/install_S.py"`
+Then normal `./scripts/run_mix.sh`. No old R/N/P/Q installers.
+
+## 2026-10-24 — Hey Lover → Shanice off1 count; isolated diagnosis ready
+
+Ernest hears live Q transition2 (#10/812), Boyz II Men Hey Lover → Shanice
+I Love Your Smile, **off by1 count**. Treat this as a human negative verdict,
+not approval of any correction. Later Shanice body534→531 bar-guard message
+occurs after the handoff; it does not establish the cause of the earlier error.
+Direction (early/late) remains unknown. Keep this musical pairing for now;
+no re-order/cut/filter exit proposed.
+
+Live active Q SHA `16c4700f6f9ccd920fe17a82792ebb5d2d5b3420ef6c82571d323fdd04d4626e`
+remains unchanged. Current input revisions differ from its historical source
+revisions; no freshness stamp or input/journal write was made. Pending Maxwell
+R remains private/uninstalled. Read both current effective song notes read-only.
+Shanice has a double-time187.881 BPM grid, real~94:1 audible count=2gridbeats
+(~0.639source seconds), not the fixed one-grid snare_align jump (~halfcount).
+Hey Lover fade anchor remains308/source210.2478s; Shanice cue10.265s/grid32.
+Shanice → SWV exit599, SWV approved400-start/44-count/12-hold, other approved
+pairings and all active plan/notes/locks/journal bytes are untouched.
+
+Prepared private unheard `audition.10-24-hey-lover-shanice.json` and
+`audition_hey_lover_shanice.py` in Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/.
+Use **the private wrapper**, not JSON alone: the wrapper inserts an explicit
+post-sync2-grid jump on incoming deck2 for flags+1/-1. JSON contains only the
+original smooth32-count gentle blend. No production move/runner feature was
+added. Existing run_audition handles port validation, busy runner/deck refusal,
+4bar lead/tail, real event path and Ctrl-C/stop/neutralize cleanup. Private setup
+adds strict20ms cues on both decks (outgoing setup normally drops source-load
+cue options; wrapper forces them for this experiment only). Direct2-grid
+forward/backward controls avoid changing persistent beatjump_size, no millisecond
+nudge or incoming cue offset. No original track/cue/exit is modified.
+
+First test --shift-counts0: precise requested cues with NO phase jump. If it
+aligns, do not add a shift. If stilloff, compare --shift-counts1 and-1. Neither
+direction is claimed correct. Lead-in setup and all musical events exactly
+match full Q transition2, except experiment-only strictcue verification and
+explicit optional count jump. All three dry-runs and fake-control executions
+pass with real sockets forbidden; verify one2-grid jump immediately after
+incoming beatsync only for+/-1, strict options forwarded, both decks stopped.
+Control/load/discovery/clock mocks do not prove audible alignment. Mini and
+wrapper hashes/checks are in adjacent .checks.json; reconstruction under
+`tools-2026-10-24/`. No analysis/render, model calls, playback, live install,
+source-code/Pi edits or commits. Await Ernest's ear before saving a correction.
+
+From repo root, after stopping the full mix in Ernest's terminal:
+`D="$HOME/.openclaw/workspace/Data/claw-dj-candidates/rnb-cooldown-mix-vol-02"`
+`h() { .venv/bin/python "$D/audition_hey_lover_shanice.py" --shift-counts "$1"; }`
+`h 0`, then only if stilloff `h 1` and `h -1`. No LLM review requested.
+
+## 2026-10-23 — alignment safeguards implemented; current Q left running
+
+Ernest explicitly authorized backup, no audition, implementation of the Python
+changes, and testing when he returns. He then started the CURRENT full mix.
+Do not stop it or replace its artifact/inputs. Live active Q remains SHA
+`16c4700f6f9ccd920fe17a82792ebb5d2d5b3420ef6c82571d323fdd04d4626e`.
+
+Implemented: planner withholds ambiguous ordinary/double-time count corrections
+and weak-read whole-beat shifts; inferred snare_align cannot bypass uncertainty.
+Explicit existing human overrides remain. New opt-in per-load
+`cue_tolerance_ms` provides stopped-deck millisecond verification, quantize
+restoration/recheck, preflight validation and stop/neutralize on strict failure.
+Omitted field preserves legacy controls; audition setup forwards the option.
+No reliable automatic count-1 detector or Maxwell nudge is claimed.
+
+Verified backup of nine plan/state/journal files and already-dirty source:
+`Data/claw-dj-backups/rnb-cooldown-mix-vol-02/build-R-2026-10-23_081400/`.
+Private full candidate (NOT INSTALLED):
+`Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/mix_plan.10-23-R-maxwell-file-head.json`,
+SHA `48c65efe0acb0dc22b23473362068f085727f63cad5c5d9c44fa3619bc9593c4`.
+Only execution edits: Urban Theme preload9.7274s->requested0.000s with strict20ms,
+its body183->199 preserving outgoing source139.254464s/grid232 into Marvin Gaye.
+All269 transition events and all31 active saved pair recipes unchanged. Pending
+plan-only notes/order intent is in its manifest, NOT a human listening approval.
+
+Automated evidence: 105-test pre-change baseline; 211 selected tests now pass,
+including15 new regressions which failed before the fix. All8 recent Q seam
+control sequences still match exact heard miniatures; Q/R full812-event
+fake-control simulations and dry runs pass with no real sockets. Sound/count
+alignment and R's strict zero entry remain UNHEARD. No playback/render/model
+calls/install/commits. Existing unrelated git diff-check warning in
+`tests/test_onset_analysis.py` (blank EOF) was left alone. Requirements/story:
+`docs/requirements/backbeat-start-safety.md` and
+`user_stories/story__do_not_turn_uncertain_backbeats_into_guessed_count_shifts.md`.
+Next: user returns; test new Maxwell entry/alignment, then promote by checked
+backup/revisions/notes after the current run stops, never use generic Build.
+
+## 2026-10-22 — LIVE Q ready for run_mix.sh: approved Say I file-head entry
+
+Ernest heard `audition.10-22-say-i-from-zero.json` and said **save this this
+works**, then explicitly requested all approved changes ready in
+`./scripts/run_mix.sh`. Saved his verdict, updated only the Ashanti → Say I
+pair lock and Ashanti/Say I plan-note overlays, retaining earlier notes as
+history. This supersedes the19.568617s entry for this mix.
+
+**Active full Q is installed** at
+`brain/data/plans/rnb-cooldown-mix-vol-02/mix_plan.json`:270tracks,812events,
+269transitions; SHA `16c4700f6f9ccd920fe17a82792ebb5d2d5b3420ef6c82571d323fdd04d4626e`.
+It includes all four reinserted songs and every approved Janet/Sorry/Say I/Sisqo
+placement plus prior Claude edits. `run_mix.sh` resolves it and its dry-run
+passes. All8 approved seam control sequences match their heard auditions;
+full812-event fake-control simulation passes with real sockets forbidden.
+Source revisions current. All269 transition events are unchanged from P.
+Only Say I preload entry and its body count change: requestedcue0.000s,
+body239→271 (+32counts) preserves the approved outgoing fade at grid304 /
+source182.768617s into Fabolous, whose cue remains0.1803s. Other three recent
+transitions, Ashanti fadegrid320/source200.380728s, older approved settings and
+all source exclusions/skip handoffs remain unchanged.
+
+**Record requested versus observed accurately:** Ernest's heard log says
+`cue0.00s verified at0.37s` for Say I. The approved control request is0.000s;
+Mixxx's reported position was approximately analyzed beat0 (0.368617s), not
+proven literal sample zero. Preserve the exact heard request and existing
+runner behavior; do not force a new cueing/quantize workaround. The immutable
+heard mini SHA is `b870a391866abba04be1ffb7e1456f09a9f9762b02246586d82e0f98ec4fab91`.
+Human approval and installation details are in its adjacent verdict file.
+
+Verified backup before install:
+`Data/claw-dj-backups/rnb-cooldown-mix-vol-02/install-Q-2026-10-22_073423/`.
+Earlier P and exact heard minis remain saved. Private full Q and reconstruction
+scripts `save_say_i_zero.py`, `verify_approved_Q.py`, `install_approved_Q.py`
+live under the candidate directory. No active mix/audition runner at install;
+backup verified, atomic write and human-authorized journal entry completed.
+No playback, generic Build, model calls, render, OBS/Pi/source-code changes or
+commits. Inherited base Claude review is not a new review of human hand edits.
+No pending entry experiment remains. Run normally with `./scripts/run_mix.sh`.
+
+## 2026-10-22 — LIVE P: all four reinserts kept; Say I zero-entry test pending
+
+Ernest heard all four new seams and said **keep all4**, the song selections and
+backbeat matching when needed were good. Saved four human pair locks and six
+track-note overlays, retaining prior notes. This is positive human listening
+approval, not independent measurement of perfect beat/count accuracy.
+
+**Active vol-02 is now full P**, 270 tracks / 812 events / 269 transitions,
+SHA `fc1b414e6a8ab6bc100e482b0bf07dbc465dcd6297f71698c46d4cad71124d8a`.
+`./scripts/run_mix.sh` uses it. Saved private exact full baseline:
+`Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/mix_plan.10-22-P-all-four-approved.json`.
+- #65/#66 Body Talk → So Sexual → Ginuwine So Anxious. Body Talk fade grid276 /
+  180.102517s; Sisqo cue0.424036s, fadegrid336 /208.437794s; Ginuwine cue20.0982s.
+- #106/#107 Ashanti Take Me Tonight → Say I (Clean) → Fabolous Trade It All Part2.
+  Ashanti fadegrid320 /200.380728s; **approved Say I cue19.568617s/grid32**,
+  fadegrid304 /182.768617s; Fabolous cue0.1803s.
+All four exact heard32-count standard blends retained; native pitch, sync,
+light EQ/gradual bass swap, no nudge or extra center hold. The earlier Janet
+and Sorry seams are now #174/#175 and #222/#223; their musical settings remain
+unchanged. All265 unrelated O transitions, all27 existing live pair records,
+other cues/body/fade anchors and Suite Theme skip handoff preserved; deck
+ownership changes only as needed after insertions. Ashanti and Body Talk bodies
+are adjusted to reproduce their newly approved earlier fade anchors. Full812-event
+fake-control simulation and runner dry-run pass. All8 newly approved seams
+(including Janet/Sorry) match exact heard control sequences after deck remapping;
+fixed-order stop/neutralize cleanup is compared independently. Source revisions
+current, all270 effective notes read/hashed, historical locks retained and
+active/orphaned labels reconciled. Install journaled with human authorization.
+
+Verified backup before P: `Data/claw-dj-backups/rnb-cooldown-mix-vol-02/install-P-2026-10-22_072939/`
+contains full O and note/lock/playlist/selection snapshots. Private scripts
+`approve_remaining.py`, `assemble_approved_P.py`, `verify_approved_P.py`,
+`install_approved_P.py` preserve reconstruction. No generic Build, model calls,
+render, playback, OBS/Pi edits or commits. Inherited Claude review belongs to
+base order; no fresh model review for human-approved hand edits.
+
+**Say I did NOT start at0:00 in the approved audition: it entered19.568617s.**
+Ernest asked to save/keep everything and try just that incoming entry at0:00;
+other three transitions must stay exactly as heard. Prepared separate two-song
+`audition.10-22-say-i-from-zero.json` (SHA `b870a391866abba04be1ffb7e1456f09a9f9762b02246586d82e0f98ec4fab91`).
+Only Say I load cue changes to exactly0.000s; outgoing Ashanti seek/fade anchor,
+32-count blend, moves and native pitch/tempo behavior are identical. No other
+transition in this miniature. Its count relationship and softer opening are
+UNHEARD; do not replace the approved baseline without Ernest's verdict. Both
+approved three-song minis are immutable, with human verdict/installation
+sidecars. Whole-mini and transition1 dry-runs and fake-control execution pass;
+load receives exactly0.0s and both decks stop; active plan/input bytes unchanged.
+No LLM review requested. User runs from repo, full mix stopped:
+`.venv/bin/python -m hands.audition_transition --plan "$HOME/.openclaw/workspace/Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/audition.10-22-say-i-from-zero.json" --transition 1 --lead-bars 4 --tail-bars 4`.
+Await this single entry verdict. Do not alter the other three kept transitions.
+
+## 2026-10-22 — LIVE O installed; remaining auditions ready
+
+Ernest heard and kept **Pacifico → Sorry → The-Dream Ghetto**. His approval is
+for complementary energy, vibe and percussion themes, pleasant rather than
+dissonant, not certification of perfect beat/backbeat/count alignment. Exact
+heard miniature SHA `2b5c581add28` is immutable. Both pair locks and all three
+note overlays saved with human attribution; previous notes retained as history,
+with newer placements explicitly superseding SWV → Sorry and Sorry → Say I.
+
+At Ernest's request to make `./scripts/run_mix.sh` ready, installed full O into
+active `brain/data/plans/rnb-cooldown-mix-vol-02/mix_plan.json`: **268 tracks,
+806 events, 267 transitions**, SHA
+`2c7408fa2172446c9b4142878fe962276084779e707a87960291d2fd043db121`.
+O = Claude's live M plus the four exact heard Janet/Sorry seams: **#172/#173
+Robin Sex Therapy → Janet Would You Mind → Jesse You**, **#220/#221 Pacifico →
+Sorry → Ghetto**. Other 263 transitions and all 23 existing live pair records
+are preserved; original cues/bodies/fade anchors retained, adjusting deck
+ownership only where insertions require it. Existing Suite Theme same-song
+skip handoff, historical Claude edits and SWV → 112 at 36 counts are retained.
+Backbeat assessment metadata on new seams is unverified, reflecting what Ernest
+actually approved. All effective notes read and hashed. Source revisions current;
+active/orphaned pair labels reconciled without deleting historical records.
+
+Backup: `Data/claw-dj-backups/rnb-cooldown-mix-vol-02/install-O-2026-10-22_071622/`
+includes prior M, notes, locks, playlist and selection; hashes verified. Journal
+records installation/human authorization. Private authoring/installer/checks in
+candidate `tools-2026-10-21/`. Full runner dry-run and 806-event fake-control
+simulation passed (real sockets forbidden); four full-context audition control
+sequences exactly match the heard minis. `scripts/run_mix.sh --dry-run` resolves
+the correct active plan and passes. No playback, generic Build, render, model
+call, OBS/Pi file edits or commits. Original accepted Claude review belongs to
+base M, not a fresh review of these hand edits. Janet-only N installer is now
+obsolete and will refuse changed live/input revisions; do not run it.
+
+Ernest next requested auditions for **Say I** and **So Sexual**. Both remain OUT
+of live O pending verdict. Private UNHEARD files under
+`Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/`:
+- `audition.10-22-say-i-ashanti-fabolous.json`: a1 Ashanti Take Me Tonight →
+  Say I (Clean), a2 Say I → Fabolous Trade It All Part 2. Say I cue grid32 /
+  19.568617s per effective note; fades Ashanti 200.381s and Say I 182.769s.
+- `audition.10-22-so-sexual-body-talk-ginuwine.json`: a1 Body Talk → So Sexual,
+  a2 So Sexual → Ginuwine So Anxious. Sisqo cue0.424036s, Ginuwine pinned20.0982s;
+  fades Body Talk180.103s and Sisqo208.438s.
+Both use gentle32-count standard blends, sync/light EQ/gradual bass swap,
+native pitch, no filter exit/inferred snare jump. Private timing brought earlier
+in whole bars to finish before own quiet outros; existing LIVE cues/anchors are
+unchanged. Cached lyric sections are incomplete (especially Sisqo); no claim of
+instrumental entries or certified clean vocal overlap/count alignment. So Sexual
+intro is softer (-26..-18dBFS versus Body Talk -16..-11); listen for level handoff.
+Only short clipped windows checked with single-thread analysis, no audio export.
+Each full-mini and both audition dry-runs and fake-control executions/cleanup
+pass. No LLM review requested. Use four-bar lead/tail; collect each verdict and
+save human note/lock before splicing. Do not use Generic Build. New private
+source/checked manifests/commands in `AUDITIONS_REMAINING_2026-10-22.txt`.
+
+## vol-02 Janet audition: both blends kept; full candidate N ready (2026-10-21)
+
+Ernest heard `audition.10-21-janet-robin-jesse.json`, transition 1, and said
+"I like this" / "let's just keep it it's the best effort so far". Preserve
+Robin Thicke **Sex Therapy → Janet Jackson Would You Mind**: 32 counts,
+Robin fade at grid 401 (215.016 s), Janet cue 0.066916 s / grid 0; sync,
+light EQ, gradual crossfade/bass swap, then native tempo. Human-verified
+best-effort lock and both plan DJ-note overlays saved, preserving existing notes.
+The lock is pending/orphaned because Janet is not yet in live candidate M.
+Ernest then heard **a 2, Janet → Jesse Powell You**, and liked it too. This is
+approval of **energy and vibe**, "more of a feel", not a claim that beats,
+backbeats or snares were measured/verified. Both exact 32-count blends are now
+locked and noted on all three songs. Janet fades at grid 336 / 199.279 s;
+Jesse enters at 17.3787 s / grid 32. No nudge or extra center hold.
+
+Full candidate `Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/mix_plan.10-21-N-janet.json`
+(SHA 7b138171102a) inserts only Janet into live M: 267 tracks, 803 events,
+new seams #172/#173. All 264 other transitions and 23 already locked pairs retain
+their musical settings; subsequent deck identities swap to accommodate one
+extra track. Existing cues, bodies/fade anchors and all other songs are retained.
+Full runner dry run and both full-context audition dry runs pass. Simulated
+control writes for both seams match the heard miniature; installer checks were
+tested in a temporary workspace, including busy refusal and backup verification.
+The miniature remains unchanged (SHA 600ced8aebc8). **Live M is unchanged**;
+user runs `tools-2026-10-21/install_janet_N.py --install-after-stream` from the
+repo root when finished streaming. Default invocation only checks; it backs up
+and atomically installs only with the flag, rejects changed inputs/active runners,
+then journals the install. No agent playback, live install or commit performed.
+
+
+## Public demo short (2026-10-19; replaces the 2026-10-18 investor draft)
+
+- Ernest's direction, 2026-10-19:
+  - safe to post publicly;
+  - mostly the GUI and use from an AI harness (Claude Code, Codex, …);
+  - no "raising" and no money ask.
+- Doc: `docs/marketing/DEMO_SHORT.md`. It covers the shots, the VO script, Ernest's 3 steps (iPhone Voice Memos → `import-vo`, OBS take of the demo-music audition, `assemble`), a claims check and the public-safety rules.
+- `scripts/demo/demo_music.py` (new):
+  - two original, royalty-free instrumentals: Night Drive (90 BPM, Am) and Velvet Hour (92 BPM, C);
+  - a 2-track `mix_plan.json` in `~/.openclaw/workspace/Data/Public/Music/claw-dj-demo/`;
+  - the plan passes the runner and audition dry runs. Mixxx performing it for real (the OBS take) is still untested.
+- `scripts/demo/demo_kit.py`:
+  - the bed and blend come from `storyboard.blend.plan` (the demo plan);
+  - new visual kind `agent` (a Claude Code session replaying real `plan_cli` commands and output);
+  - `chips` text style; `text_no_obs` (the tag reads BLEND PREVIEW unless `--obs`);
+  - `import-vo` (one take split at the longest pauses, or one file per line);
+  - `stills --gui URL`; `assemble --frames` (contact PNGs, no encode); `focus_end` pans.
+- GUI stills come from a sandbox: a scratch copy of the repo and `brain/data`, with its editor on port 8788 and a fresh "Sunday Slow Jams" plan built by `plan_cli` in 4.3 s. The live plans and `active.json` were untouched.
+- Media goes to `~/.openclaw/workspace/Data/Public/Videos/claw-dj-demo-short/` (not Git). The old `claw-dj-investor-demo/` drafts use Sade audio: private only, don't post.
+- `brain/web/arrange.js`: the Arrange header showed "Artifact: v3 · [object Object]" because `profile` is an object. It now shows the profile name.
+- Pending:
+  - Ernest's voice;
+  - the OBS take;
+  - re-take `arrange.png` after the fix;
+  - render the drafts. Rendering is deferred while Ernest streams: CPU.
+- Runner field `outgoing_level` (`hands/run_mix_plan.py`) still needs adding to its PDD prompt (prompts/hands).
+
+## vol-02 fixes from the 2026-10-17 transition log + "no abrupt cut-offs" (2026-10-17)
+
+Ernest's notes are in `~/Desktop/transition-log-2026-10-17.md`. The plan is `~/.claude/plans/clever-humming-sun.md`. The live `mix_plan.json` (rev 22556f2e) is unchanged and backed up as `~/.openclaw/workspace/Data/claw-dj-backups/rnb-cooldown-mix-vol-02/mix_plan.2026-10-17_131745.before-10-17-fixes.json`.
+
+**Don't press Build** on vol-02. It would drop the hand edits: the Betcha insert, the #85 nudge and bridge tempo, the 10-15 rides, today's re-pairs and nudges.
+
+**New rule, enforced: no abrupt cut-offs.**
+- Ernest: "202 is terrible. I hate the sharp cut off of Sade's song. DO NOT DO THAT."
+- Records:
+  - new story `user_stories/story__never_end_a_song_with_an_abrupt_cut_off.md`;
+  - amended exemptions in `story__blend_with_gentle_faders_never_fast.md`;
+  - intent `docs/intents/intent__no-abrupt-cut-offs-...-22291d42.md` and a PRODUCT_INTENT entry, both from `pdd intent apply`.
+- PDD's prompt step failed (local Qwen3.8 9B: "Cannot add existing module" ×3). The prompts were edited by hand: `plan_mix_build` 20d, `showcase_moves` R7, `audition_transition` 7/8, `live_kit` 8b.
+- Code:
+  - Build never picks `half_time_or_cut` (it uses `tempo_gap_blend`) and never applies a model's exit (`showcase_moves.EXITS` is empty).
+  - `exit_style=echo_out|filter_drop` and `entry_style=beat_drop` work only with a DJ note `abrupt_reason="..."`. The transition then records `abrupt_exit`.
+  - `run_mix_plan.check_no_abrupt_exits` refuses unmarked abrupt exits before play, and the audition refuses them too.
+  - The playbook's echo-out section is marked superseded.
+- Consequence: the live vol-02 plan and candidates A/B now refuse at #35 (Majid Jordan "A Place Like This" → Joe "More & More", the 10-15 echo-out). Candidate C fixes that. The #35 transitions.json override note says REJECTED.
+
+**Nudge fix.**
+- `nudge_incoming` used to turn quantize back on in the same instant as the seek, so Mixxx could snap the seek back. Ernest heard #199 still off with +140 ms; the #85 nudge has the same code.
+- It now keeps quantize off until the seek lands, measures the deck lead from `beat_distance`, re-seeks once if it missed by more than 12 ms, and prints `measured lead ... after sync -> ... ms`.
+- `audition_transition --nudge-ms MS` tries a nudge without editing the plan.
+
+**Ernest's audition results:**
+- #212 Maxwell → Rapture **APPROVED**. Recorded in DJ notes, plan directives and an override; the bunch is Maxwell → Rapture → About Time.
+- #199 off by "an eighth note + a little more" (pre-fix nudge).
+- **#199 Cherry Pie → Paradise APPROVED** in candidate C after the nudge fix: "it sounds very good". The runner printed `measured lead -0 ms after sync -> +140 ms`, so the nudge held. Recorded in both songs' DJ notes and a transitions.json override (+140 ms is only in the hand-edited plan; Build can't store it). Lesson: `docs/LIVE_MIX_LESSONS.md` Timing #5.
+- **#202 Turn My Back → Bee Gees "How Deep Is Your Love" APPROVED** (candidate C, 2026-10-18): "This is good". Recorded in both songs' DJ notes and a transitions.json override. No nudge.
+- 2026-10-18, candidate C:
+  - **Kept:** #5 SWV → Sorry and #6 Sorry → Say I, both "for now" as best effort. Sorry is dembow/moombahton with no 2-and-4 snare; its DJ note says so.
+  - **Kept:** #207 112 → Babyface, a long unsynced ballad blend.
+  - **Approved:** #217 Small Talk → Baby and #218 Baby → Pacifico.
+  - All recorded in DJ notes and overrides.
+- **Candidate D** = C plus two changes (`fixes1017/splice3.py`). The full dry run passes with 797 events. Not heard yet.
+  - **#208 Babyface → Cruisin'** becomes a 64-beat blend so the snares overlap. Ernest asked for "at least a bar". Snares measured 0 ms apart throughout. Cruisin's ride 448 → 416 keeps its anchor 481.
+  - **#220 R. Kelly → Jealous** nudge goes from −250 to −205 ms. Ernest: "almost there … fractionally". The measured snare offset drifts from −255 to −185 ms across the blend, because R. Kelly speeds up against his grid.
+- **LIVE 2026-10-18 08:32: candidate E is now `brain/data/plans/rnb-cooldown-mix-vol-02/mix_plan.json`.** Ernest asked for it to be ready for `./scripts/run_mix.sh` before streaming. `run_mix.sh --dry-run` passes with 797 events.
+  - Previous live plan backed up to `~/.openclaw/workspace/Data/claw-dj-backups/rnb-cooldown-mix-vol-02/mix_plan.2026-10-18_083243.before-10-18-E.json`.
+  - E = D plus three changes:
+    - #208 approved, with Babyface "slightly softer". New runner field `outgoing_level` 0.85: the outgoing channel fader eases down over the first quarter of the blend and is restored after that deck stops. Covered by a test.
+    - #220 uses the −185 ms nudge, Ernest's pick by ear.
+    - #36 A Place Like This → More & More kept as a best effort. More & More's only snare is on the "and" of 4.
+  - DJ notes, overrides and the journal entry `ear_fixes_2026-10-17` are recorded. Sorry's DJ note was reworded to describe the dancehall/tropical-house (dembow) pattern.
+- **Heard live 2026-10-18 (stream):**
+  - **Done after the stream:** Diana Krall "They Can't Take That Away From Me" removed from the whole mix. She was only track 1; Ernest moved her to a jazz plan in #curate.
+    - Hand-spliced from candidate `mix_plan.10-18-F.json`; Simply Red now opens from its cue.
+    - Live plan: 264 tracks, 794 events; the dry run passes; journal action `remove_track`.
+    - Backup: `~/.openclaw/workspace/Data/claw-dj-backups/rnb-cooldown-mix-vol-02/mix_plan.2026-10-18_201716.before-krall-removal.json`.
+    - **Transition numbers are now one lower.**
+  - **#38 (was #39) Boyz II Men "End Of The Road" → Majid Jordan "Violet":** backbeat off by one full count. Both grids are double-time (149.89 and 150.0), so that's 2 grid beats.
+    - The measurement was ambiguous: Violet hits evenly on every count, and End Of The Road's outro accent lands once per bar.
+    - Candidates for Ernest's ear, both keeping Violet's fade anchor 1056:
+      - `mix_plan.10-18-G1.json`: Violet cue grid beat 2 (0.813 s);
+      - `mix_plan.10-18-G2.json`: Violet cue grid beat 6 (2.413 s).
+  - **#38 verdicts (2026-10-18):** G1 is "off by a count" and G2 is "off and bad"; the original was also off.
+    - Cause: End Of The Road is 12/8. Its pulse repeats every 3/6/12 grid beats, with a cappella claps every 6 (2.4 s). Violet is 4/4: every 2/4/8 grid beats, backbeat every 1.6 s. No offset locks a 3:2 pattern. Both DJ notes record this.
+    - **Re-pair candidate `mix_plan.10-18-H.json`** (scratchpad `fixes1017/splice7.py`, a generalized splice2): Keith Sweat "I'll Give All My Love To You" moves from #91 to between them.
+      - #38 EOR → Keith Sweat: unsynced ballad blend over his drumless intro, like #207.
+      - #39 Keith Sweat → Violet: both A♭, synced, measured in phase.
+      - #91 50 Candles → I Need Love: 50 Candles rides +1 grid beat, now 0 ms.
+      - 260 of 263 blends are unchanged, and the dry run passes. Not heard yet.
+  - Known gap: `hands/mix_duration.estimate_mix_seconds` ignores `preload_after_transition`, so deck tempos stay at the first loads' BPM. That made the estimate swing from 20.5 h to 15 h when the opener changed. It's an estimate bug, not a plan change.
+- #219 R. Kelly → Baby terrible: needs a re-pair.
+- **LIVE 2026-10-21 19:28: candidate M** (rev 42a74d4c63e8, 266 tracks). Ernest ran the `!` install. `run_mix.sh --dry-run` passes with 800 events.
+  - Backup: `~/.openclaw/workspace/Data/claw-dj-backups/rnb-cooldown-mix-vol-02/mix_plan.2026-10-21_192857.before-10-21-M.json`. Journal action: `install_candidate`.
+  - Live is J plus #4 (accepted, locked) and #5 → 112 "Be With You" (36 beats, not yet heard at that length). Sorry, Say I, Would You Mind and So Sexual are out of vol-02, pending Ernest's call.
+  - Transition numbers from #6 on are −4 vs J, so candidate H's re-pair is now #35/#36/#90.
+  - **The four songs stay in the library and playlist, not deleted.** Ernest wants another AI harness to find their pairings with him. Its prompt is `~/.openclaw/workspace/Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/PAIRING_PROMPT_2026-10-21.md`, and its tools are copied to `tools-2026-10-21/` next to it.
+- **2026-10-21: 10-20 car notes (via Grok) and the root cause of the "off by one count" errors.** Plan: `~/.claude/plans/clever-humming-sun.md`.
+  - **Root cause (code, not yet committed):**
+    - `onset_analysis.count_shift_beats` assumes grid beat 0 is count 1. When the snare parities disagree it always moves +1 beat, so it's a coin flip whether count 1 lands on count 1 or count 3.
+    - 99 of 269 vol-02 blends took that branch. They include SWV remix → "I'm So Into You" (moved to 421; 419 is right) and 4 of the 6 off-by-one notes from 10-15.
+    - **New:** `bar_count_guessed()`. Build now marks those blends `backbeat.status: "bar_guessed"`, and they're counted in the build summary.
+    - Tests: `tests/test_onset_analysis.py` and `tests/test_blend_window.py`. The full suite is otherwise unchanged; the same 4 earlier failures remain (collection schema, performance/ffmpeg, editor refresh).
+  - **Count-1 detector pilot** (scratchpad `fixes1021/bar_phase.py`, `validate.py`): kick, snare and chord changes folded per beat-in-bar over the middle of each song.
+    - It flags all 4 ear-bad blends and confirms SWV at 419.
+    - But it agrees with only 9 of 14 approved blends, so it's **not wired into Build**. It's a hint only.
+  - **SWV → SWV #4:** no change. The live fade at 419 meets count 1 on count 1, and both songs' snares sit about 15 ms behind their grids, about 1 ms apart. No nudge is needed.
+  - **Candidates K / K-b** (`fixes1021/mini2.py` + `splice10.py`; backup `mix_plan.2026-10-21_080503.before-10-21-K.json`):
+    - The block "Sorry → Say I → Would You Mind" moves to between Cassie "Miss Your Touch" and Majid Jordan "OG Heartthrob".
+    - New seams:
+      - #5 SWV "I'm So Into You" → Sisqo "So Sexual";
+      - #12 Cassie → Sorry, with Sorry from 0:00 over Cassie's own fade;
+      - #15 Would You Mind → OG Heartthrob, with OG cued at beat 32 after its −28 dB intro.
+    - K-b differs in the two counts that are guesses: #5 fades at 318 instead of 320, and #15 at 335 instead of 337.
+    - 266 of 269 blends and all 23 approved/kept pairs are unchanged. Dry runs pass with 812 events. Nothing has been heard. Ernest auditions `a 4; a 5; a 12; a 13; a 15` on each.
+  - **Ernest's audition of K, 2026-10-21 (verdicts, nothing approved yet):**
+    - #4 SWV remix → "I'm So Into You" at 419: "DEFINITELY off by 1 count". So the detector's 419 was wrong too; both 421 and 419 have now been heard off. Test copies `mix_plan.10-21-K4-420.json` (bar-for-bar on the grids) and `K4-418.json` change only that fade; not heard yet.
+    - #12 Cassie → Sorry: rejected. "I'd rather mix Cassie into another song with the same boom bap percussion (hip hop or rnb)."
+    - #5 "I'm So Into You" → "So Sexual": rejected. SWV should go into something with matching boom-bap drums.
+    - #15 Would You Mind → OG Heartthrob: rejected in both K and K-b, and #5 in K-b too. "OG Heartthrob goes into boom bap but Jackson's Would You Mind is more of a slow ballad … the pairings don't match." Would You Mind measures 0.15 percussive; OG Heartthrob 0.31 with a 0.82 kick share.
+    - The numbers agree (`fixes1021/groove.py`, a percussive-energy share plus the kick share of the drums, over 60 s from the middle of each song): So Sexual 0.43/0.43 and Sorry 0.35/0.48, against 112 "Be With You" 0.55/0.79 and Mya "Best Of Me" remix 0.64/0.72.
+  - **Candidate L** (`mix_plan.10-21-L.json`, sha 9a72d7347e90; `fixes1021/mini3.py` + `splice11.py`, pairs in `pairs_L.json`). It re-pairs by drum feel and is built from live J:
+    - opening, 90s boom bap: #4 SWV remix fade at 420; #5 "I'm So Into You" → 112 "Be With You" (new); #11 Cassie → OG Heartthrob and #12 OG → P.M. Dawn are the live pairs;
+    - ballads: #202 Bee Gees "How Deep Is Your Love" → Would You Mind → #203 Simply Red "Sunrise";
+    - 2000s R&B: #231 Ne-Yo "Stay" → Sorry from 0:00 → #232 Say I (live blend) → #233 So Sexual → #234 New Edition "If It Isn't Love".
+    - Checks: 263 of 269 blends unchanged, all 23 approved pairs identical, 812-event dry run. `levelsL.py` levels are fine; Bee Gees, Stay and Say I fade out on their own endings under the incoming song.
+    - #203, #233 and #234 are `bar_guessed` counts. Not heard yet.
+  - **#4 count approved (K4-420): "this is better".** It's recorded as a DJ note overlay on the SWV remix.
+    - The runner trimmed the ride 32 → 28 beats to fit before the remix ends (291 s), so the blend he heard actually ran from 416 to 448. That's the same count.
+    - Next ask: "allow for blend to last longer and since the snares line up ... both songs for a short while can be at similar 'relatively high' levels".
+  - **New runner feature: `center_hold_beats` on a transition** (`hands/run_mix_plan.py`: `center_hold_fraction`, `held_fader_position`; tests in `tests/test_center_hold.py`).
+    - In Mixxx's additive crossfader mode (Ernest's `xFaderMode 0`), both decks play at full gain at center. The fader ramps to center, holds there, then ramps out.
+    - The hold is clamped so the two ramps still total at least 16 beats (gentle faders).
+  - **Candidate L-b** (`mix_plan.10-21-L-b.json`, sha 273fc2838ec9, `fixes1021/swv4b.py`) is L with #4 as a 64-beat blend from 384 to 448 with a 32-beat hold.
+    - The remix stays at −13 dB right up to 286 s.
+    - The two songs summed at full peak at about +4.5 dBFS offline (ignoring Mixxx gain), so watch the master clip light.
+  - **L-b #4 overshot.** Ernest: "dial it back a little more so we respect the artist verses respectively".
+    - Vocal map (`fixes1021/vocals.py`, REPET-SIM foreground energy per bar): the remix's lead and rap run to about beat 391, then only chant hooks every 16 beats. "I'm So Into You" is instrumental from its cue (16) to 47, has an ad-lib at 48–55, and its verse starts at 64.
+    - **Candidate L-c** (`mix_plan.10-21-L-c.json`, sha 5684211422c2, `fixes1021/swv4c.py`): 48 beats from 400 to 448 with a 16-beat hold, so the remix is gone when Into You's verse starts. The dry run passes. Not heard yet.
+  - L-c #4: "just slightly too long". **Candidate L-d** (`mix_plan.10-21-L-d.json`, sha 5d0d323be424, `fixes1021/swv4d.py`) keeps the same start (400) and the same 16-beat ramps, with the hold cut 16 → 12. That's 44 beats, 400 to 444. The dry run passes. Not heard yet.
+  - **Ernest's audition of L-d, 2026-10-21:**
+    - **#4 accepted** ("a 4 is good, accept"). It's locked in transitions.json (44 beats, fade at 400, cue 16, `center_hold_beats` 12) and recorded as a DJ note overlay on the remix.
+    - **#5** "I'm So Into You" → "Be With You": the pairing is liked. "Blend just slight longer."
+    - **#202, #203, #231, #233, #234 all rejected:** "pairing doesn't work … the energy or tempo in a subjective meaning (not BPM) isn't matching". The drum-feel numbers (`groove.py`) don't capture his sense of energy, so don't place songs by them alone.
+  - **Candidate M** (`mix_plan.10-21-M.json`, sha 42a74d4c63e8, `fixes1021/buildM.py`) is live J with only the approved opening:
+    - #4 from L-d, and #5 at 36 beats (one bar added at the end; same start, 320, and same alignment).
+    - Sorry, Say I, Would You Mind and So Sexual are left out of vol-02. They stay in the library and in `playlist.json`.
+    - 266 tracks, 800 events, dry run passes. 260 of 265 transitions are J's byte for byte. Of the 23 approved pairs, 22 are unchanged plus the newly locked #4.
+    - Pairs no longer adjacent: SWV → Sorry (overruled by Ernest), Sorry → Say I (Sorry is out), and Babyface → D'Angelo (displaced by Smokey since J).
+    - Waiting on Ernest's call on the four songs.
+  - **Known gap:** the six J inserts' first seams (#82, #104, #152, #157, #211, #223) kept the neighbour's live fade (`trust_ride_beats`) with no count check.
+- **LIVE 2026-10-20 08:08: candidate J** (rev e65f6e1d4b12) = I plus six songs Ernest added in #curate, hand-spliced with no Build. Ernest ran the install. 270 tracks; `run_mix.sh --dry-run` passes with 812 events.
+  - Backup: `~/.openclaw/workspace/Data/claw-dj-backups/rnb-cooldown-mix-vol-02/mix_plan.2026-10-20_080805.before-10-20-J.json`.
+  - Method (scratchpad `fixes1020/`):
+    - `mini.py` composes [A, new, B] with A's live cue and fade anchor pinned (`trust_ride_beats`) and B's cue pinned;
+    - `splice9.py` splices in the new cue, body and both blends, and re-fits B to keep its anchor.
+  - Placements: #82–83 Ditch That...; #104–105 Micheal; #152–153 Walkin' on the Moon; #157–158 Falsetto; #211–212 Smokey "Cruisin'" before D'Angelo's (Ernest's request); #223–224 Ghetto.
+  - Level fixes, measured with `fixes1020/levels.py`, all in whole bars:
+    - fades start earlier: Smokey −48 grid beats (its album fade starts about 336 s), 112 Intro −32, Nasty Girl −16, Ditch That −16, Micheal −16;
+    - cues start later: Paper Doll 64, Walkin' 32, Majid Jordan "You" 32 (its first 12 s are at −35 dB).
+  - This replaces the approved Babyface → D'Angelo 64-beat pair; its override stays in transitions.json. Watch #104/#105 (Micheal's grid is unverified) and #211/#212 (Smokey's grid is double-time 168). Nothing has been heard yet.
+  - Numbers from #82 on shift. Candidate H's EOTR → Keith Sweat → Violet re-pair would now be #39/#40/#94.
+- **LIVE 2026-10-20 07:31: candidate I is now `brain/data/plans/rnb-cooldown-mix-vol-02/mix_plan.json`** (rev 3f41321b55c6). Ernest asked for it before auditioning, and ran the install himself, because Claude Code's auto mode blocked overwriting the live plan. `run_mix.sh --dry-run` passes with 794 events.
+  - Backup: `~/.openclaw/workspace/Data/claw-dj-backups/rnb-cooldown-mix-vol-02/mix_plan.2026-10-20_073155.before-10-19-I.json`.
+  - Fixes from the 2026-10-19 stream notes (scratchpad `fixes1017/splice8.py`):
+    - **#1 Simply Red → Hey Lover:** Boyz II Men "Hey Lover" moved from #192 to be the bridge. The blend is unsynced, over Hey Lover's soft 32-beat intro.
+    - **#2 Hey Lover → Shanice:** synced; both are in C minor, measured in phase.
+    - **#3 Shanice → SWV "You're The One":** Shanice ride −1 grid beat (anchor 599). Her grid is double-time (187.88), and the snares were an 8th note apart.
+    - **#4 SWV → SWV "I'm So Into You":** ride −2 (anchor 419); best lag 0 ms.
+    - **#6 Sorry → Say I:** Sorry ride −16 (anchor 281). The blend now runs 168.6–187.8 s, before Sorry's own outro drops 8 dB. Say I is cued at beat 32 (19.569 s), after its quiet intro. There was never a cut.
+    - **#192 112 "Stay with Me" → Joe "If I Was Your Man":** unsynced, over Joe's drumless intro.
+  - **Transition numbers #2–#191 are one higher than before.** Candidate H's #38/#39/#91 re-pair was built on the old plan. If it's approved, it has to be re-spliced onto this one as #39/#40/#92.
+  - DJ-note overlays record the reasons (Sorry's outro, Say I's intro, Shanice's double-time grid, Hey Lover's intro). The journal action is `ear_fixes_2026-10-19`. There are no approvals or locks yet: Ernest auditions `a 1; a 2; a 3; a 4; a 6; a 192`.
+- #202 echo-out rejected.
+
+**Candidate C:** `~/.openclaw/workspace/Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/mix_plan.10-17-C.json`, built by scratchpad `fixes1017/splice2.py` from A.
+- Re-pairs:
+  - "Sorry" now sits between SWV "I'm So Into You" (#5, +126 ms measured) and Christina Milian "Say I" (#6, unclear read, no nudge).
+  - Turn My Back → Bee Gees "How Deep Is Your Love" (#202, +6 ms).
+  - Baby now sits between Majid Jordan "Small Talk" (#217, Small Talk −1 beat) and "Pacifico" (#218, Baby +1 beat). Both are now 0 ms in every band.
+  - R. Kelly → Jealous (#220, −250 ms nudge).
+  - 112 "Someone to Hold" → Babyface "Two Occasions [Live]" (#207, unsynced ballad blend over Babyface's drumless intro).
+  - Babyface → Cruisin' (#208, 0 ms).
+  - "Dip It Low" → Blaque (#133, double-time grid, unverified).
+- #35 is back to its pre-10-15 32-beat blend as a placeholder ("likely poor fit"; still needs a re-pair).
+- 254 of 264 transitions are unchanged and the locked pairs are intact.
+- Approved numbers in C: #83, #135–138, #144, #149, #212, #213, #215.
+- Tests: full suite 659 with only the 4 known failures.
+- None of C has been heard yet.
+
+## Resume a long mix: `run_mix.sh --start-at N` (2026-10-17, commit 3e4d2ea)
+
+- `./scripts/run_mix.sh --start-at N` (also `hands.run_mix_plan --start-at N`) resumes at transition N, using the audition tool's numbering. N's outgoing song plays from its cue on its usual deck, the other deck gets what the full mix would have loaded there, and the rest of the plan runs unchanged.
+- That song's ride gets the beats of its skipped incoming blend added back, so it exits on its planned beat. A planned skip handoff is adjusted the same way, and a bridge tempo (`incoming_bpm_target`) is applied at start.
+- Dry-run checked on vol-02 at #86 (Prince held at 106.51), #152 and #255 (the song loaded during a skip handoff). It refuses explicit performances.
+- The same commit includes `incoming_nudge_ms` (see the 2026-10-15 ear-fix section).
+
+## Two "Betcha By Golly, Wow" versions inserted into vol-02 without a rebuild (2026-10-16)
+
+- Ernest added 2 songs to `rnb-cooldown-mix-vol-02` (the other 7 he listed were already in the plan). He chose to insert them into the existing plan, not to press Build, because Build overwrites `mix_plan.json` without archiving and would drop the 2026-10-15 ear fixes and the approved transitions.
+- New order: Gino Vannelli "I Just Wanna Stop" → The Stylistics "Betcha By Golly, Wow" → Prince "Betcha By Golly Wow" (Emancipation) → "Her (Majid Jordan Edit)". These are #98–#100. Every later transition number is +2: the approved #133–136, #142 and #147 are now #135–138, #144 and #149; the liked Flawless → Oh Sheila is #151.
+- The new events came from `compose_mix_plan` on just those four songs, with the `mix-to-listen` profile, 85 s, and Gino's and Her's cues pinned. Gino's fade start (beat 469) is the same as before. Her plays 259 → 267 beats because her entry is now 24 beats, so her fade start (beat 292) is unchanged.
+- Stylistics → Prince and Prince → Her are `key_adjusted_blend` (±1 semitone only during the overlap).
+- Verified: 260 of 263 old transitions are byte-identical, including every approved, fixed and liked one. The live plan validates, and `scripts/run_mix.sh --dry-run` gives 266 tracks, 800 events, exit 0. Journal action `insert_tracks`.
+- Backup: `~/.openclaw/workspace/Data/claw-dj-backups/rnb-cooldown-mix-vol-02/mix_plan.2026-10-16_080843.before-betcha-insert.json`. Not auditioned yet.
+- The plan reports "stale" in the editor (it already did before this edit). Do NOT press Build on vol-02 unless Ernest accepts losing the hand edits.
+- Not a bug (checked 2026-10-17): "The Suite Theme" → "…Til The Cops Come Knockin'" says from_deck 1 because Suite Theme does a planned skip_handoff (deck 2 → a second copy on deck 1 at 360 s → 725 s; Til The Cops then loads on deck 2).
+- The #151 (old #149) 48-beat Flawless → Oh Sheila candidate was rebuilt on top of the new plan; it is still only a candidate, not live: `~/.openclaw/workspace/Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/mix_plan.149-longer-blend.json`.
+
+## Named pitch-play experiment prepared (2026-10-16)
+
+Ernest created/switched `experiment-play-cues-like-notes-01`, selected Alicia
+Keys (Diary studio album) and Beyoncé Upgrade U (B Day deluxe), and explicitly
+authorized edits to this experimental plan. Selection preserved; scoped source/
+destination/transition prose saved through revision-checked plan CLI, not globals.
+`brain/data/plans/experiment-play-cues-like-notes-01/authoring/play_cues_like_notes.py`
+resolves those selected recordings and delegates to the existing first-scope
+pitch wrapper. `--mode repeats|steps`, dry by default, explicit `--live`; README
+beside it has exact commands. Source cue 0–2s remains an unverified technical
+candidate; note clock 85, native recording rate unchanged. No Beyoncé playback
+or finished transition. Five synthetic wrapper cases and both real-source dry
+runs pass, no connection/audio. GUI stale is `missing_mix_plan`; generic Build
+still does not compile pitch notes. Do not mislabel a generic build as the
+experiment. No live run initiated. Next: Ernest runs repeats then steps, tunes
+cue, reports sound; integrate only after the musical phrase is reviewed.
+
+## Pitch-play first scope approved + executable (2026-10-15)
+
+Ernest: “approve first scope I approve”. `python -m hands.pitch_play` now offers
+connection-free dry-run and explicit `--live`, original indexed source/time cue,
+current hard-note/hash checks, empty reserved deck/all decks stopped/AutoDJ off,
+native source guard, absolute semitone notes and eject/restore lifecycle.
+Rust `pitch_play.rs` schedules with absolute monotonic deadlines and aborts late
+attacks. No saved hotcue edits, renders, tags, Mixxx rebuild or generic-plan changes.
+Release CLI built. **No real playback/audio capture/listening test run.**
+Usage, exact Alicia studio source path, limitations and evidence:
+`docs/PITCH_PLAY_EXPERIMENT.md`. 18 new Python + 8 Rust unit + 3 Rust CLI tests
+pass. Existing selected Python suites: 46 pass; Rust workspace: 46 pass; format,
+Clippy -D warnings, prompt structural checks and diff checks pass. Broader existing
+performance suites: 29/31 pass, errors in stale plan fixture (`selection`) and
+FFmpeg missing soxr (not changed). Real-source dry-run succeeds.
+PDD apply captured durable intent then timed out in architecture processing;
+scoped prompt/architecture/story/code/tests maintained directly. No generated
+contract or semantic certification claimed. Next: human-run live cue audition,
+then known-tone capture before claiming audible/reference success.
+
+## Pitch-play reference intake (2026-10-15)
+
+Numark / @dj_ktime TikTok 7671346273600998686 archived outside Git in
+`Data/Public/Videos/TikTok/` with descriptive MP4 name, caption, lossless audio
+stream extraction, decoded WAV, exact timestamped frames, contact sheets and
+local `index.html` viewer. Hash/packet checks and full media decodes pass.
+See `docs/PITCH_PLAY_RESEARCH.md` and proposed epic `docs/requirements/pitch-play.md`.
+Mixxx source already includes Roland DJ-505 pitch play (pitch_adjust + hotcue);
+no DSP rewrite/rebuild indicated for the MVP. Exact note score, bar count and
+original-source cue remain unverified. No live controls or product code changed.
+DJ tags/shoutouts are excluded from imitation/parsing intent; originals preserved.
+PDD intent planned locally (`pitch-play-original-user-request-2026-10-15-49f842d4`);
+apply/story/contract/regression implementation waits for meaning-level approval
+of the bounded monophonic original-source experiment. Existing loop story unchanged.
+
+## Ear fixes to rnb-cooldown-mix-vol-02 + millisecond nudge (2026-10-15)
+
+From Ernest's live notes (`docs/transition-log-2026-10-15.md`). Hand edits to `mix_plan.json` (a rebuild would discard them); backup in `~/.openclaw/workspace/Data/claw-dj-backups/rnb-cooldown-mix-vol-02/`; journal action `ear_fixes`. Approved transitions #82, #133-136, #142, #147 unchanged.
+- #24 Feenin' -> Highway: fade 2 grid beats later (592 -> 594). #25 Highway -> Keith Sweat: Keith cue 16 -> 18 (his first kick), his ride -2. #49 4 Seasons -> Whatever U Want: 441 -> 442. #62 How Soon -> Player: 333 -> 332.
+- #85 Night Fever -> Prince: Prince's intro plays ~117.15 BPM on a 114.5 grid; `incoming_bpm_target` 106.51 + `incoming_nudge_ms` 100.
+- #35 A Place Like This -> More & More: echo-out exit on Majid's breakdown, More & More cue 0 -> 2 (its count 1), its ride +26.
+- Shared cause of the "off by 1 count" notes: half-time grooves on double-tempo grids (one snare per 4 grid beats) on BOTH songs. The odd/even snare test cannot tell kick from snare there, and the 2x double-time check does not fire. Build fix (snare position in the bar, not parity) is NOT done yet.
+- Runner: new transition field `incoming_nudge_ms` (`nudge_incoming`, ±250 ms, quantize off for the seek), applied after sync / snare_align. 2 tests in `tests/test_mix_runner.py`.
+- DJ notes written (library prose, no directives): Love U 4 Life -> 112 Intro approved; fixes 24/25/49/62 recorded as "not yet heard by ear".
+- None of these fixes has been auditioned yet.
+
+## Double-time grids: blends land on the real beats (2026-10-15)
+
+Ernest, live: Shanice "I Love Your Smile" -> SWV "You're The One" came in "off by 1 count".
+- Cause: Mixxx grids Shanice at 187.88 BPM, twice her tempo, and her grid beat 0 is an off-beat "and". Build's odd/even snare test then compares on-beats with off-beats, called the blend "matched", and started SWV on grid beat 600, an off-beat.
+- Scale: 23 of 262 blends in rnb-cooldown-mix-vol-02 pair a double-time grid with a normal one. A read-only re-measure: 13 of the 14 clearly readable ones were off (9 an eighth note off, 4 snare on kick), 9 unreadable.
+- Fix (`brain/onset_analysis.py`, `brain/build_mix_plan.py`):
+  - `measure_real_beats` reads the double-time song at half tempo from grid beat 0 and from grid beat 1; the real beats are where kick and snare alternate strongly (Shanice: 0.95 vs 0.13). Cached in the new `real_beat_windows` table.
+  - `double_time_shifts` starts the blend on a real beat with the snares together: outgoing double-time shifts the ride (Shanice -> SWV: anchor 600 -> 601); incoming double-time moves its cue one grid beat (never a `trust_cue_seconds` cue).
+  - Unclear or missing reads say `unverified`, not `matched`. No `snare_align` on these pairs. Each records `backbeat.double_time`.
+- Prompt 12c, story criterion 7, `tests/test_double_time_grid.py` (9).
+- Next: rebuild vol-02 to apply it (the current plan file predates the fix), then listen to the 23 mixed-grid blends. A longer-term fix is correcting those 25 grids in Mixxx (halve, and move beat 0 onto a real beat).
+
 ## Live transition audition in Mixxx; render preview deprecated (2026-10-14)
 
 Ernest: "I'd rather have Live in Mixxx and see about 'sunsetting' the render
@@ -2748,3 +3533,7 @@ uv run python -m brain.plan_cli status --json       # staleness read
 - Verse cuts must NOT beatsync (phase-pull fights the lyric cue).
 - LRCLIB lyric cache entries predating 2026-07-13 lack `synced_lyrics`;
   timeline builder force-refetches those once.
+
+## 2026-10-22 — next pairing audition, Sorry (unheard)
+
+Live vol-02 is still M, SHA `42a74d4c63e855c3a12474083859d3b5dc63ce8cad68e8d299858c9f6185bdbe`; Janet N is approved but not installed. Prepared private `Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/audition.10-22-sorry-pacifico-ghetto.json`: Pacifico → Sorry → Ghetto, two 32-count gentle standard blends, native pitch, no filter exit/inferred snare jump. Sorry cue exactly 0:00, outgoing fade 166.209–185.409s to avoid its quiet outro. Pacifico cue/fade anchor and Ghetto cue pinned. Timing pins are not human approval; energy/vibe, vocal overlap, harmonic fit and count alignment remain unheard. No model review requested. Full mini and both audition dry-runs plus fake-control real-runner execution/cleanup passed, real sockets forbidden. No live playback/install, plan/playlist/note/lock mutations or commits. Source and checks retained privately; keep one audition/verdict round at a time. SWV → 112 at 36 counts still awaits ear.
