@@ -145,7 +145,7 @@ function initialize() {
       </div>
       <div class="arrange-state ${snapshot.stale ? 'is-stale' : ''}">
         <span><strong>${snapshot.stale ? 'Stale' : 'Current'}</strong>${changed.length ? ` · changed: ${escapeHtml(changed.join(', '))}` : ''}</span>
-        <span>Artifact: ${artifact ? `v${escapeHtml(artifact.version)}${artifact.profile ? ` · ${escapeHtml(artifact.profile)}` : ''}` : 'not built'}</span>
+        <span>Artifact: ${artifact ? `v${escapeHtml(artifact.version)}${artifact.profile ? ` · ${escapeHtml(typeof artifact.profile === 'object' ? (artifact.profile.name || '') : artifact.profile)}` : ''}` : 'not built'}</span>
         <span title="${escapeHtml(snapshot.rev)}">Revision ${escapeHtml(snapshot.rev.slice(0, 12))}</span>
         <span>${Object.keys(snapshot.revs || {}).length} source revisions</span>
       </div>
