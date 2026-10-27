@@ -311,6 +311,21 @@ class RunAuditionTests(TestCase):
         self.assertIn("transition 2 of 3", output.getvalue())
         self.assertIn("held at 101.00 BPM", output.getvalue())
 
+    def test_cli_nudge_override_reaches_the_run_but_not_the_plan_file(self, _prepare) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "mix_plan.json"
+            path.write_text(json.dumps(make_plan()))
+            before = path.read_text()
+            output = io.StringIO()
+            with redirect_stdout(output), patch("hands.audition_transition.run_audition", return_value={}) as run:
+                code = audition.main(["--plan", str(path), "--transition", "2", "--nudge-ms", "-120", "--dry-run"])
+            ran_plan = run.call_args.args[0]
+            transitions = [e for e in ran_plan["events"] if e["op"] == "transition"]
+            self.assertEqual(code, 0)
+            self.assertEqual(transitions[1]["incoming_nudge_ms"], -120.0)
+            self.assertEqual(path.read_text(), before)
+            self.assertIn("nudge for this run: -120 ms", output.getvalue())
+
 
 class RunningProcessTests(TestCase):
     def test_finds_live_runners_but_not_dry_runs_or_own_launcher(self) -> None:

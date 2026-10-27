@@ -80,7 +80,9 @@ class BuildUsesBlendWindowTest(unittest.TestCase):
 
         body = _build(reader)
         backbeat = body["backbeat"]
-        self.assertEqual(backbeat["status"], "matched")
+        # the two parities disagree, so +1 and -1 both match the snares and
+        # the bar count is a guess (bar_count_guessed, 2026-10-21)
+        self.assertEqual(backbeat["status"], "bar_guessed")
         self.assertIn("blend-window read", backbeat["reason"])
         self.assertTrue(backbeat["blend_window"]["out"]["flipped"])
         self.assertFalse(backbeat["blend_window"]["in"]["flipped"])

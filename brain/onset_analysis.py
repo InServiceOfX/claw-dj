@@ -320,6 +320,138 @@ def prefer_blend_window(song_wide: dict, window: dict | None) -> tuple[dict, boo
     }, True
 
 
+# Double-time grids (2026-10-15). Mixxx sometimes grids a ~94 BPM song at
+# ~188, so every grid beat is an eighth note. Found live: Shanice "I Love
+# Your Smile" (187.88) -> SWV "You're The One" (94.0) came in off by a count.
+# On such a grid the odd/even test above compares on-beats with off-beats,
+# not kick with snare, and grid beat 0 can sit on an "and": Shanice's real
+# beats are her ODD grid beats, and Build started SWV on an even one.
+# A pair is mixed when one grid counts about twice as fast as the other.
+DOUBLE_TIME_RATIO = (1.8, 2.2)
+# Window in grid beats: 64 real beats on a double-time grid.
+REAL_BEAT_WINDOW_BEATS = 128
+# Trust the real-beat read only when one starting position clearly wins.
+REAL_BEAT_MARGIN = 0.15
+
+
+def double_time_side(outgoing_bpm: float | None, incoming_bpm: float | None) -> str | None:
+    """'out' or 'in' when that side's grid counts twice per beat of the other."""
+    if not outgoing_bpm or not incoming_bpm:
+        return None
+    ratio = float(outgoing_bpm) / float(incoming_bpm)
+    low, high = DOUBLE_TIME_RATIO
+    if low <= ratio <= high:
+        return "out"
+    if low <= 1.0 / ratio <= high:
+        return "in"
+    return None
+
+
+def _alternation(per_beat: dict[int, float]) -> tuple[int, float]:
+    """(parity of the accented beats, how strongly they alternate)."""
+    beats = sorted(per_beat)
+    if len(beats) < MIN_BEATS_FOR_PARITY:
+        return 0, 0.0
+    values = np.array([per_beat[b] for b in beats], dtype=float)
+    values -= values.mean()
+    signs = np.where(np.array(beats) % 2 == 0, 1.0, -1.0)
+    component = float(np.dot(values, signs))
+    spread = float(np.sum(np.abs(values)))
+    if spread <= 0:
+        return 0, 0.0
+    return (1 if component < 0 else 0), abs(component) / spread
+
+
+def measure_real_beats(
+    path: str, *, bpm: float, first_beat_seconds: float, start_beat: int,
+    beats: int = REAL_BEAT_WINDOW_BEATS, sr: int = DEFAULT_SR,
+) -> dict:
+    """Find the real beats and the snare on a double-time grid.
+
+    Reads the drums at half the grid tempo twice: once counting from grid
+    beat 0, once from grid beat 1. Counted on the real beats, kick and snare
+    alternate strongly; counted on the "and"s, they barely do. Shanice's
+    blend window reads 0.95 from grid beat 1 and 0.13 from grid beat 0.
+
+    Returns {"beat_phase": grid-beat parity of the real beats,
+    "snare_parity": parity of the snare in real-beat index r, where grid
+    beat = 2r + beat_phase, "confidence", "other_confidence"}.
+    """
+    beat_seconds = 60.0 / float(bpm)
+    offset_seconds = float(first_beat_seconds) + start_beat * beat_seconds
+    y = load_audio(path, sr=sr, max_seconds=beats * beat_seconds, offset_seconds=offset_seconds)
+    y = librosa.effects.percussive(y, margin=2.0)
+    envelope, hop_length = snare_band_onset_envelope(y, sr)
+    reads = []
+    for phase in (0, 1):
+        per_beat = per_beat_energies(
+            envelope, sr=sr, hop_length=hop_length, bpm=float(bpm) / 2.0,
+            first_beat_seconds=float(first_beat_seconds) + phase * beat_seconds,
+            envelope_start_seconds=offset_seconds,
+        )
+        parity, confidence = _alternation(per_beat)
+        reads.append((confidence, phase, parity))
+    (confidence, phase, parity), (other, _, _) = sorted(reads, reverse=True)
+    return {
+        "beat_phase": phase,
+        "snare_parity": parity,
+        "confidence": round(confidence, 3),
+        "other_confidence": round(other, 3),
+    }
+
+
+def trust_real_beats(read: dict | None) -> bool:
+    """A real-beat read is usable when it is sure and one position clearly wins."""
+    if not read:
+        return False
+    confidence = float(read.get("confidence") or 0.0)
+    return (
+        confidence >= BLEND_WINDOW_GATE
+        and confidence - float(read.get("other_confidence") or 0.0) >= REAL_BEAT_MARGIN
+    )
+
+
+def double_time_shifts(
+    *, side: str, outgoing_anchor_beat_index: int, incoming_cue_beat_index: int,
+    outgoing_read: dict, incoming_read: dict,
+) -> tuple[int, int]:
+    """(outgoing ride shift, incoming cue shift), both in that deck's grid beats.
+
+    `side` is the double-time deck. Its read carries "beat_phase" and the
+    snare parity in real beats; the other read is an ordinary snare read.
+
+    Outgoing double: the incoming enters on grid beat A of the outgoing, and
+    every incoming beat after it lands two outgoing grid beats later. A must
+    be a real beat (A = 2r + phase), then the usual snare + bar-count rule
+    applies in real beats. Incoming double: its cue moves one grid beat onto
+    a real beat when needed, then the rule applies to its real-beat index.
+    """
+    anchor, cue = int(outgoing_anchor_beat_index), int(incoming_cue_beat_index)
+    if side == "out":
+        phase = int(outgoing_read["beat_phase"])
+        best = None
+        for fix in ([0] if (anchor - phase) % 2 == 0 else [-1, 1]):
+            real = count_shift_beats(
+                outgoing_snare_parity=int(outgoing_read["snare_parity"]),
+                outgoing_anchor_beat_index=(anchor + fix - phase) // 2,
+                incoming_snare_parity=int(incoming_read["snare_parity"]),
+                incoming_cue_beat_index=cue,
+            )
+            total = fix + 2 * real
+            if best is None or abs(total) < abs(best):
+                best = total
+        return best, 0
+    phase = int(incoming_read["beat_phase"])
+    cue_shift = 0 if (cue - phase) % 2 == 0 else 1
+    shift = count_shift_beats(
+        outgoing_snare_parity=int(outgoing_read["snare_parity"]),
+        outgoing_anchor_beat_index=anchor,
+        incoming_snare_parity=int(incoming_read["snare_parity"]),
+        incoming_cue_beat_index=(cue + cue_shift - phase) // 2,
+    )
+    return shift, cue_shift
+
+
 def agree_on_parity(windows: list[dict], *, gate: float, min_agreeing: int = 2) -> dict | None:
     """Combine per-window reads without inflating confidence.
 
@@ -420,6 +552,10 @@ def count_shift_beats(
     anchor is off by an odd count), the measured parity is trusted and the
     bar assumption is dropped. Returns a shift in {-1, 0, 1, 2}.
 
+    This is legacy arithmetic, NOT a verified musical downbeat detector.
+    Callers must check bar_count_guessed before applying its result; the
+    planner withholds ambiguous corrections rather than choosing +1 by fiat.
+
     Added after live feedback 2026-07-19: parity-only alignment left two
     transitions entering on the wrong count ("just make sure the counts
     match") even though kick/snare parity was correct.
@@ -433,6 +569,38 @@ def count_shift_beats(
     if mapped % 2 == parity_shift % 2:
         return mapped
     return parity_shift
+
+
+def bar_count_guessed(
+    outgoing_snare_parity: int,
+    outgoing_anchor_beat_index: int,
+    incoming_snare_parity: int,
+    incoming_cue_beat_index: int,
+) -> bool:
+    """True when `count_shift_beats` had to drop the bar assumption.
+
+    Then one grid's beat 0 is not count 1, and +1 and -1 both match the
+    snares: one lands count 1 on count 1, the other lands it on count 3.
+    `count_shift_beats` always picks +1, so the count is a coin flip.
+    Found 2026-10-21: 99 of 269 vol-02 blends took this branch, including
+    SWV "You're The One" remix -> "I'm So Into You" (+1 to beat 421) and
+    four of the six "off by 1 count" blends from 2026-10-15. The pilot
+    suggested 419, but Ernest later rejected BOTH 419 and 421 and approved
+    the 420 bar phase (subsequently a longer blend beginning at 400).
+    A count-1 detector (kick, snare and chord changes
+    folded per beat-in-bar) agreed with Ernest's ear on only 9 of 14
+    approved blends, so the planner cannot resolve the flip yet. It marks
+    the blend "bar_guessed" so the listener knows to check the count.
+    Since 2026-10-23 the planner also withholds the guessed shift and any
+    inferred snare jump; the label alone was not an execution safeguard.
+    """
+    parity_shift = phase_shift_beats(
+        outgoing_snare_parity, outgoing_anchor_beat_index,
+        incoming_snare_parity, incoming_cue_beat_index,
+    )
+    bar_shift = (incoming_cue_beat_index - outgoing_anchor_beat_index) % 4
+    mapped = bar_shift if bar_shift <= 2 else bar_shift - 4
+    return mapped % 2 != parity_shift % 2
 
 
 def main() -> None:

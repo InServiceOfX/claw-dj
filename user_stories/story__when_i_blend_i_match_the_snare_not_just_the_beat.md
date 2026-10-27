@@ -60,7 +60,16 @@ lock.
    Example (rnb-cooldown-mix-vol-02, 2026-10-13): New Edition *If It Isn't
    Love* → Cassie *Miss Your Touch* — the song-wide read said "matched", but
    4:47 into If It Isn't Love the snare sat on the other beats.
-7. **Example (heavy-rotation-vol-1, 2026-09-02/03).**
+7. **Count real beats on a double-time grid.** When Mixxx grids one song
+   at twice its tempo, each grid beat is an eighth note and grid beat 0
+   can be an off-beat "and". Build finds that song's real beats and
+   starts the blend on one, with the snares together; if it cannot tell,
+   the blend says unverified rather than matched.
+   Example (rnb-cooldown-mix-vol-02, 2026-10-15): Shanice *I Love Your
+   Smile* (gridded 187.88) → SWV *You're The One* (94.0) came in off by
+   a count. Shanice's real beats are her odd grid beats; Build started
+   SWV on grid beat 600, an off-beat. It now starts on 601.
+8. **Example (heavy-rotation-vol-1, 2026-09-02/03).**
    Chris Brown *Wall to Wall* → Lloyd Banks *On Fire (Feat. 50 Cent)*:
    beats locked, snares did not. An agent moved On Fire’s cue 0.29→0.92
    (one beat later) and kept 308/180. Live listen: still off by one, and
@@ -100,3 +109,9 @@ is "near perfect", with at most one or two misses out of hundreds of
 transitions — asked whether Build could find those. A read-only re-measure
 at every blend window flagged two clear flips where the song-wide read had
 said "matched"; Build now uses the blend-window read when it is sure.
+
+Ernest, 2026-10-15, live: Shanice → SWV "off by 1 count … again snare or
+backbeat mismatch by 1 beat. Please fix and determine and resolve why
+original build mix plan did not fix this." Cause: a double-time grid on
+one side. 23 of 262 blends in the set pair a double-time grid with a
+normal one; a re-measure found 13 of the 14 clearly readable ones off.

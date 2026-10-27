@@ -74,6 +74,15 @@ a bigger one.
 
 ## 4. Echo out — effect tail as the exit ramp
 
+> **Superseded for claw-dj, 2026-10-17.** Ernest heard an agent's 4-beat
+> echo-out "fix" (Sade "Turn My Back" → "Sorry"): "I hate the sharp cut off
+> of Sade's song. DO NOT DO THAT." An echo-out is an abrupt cut-off. It is
+> **not** the answer to a tempo gap or to a pair that won't blend; re-pair
+> or reorder instead. It plays only when Ernest asks for one, with his
+> `abrupt_reason`, to highlight a drop or for pitch-play work. See
+> `user_stories/story__never_end_a_song_with_an_abrupt_cut_off.md`. The
+> text below is the original video research.
+
 Feed a beat-synced echo for one beat, pull the dry volume fader down on the
 next beat, and leave the post-fader effect routed while its tail rings under
 the clean incoming track — even into a **breakdown** rather than a drop, for
@@ -132,7 +141,7 @@ have, play that record next (their example: In Da Club, landing on
 | Long blend        | standard/smooth_blend (+EQ seasoning)  | add a true volume-only `plain_blend` |
 | Bass swap         | `bass_swap` move (instant, midpoint)   | make it a gradual ramp |
 | Drop mix          | `entry_style=beat_drop`                | "drop-to-drop" variant: exit at build end, enter at drop |
-| Echo out          | **missing as an exit**                 | build `echo_out` exit for large tempo gaps |
+| Echo out          | `echo_out_exit` (built)                | only on Ernest's request with `abrupt_reason`; never for tempo gaps (2026-10-17) |
 | Crossfader cut    | `transformer_cut` flourish             | none — sparingly rule already enforced |
 | 32-beat phrasing  | `phrase_beats=32`, boundary math       | none — keep honoring it |
 

@@ -26,10 +26,13 @@ the middle.
 3. **Explicit exemptions only.** Only these may move faster, and only when
    marked in the code or plan:
    - beat juggling;
-   - deliberate on-beat cuts;
-   - platter, echo and filter exits;
    - same-song handoffs of identical material (short 4-beat blends were
-     approved there).
+     approved there);
+   - an on-beat cut or a platter, echo or filter exit, **only when Ernest
+     deliberately asks for one**, with his reason recorded. Amended
+     2026-10-17: these are abrupt cut-offs and are never a fix for a pair
+     that won't blend. See
+     `user_stories/story__never_end_a_song_with_an_abrupt_cut_off.md`.
 
    An exemption is never the default, and its reason is written next to it.
 4. **Builder floor.** The plan builder never schedules a blend shorter than
@@ -63,6 +66,8 @@ the middle.
   travel per 16 counts.
 - Do not lower the minimum or add an exemption to get a script running.
   Lengthen the move instead.
+- Do not swap a blend that doesn't fit for an echo-out, cut or brake. Re-pair
+  instead (2026-10-17).
 - Do not leave the rule only in instructions. The code must refuse.
 
 ## Source

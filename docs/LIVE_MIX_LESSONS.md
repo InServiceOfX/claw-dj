@@ -9,6 +9,20 @@ Hermes, ...). Each lesson cost at least one "that doesn't sound right".
 
 ## Working with Ernest on a mix
 
+**Pairing comes before timing repair (Ernest, 2026-10-21).** He kept Robin
+Thicke *Sex Therapy* → Janet Jackson *Would You Mind* → Jesse Powell *You*
+because both handoffs match in **energy and vibe**, "more of a feel". This is
+distinct from hearing/confirming count 1, backbeat or snare alignment. Shared
+key, grid BPM, drum share and technical scores cannot establish that musical
+fit, and a quiet-intro prediction cannot overrule a handoff he has heard and
+liked. First choose neighbours whose felt pace, vocal character, density and
+mood belong together; then work on their timing and vocal space. Ernest
+reaffirmed this on 2026-10-22, keeping Pacifico → Sorry → The-Dream Ghetto
+for complementary energy, vibe and **percussion themes** that sound pleasant,
+without claiming perfect beat/backbeat matching. Record which
+kind of approval was actually given. Preserve approved musical decisions when
+refining other seams; do not force a rejected pair to work with cuts or nudges.
+
 1. **Audition one piece, live, before touching the full mix.** Write a short
    flagged script (`docs/LIVE_MINI_EXPERIMENTS.md`). Ernest runs it in his own
    terminal and reports what he hears. Failed ideas are useful; keep their
@@ -43,6 +57,23 @@ Hermes, ...). Each lesson cost at least one "that doesn't sound right".
 4. **Time events from each deck's play position,** never from timers or beat
    counters. Count loop passes from the deck's own wraps: a timed release let
    one pass too many through.
+5. **A "half-a-count-off" blend is often grid drift, not a wrong count.**
+   Sade *Cherry Pie* (vinyl rip, live drummer) → *Paradise*, approved
+   2026-10-17. Both grids were "right", but in the blend window Cherry Pie's
+   hits came about 100 ms early and Paradise's about 40 ms late. That's 140 ms
+   apart, close to a sixteenth note, and Ernest heard it as "off by an eighth
+   note plus a little". The fix was a +140 ms incoming nudge. No new count,
+   order or cut was needed. How to handle it:
+   - Measure each song's real hits against its own grid, **in the blend
+     window**. A live or vinyl record wanders, so a reading from elsewhere
+     in the song doesn't hold.
+   - Nudge the incoming by the difference.
+   - Check the runner's `measured lead … ms after sync` line. Mixxx's
+     quantize used to snap the nudge back without anyone noticing.
+   - Two syncopated songs can blend well if their backbeats really line up.
+     Here both were the same band and key at about 99 BPM.
+   - When one side has no steady backbeat in that window (*Sorry*'s intro),
+     there's nothing to line up. Re-pair instead.
 
 ## Pitch
 

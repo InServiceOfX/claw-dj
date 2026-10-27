@@ -9,8 +9,8 @@ play, aiming for a varied, ambitious showcase.
 Every pick is validated; anything illegal falls back to the rotation:
 * only catalog moves; DJ notes win (no_flourish, a noted exit/entry style);
 * the smooth opening stays smooth;
-* dramatic exits (no overlap) are rare: never two in a row, at most one in
-  four blends, and never on a sample-lineage pair whose blend is the story.
+* the model never picks a dramatic exit: EXITS is empty (no abrupt cut-offs,
+  2026-10-17); the spacing and budget checks below stay as a backstop.
 
 Backbeat matching is unaffected: flourishes decorate a beat-matched blend,
 and dramatic exits do not overlap the two songs.
@@ -27,10 +27,9 @@ FLOURISHES: dict[str, str] = {
     "censor_fill": "Slip-mode reverse 'censor' of a word/beat on the outgoing deck (turntablist touch).",
     "transformer_cut": "Rhythmic transformer cuts on the outgoing deck before the blend (scratch-DJ flair).",
 }
-EXITS: dict[str, str] = {
-    "echo_out": "Outgoing fades under a rising echo tail; incoming starts clean (no overlap). Good for tempo gaps.",
-    "filter_drop": "Low-pass sweep removes the outgoing drums, then the incoming drops clean on the one (no overlap).",
-}
+# Empty on purpose (Ernest, 2026-10-17: no abrupt cut-offs). The model never
+# picks an echo-out or filter-drop exit; only his DJ note with abrupt_reason can.
+EXITS: dict[str, str] = {}
 MAX_EXIT_SHARE = 0.25
 
 
@@ -45,8 +44,7 @@ first blends smooth so the set establishes itself.
 
 For EACH transition pick:
 - "flourish": one of {list(FLOURISHES)}
-- "exit": one of ["none", {", ".join(repr(k) for k in EXITS)}]  (dramatic exits are rare:
-  never two in a row, at most one in four transitions)
+- "exit": always "none" (never end a song with an abrupt cut-off)
 
 Hard rules:
 - Use only the moves listed in the catalog below.
@@ -103,6 +101,8 @@ def validate(
         if flourish not in FLOURISHES:
             flourish = None
         if exit_style != "none" and exit_style not in EXITS:
+            if exit_style in ("echo_out", "filter_drop"):
+                notes.append(f"showcase move {i + 1}: {exit_style} declined (no abrupt cut-offs)")
             exit_style = "none"
         if i < smooth_opening:
             continue  # opening stays smooth; builder enforces it too

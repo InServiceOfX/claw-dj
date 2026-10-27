@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from pathlib import Path
 
@@ -52,6 +53,40 @@ def check_gentle_blends(events: list[dict]) -> None:
         raise ValueError(
             f"blends must take at least {GENTLE_BLEND_BEATS} counts (gentle faders); "
             "rebuild the plan or mark a deliberate cut:\n  " + "\n  ".join(short))
+
+
+# Exits that end the outgoing song abruptly instead of blending it away.
+ABRUPT_TECHNIQUES = frozenset({
+    "echo_out_exit", "filter_drop_exit", "half_time_or_cut", "key_clash_cut", "beat_drop_entry",
+})
+ABRUPT_MOVES = frozenset({"echo_out_exit", "filter_drop_exit", "hard_cut", "brake_out", "spinback_out"})
+
+
+def is_abrupt_exit(event: dict) -> bool:
+    return event.get("op") == "transition" and (
+        event.get("technique") in ABRUPT_TECHNIQUES
+        or bool(ABRUPT_MOVES.intersection(event.get("moves") or []))
+    )
+
+
+def check_no_abrupt_exits(events: list[dict]) -> None:
+    """Refuse, before anything plays, an abrupt cut-off nobody asked for.
+
+    Ernest, 2026-10-17, after an agent's 4-beat echo-out "fix": "I hate the
+    sharp cut off of Sade's song. DO NOT DO THAT." An echo-out, cut, brake,
+    spinback or filter-drop exit plays only when the plan records his
+    deliberate request: ``abrupt_exit: {"reason": ...}`` on the transition
+    (Build writes it from an ``abrupt_reason="..."`` DJ note).
+    """
+    abrupt = [
+        f"event {i} ({event.get('from_track', '?')} -> {event.get('to_track', '?')}): {event.get('technique')}"
+        for i, event in enumerate(events, 1)
+        if is_abrupt_exit(event) and not str((event.get("abrupt_exit") or {}).get("reason") or "").strip()
+    ]
+    if abrupt:
+        raise ValueError(
+            "abrupt cut-off exits need Ernest's recorded reason (abrupt_exit.reason); "
+            "re-pair or blend these instead:\n  " + "\n  ".join(abrupt))
 
 
 # Rust gesture executor (core-rust) — sub-beat timing loops for slip fills
@@ -355,17 +390,71 @@ def settle_rate(
     print(f"  rate settled to {label} on deck {deck}")
 
 
+def center_hold_fraction(event: dict) -> float:
+    """Share of a blend spent with the crossfader parked at center.
+
+    Ernest, 2026-10-21, on SWV remix -> "I'm So Into You": "allow for blend to
+    last longer and since the snares line up ... both songs for a short while
+    can be at similar 'relatively high' levels". In Mixxx's additive
+    crossfader mode both decks play at full gain at center, so a blend with
+    ``center_hold_beats`` ramps the incoming deck up, holds both at center,
+    then ramps the outgoing deck down. The two ramps together still take at
+    least GENTLE_BLEND_BEATS (gentle faders), so the hold is clamped.
+    """
+    beats = float(event.get("transition_beats", 16))
+    hold = float(event.get("center_hold_beats") or 0.0)
+    if beats <= 0 or hold <= 0:
+        return 0.0
+    return max(0.0, min(hold, beats - GENTLE_BLEND_BEATS)) / beats
+
+
+def held_fader_position(progress: float, start_cf: float, end_cf: float, hold_fraction: float) -> float:
+    """Crossfader position at `progress` (0-1) of a blend: a steady ramp from
+    start to end, or with a center hold, start -> 0 (center), hold, 0 -> end."""
+    progress = min(1.0, max(0.0, progress))
+    if hold_fraction <= 0:
+        return start_cf + (end_cf - start_cf) * progress
+    ramp = (1.0 - hold_fraction) / 2.0
+    if progress < ramp:
+        return start_cf * (1.0 - progress / ramp)
+    if progress <= ramp + hold_fraction:
+        return 0.0
+    return end_cf * min(1.0, (progress - ramp - hold_fraction) / ramp)
+
+
 MAX_NUDGE_MS = 250.0
+# Mixxx applies control writes on its engine thread a buffer or two later.
+SEEK_SETTLE_S = 0.08
+NUDGE_TOLERANCE_MS = 12.0
 
 
-def nudge_incoming(mixxx: MixxxControl, deck: int, nudge_ms: float) -> None:
+def phase_lead_ms(mixxx: MixxxControl, out_deck: int, in_deck: int) -> float | None:
+    """How far the incoming deck's grid phase leads the outgoing deck's, in ms.
+
+    Read from Mixxx's beat_distance (how far each deck is toward its next
+    grid beat). 0 = ticks together, as beatsync leaves them; positive = the
+    incoming ticks arrive earlier. None when the outgoing deck has no BPM.
+    """
+    bpm = mixxx.get(deck_group(out_deck), "bpm")
+    if bpm <= 0:
+        return None
+    lead = mixxx.get(deck_group(in_deck), "beat_distance") - mixxx.get(deck_group(out_deck), "beat_distance")
+    return ((lead + 0.5) % 1.0 - 0.5) * 60000.0 / bpm
+
+
+def nudge_incoming(mixxx: MixxxControl, deck: int, nudge_ms: float, *, from_deck: int | None = None) -> float | None:
     """Seek the incoming deck by a few milliseconds after sync.
 
     Mixxx syncs grid ticks; when a record's hits sit off its grid (Prince's
     intro hits land ~112 ms after his ticks, 2026-10-15) the ear needs a
     millisecond nudge, not a whole beat. Positive = the incoming deck jumps
-    ahead, so its hits arrive earlier. Quantize would snap the seek back onto
-    the grid phase, so it is off for the seek and restored after.
+    ahead, so its hits arrive earlier.
+
+    Quantize would snap the seek back onto the grid phase, so it stays off
+    until the engine has applied the seek. Restoring it in the same instant
+    (before 2026-10-17) could undo the nudge. With `from_deck`, the deck
+    phase is measured after the seek, corrected once if it missed, and the
+    measured lead is printed and returned.
     """
     if abs(nudge_ms) > MAX_NUDGE_MS:
         raise ValueError(f"unsafe nudge {nudge_ms:+g} ms; plan limit is ±{MAX_NUDGE_MS:g} ms")
@@ -373,13 +462,35 @@ def nudge_incoming(mixxx: MixxxControl, deck: int, nudge_ms: float) -> None:
     duration = mixxx.get(group, "duration")
     if duration <= 0:
         print(f"  (no duration on deck {deck}; {nudge_ms:+g} ms nudge skipped)")
-        return
+        return None
     quantize = mixxx.get(group, "quantize")
     mixxx.set(group, "quantize", 0)
-    position = mixxx.get(group, "playposition")
-    mixxx.set(group, "playposition", min(1.0, max(0.0, position + nudge_ms / 1000.0 / duration)))
+
+    def seek(ms: float) -> None:
+        position = mixxx.get(group, "playposition")
+        mixxx.set(group, "playposition", min(1.0, max(0.0, position + ms / 1000.0 / duration)))
+        time.sleep(SEEK_SETTLE_S)
+
+    before = phase_lead_ms(mixxx, from_deck, deck) if from_deck else None
+    seek(nudge_ms)
+    after = phase_lead_ms(mixxx, from_deck, deck) if from_deck else None
+    if before is not None and after is not None:
+        # beatsync leaves the ticks together, so the target lead is the nudge;
+        # the lead wraps at half a beat, so compare modulo one beat
+        beat_ms = 60000.0 / mixxx.get(deck_group(from_deck), "bpm")
+        miss = (nudge_ms - after + beat_ms / 2) % beat_ms - beat_ms / 2
+        if NUDGE_TOLERANCE_MS < abs(miss) <= MAX_NUDGE_MS:
+            seek(miss)
+            after = phase_lead_ms(mixxx, from_deck, deck)
     mixxx.set(group, "quantize", quantize)
-    print(f"  nudged deck {deck} {nudge_ms:+g} ms (plan incoming_nudge_ms)")
+    if after is None:
+        print(f"  nudged deck {deck} {nudge_ms:+g} ms (plan incoming_nudge_ms)")
+    else:
+        print(
+            f"  nudged deck {deck} {nudge_ms:+g} ms (plan incoming_nudge_ms); "
+            f"measured lead {before:+.0f} ms after sync -> {after:+.0f} ms"
+        )
+    return after
 
 
 def set_bpm_target(mixxx: MixxxControl, deck: int, target_bpm: float) -> None:
@@ -485,6 +596,68 @@ def ramp_bpm_target(
     )
 
 
+class CueVerificationError(TimeoutError):
+    """An explicitly strict cue could not be verified; do not start it."""
+
+
+def cue_options(event: dict) -> dict:
+    """Opt-in only: legacy event calls retain their original arguments."""
+    value = event.get("cue_tolerance_ms")
+    if value is None:
+        return {}
+    if isinstance(value, bool):
+        raise ValueError("cue_tolerance_ms must be a number, not a boolean")
+    value = float(value)
+    if not math.isfinite(value) or not 0 < value <= 250:
+        raise ValueError("cue_tolerance_ms must be finite and within (0, 250]")
+    return {"cue_tolerance_ms": value}
+
+
+def _strict_cue_position(mixxx, group, position, duration, tolerance_ms, settle_s, timeout_s):
+    tolerance = tolerance_ms / 1000.0 / duration
+    held = False
+    try:
+        playing = mixxx.get(group, "play")
+        if not math.isfinite(playing) or playing >= .5:
+            raise CueVerificationError(f"{group}: strict cue requires a stopped deck")
+        quantize = mixxx.get(group, "quantize")
+        try:
+            mixxx.set(group, "quantize", 0)
+            mixxx.set(group, "playposition", position)
+            deadline = time.monotonic() + max(0., timeout_s)
+            stable_since = None
+            while time.monotonic() < deadline:
+                actual = mixxx.get(group, "playposition")
+                if not math.isfinite(actual) or abs(actual - position) > tolerance:
+                    mixxx.set(group, "playposition", position)
+                    stable_since = None
+                elif settle_s <= 0:
+                    held = True
+                    break
+                elif stable_since is None:
+                    stable_since = time.monotonic()
+                elif time.monotonic() - stable_since >= .5:
+                    held = True
+                    break
+                time.sleep(.05)
+        finally:
+            mixxx.set(group, "quantize", quantize)
+        # Do not restore quantize and immediately pronounce success: let the
+        # engine apply it, then check the actual source position once more.
+        time.sleep(SEEK_SETTLE_S)
+        actual = mixxx.get(group, "playposition")
+        if not held or not math.isfinite(actual) or abs(actual - position) > tolerance:
+            raise CueVerificationError(
+                f"{group}: strict cue {position * duration:.4f}s not held within "
+                f"{tolerance_ms:g} ms (observed {actual * duration:.4f}s)"
+            )
+        return actual
+    except CueVerificationError:
+        raise
+    except Exception as error:
+        raise CueVerificationError(f"{group}: strict cue verification failed: {error}") from error
+
+
 def cue_deck(
     mixxx: MixxxControl,
     deck: int,
@@ -494,8 +667,12 @@ def cue_deck(
     duration: float | None = None,
     settle_s: float = 1.5,
     timeout_s: float = 8.0,
+    cue_tolerance_ms: float | None = None,
 ) -> tuple[float, str]:
     """Seek a stopped deck and verify Mixxx accepted the requested cue.
+
+    cue_tolerance_ms opts into fail-closed, millisecond-scale verification.
+    Omission preserves the existing heard legacy cue behavior unchanged.
 
     Setting `playposition` once is not enough. Mixxx's `[Controls] CueRecall`
     preference (here: 3 = IntroStart) makes every freshly loaded deck
@@ -515,10 +692,13 @@ def cue_deck(
     is polling: keep re-asserting `playposition` until it holds steady
     through the deferred auto-seek's actual firing window, then it's safe.
     """
+    strict = cue_options({"cue_tolerance_ms": cue_tolerance_ms})
     group = deck_group(deck)
     duration = duration or _wait_for(
         mixxx, group, "duration", lambda value: value > 0, LOAD_TIMEOUT_S
     )
+    if strict and (not math.isfinite(duration) or duration <= 0):
+        raise ValueError("strict cue requires a positive finite duration")
     from brain.phrase_analysis import seekable_cue_seconds
 
     if cue_seconds is not None:
@@ -529,6 +709,14 @@ def cue_deck(
         position = safe_cue / duration
     else:
         position = cue_fraction
+    if strict:
+        if not math.isfinite(position) or not 0 <= position <= .95:
+            raise ValueError("strict cue must be within the seekable first 95% of the source")
+        actual = _strict_cue_position(
+            mixxx, group, position, duration, strict["cue_tolerance_ms"], settle_s, timeout_s
+        )
+        return actual, (f"{position * duration:.4f}s strictly verified at "
+                        f"{actual * duration:.4f}s (±{strict['cue_tolerance_ms']:g} ms)")
     position = min(0.95, max(0.0, position))
     tolerance = max(0.002, 1.0 / duration)
 
@@ -574,7 +762,10 @@ def load_deck(
     cue_fraction: float = 0.1,
     cue_seconds: float | None = None,
     expected_bpm: float | None = None,
+    *,
+    cue_tolerance_ms: float | None = None,
 ) -> None:
+    strict = cue_options({"cue_tolerance_ms": cue_tolerance_ms})
     group = deck_group(deck)
     mixxx.set(group, "play", 0)
     # A freed deck can still carry the previous track's deliberate tempo or
@@ -633,10 +824,12 @@ def load_deck(
         cue_fraction=cue_fraction,
         cue_seconds=cue_seconds,
         duration=duration,
+        **strict,
     )
     mixxx.set(group, "volume", 1.0)
     mixxx.set(group, "keylock", 1)
-    mixxx.set(group, "quantize", 1)
+    if not strict:
+        mixxx.set(group, "quantize", 1)
     mixxx.set(group, "rate", 0.0)
     mixxx.set(group, "pitch_adjust", 0.0)
     print(
@@ -1307,7 +1500,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         mixxx.set(in_g, "beatjump_1_forward", 1)
         print(f"  snare-align: jumped incoming deck {to_deck} 1 beat")
     if event.get("incoming_nudge_ms"):
-        nudge_incoming(mixxx, to_deck, float(event["incoming_nudge_ms"]))
+        time.sleep(SEEK_SETTLE_S)  # let beatsync land before measuring the phase
+        nudge_incoming(mixxx, to_deck, float(event["incoming_nudge_ms"]), from_deck=from_deck)
 
     start_cf = mixxx.get("[Master]", "crossfader")
     end_cf = crossfader_target(to_deck)
@@ -1328,12 +1522,23 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     # deck's bass is killed, and only right at the handoff (progress>=0.5),
     # by which point it's fading out anyway.
     swapped = False
+    # Ernest, 2026-10-18: "make the Babyface volume in the blend just slightly
+    # softer". outgoing_level eases the outgoing channel fader down to that
+    # level over the first quarter of the blend (a small, gentle ramp), and
+    # it is restored once that deck has stopped.
+    out_level = event.get("outgoing_level")
+    out_level = None if out_level is None else min(1.0, max(0.5, float(out_level)))
+    hold_fraction = center_hold_fraction(event)
+    if hold_fraction:
+        print(f"  both decks full at center for {hold_fraction * beats:g} of {beats} beats")
     t0 = time.monotonic()
     while True:
         progress = min(1.0, (time.monotonic() - t0) / fade_s)
         curve = smoothstep(progress)
         # the fader itself moves on a steady ramp (gentle); the filter keeps its ease
-        mixxx.set("[Master]", "crossfader", start_cf + (end_cf - start_cf) * progress)
+        mixxx.set("[Master]", "crossfader", held_fader_position(progress, start_cf, end_cf, hold_fraction))
+        if out_level is not None:
+            mixxx.set(out_g, "volume", 1.0 - (1.0 - out_level) * min(1.0, progress / 0.25))
         if bass_swap and progress >= 0.35:
             # GRADUAL bass handover, not an instant kill: ramp the outgoing
             # deck's low EQ from neutral to zero across the middle of the
@@ -1378,6 +1583,8 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     if key_shift:
         mixxx.set(in_g, "pitch_adjust", 0.0)
     mixxx.set(out_g, "play", 0)
+    if out_level is not None:
+        mixxx.set(out_g, "volume", 1.0)
     if event.get("landing_seconds") is not None:
         duration = mixxx.get(in_g, "duration")
         actual_landing = mixxx.get(in_g, "playposition") * duration
@@ -1529,6 +1736,10 @@ def run_plan(
     plan = prepare_plan(plan, dry_run=dry_run)
     events = plan["events"]
     check_gentle_blends(events)
+    check_no_abrupt_exits(events)
+    for event in events:
+        cue_options(event)  # validate explicit tolerances before connecting/playing
+        cue_options((event.get("handoff") or {}).get("then_load") or {})
     if start_at is not None:
         events = start_at_transition(events, start_at)
         print(f"starting at transition {start_at} ({len(events)} events left)")
@@ -1554,6 +1765,16 @@ def run_plan(
             we_started_recording = start_recording(mixxx)
         try:
             _run_events(mixxx, events, expected_bpms, port=port)
+        except CueVerificationError:
+            # A strict load failure must not strand the outgoing deck live
+            # without a runner. Legacy cue behavior is untouched by default.
+            for deck in (1, 2):
+                try:
+                    mixxx.set(deck_group(deck), "play", 0)
+                except Exception:
+                    pass
+            neutralize_deck_effects(mixxx, (1, 2))
+            raise
         except KeyboardInterrupt:
             # Ctrl-C only kills this script -- Mixxx itself is a separate
             # process and keeps playing whatever was on the decks unless
@@ -1590,6 +1811,7 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                 int(event["deck"]),
                 cue_fraction=float(event.get("cue_fraction", 0.1)),
                 cue_seconds=event.get("cue_seconds"),
+                **cue_options(event),
             )
             print(f"  deck {event['deck']} re-cued: {cue_label}")
         elif op == "load":
@@ -1600,6 +1822,7 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                 event.get("cue_fraction", 0.1),
                 event.get("cue_seconds"),
                 expected_bpms.get(event["track_id"]),
+                **cue_options(event),
             )
         elif op == "start":
             deck = event["deck"]
@@ -1700,6 +1923,7 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                             nxt.get("cue_fraction", 0.1),
                             nxt.get("cue_seconds"),
                             expected_bpms.get(nxt["track_id"]),
+                            **cue_options(nxt),
                         )
                     remaining = max(0, steady_beats - after - int(round(blend)))
                     remaining = _safe_body_beats(
@@ -1835,6 +2059,7 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                     pending_preload.get("cue_fraction", 0.1),
                     pending_preload.get("cue_seconds"),
                     expected_bpms.get(pending_preload["track_id"]),
+                    **cue_options(pending_preload),
                 )
                 pending_preload = None
         elif op == "finale":

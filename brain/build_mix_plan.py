@@ -239,6 +239,24 @@ def _measure_window_job(job: tuple) -> tuple:
     return job, read
 
 
+def _measure_real_job(job: tuple) -> tuple[tuple, dict]:
+    """Process-pool worker: one real-beat read of a double-time grid (low priority)."""
+    from brain.onset_analysis import measure_real_beats
+
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+    track_id, bpm, first_beat, start_beat, beats = job
+    try:
+        read = measure_real_beats(
+            track_id, bpm=bpm, first_beat_seconds=first_beat, start_beat=start_beat, beats=beats
+        )
+    except Exception:  # unreadable file, window past the end
+        read = {"beat_phase": 0, "snare_parity": 0, "confidence": 0.0, "other_confidence": 0.0}
+    return job, read
+
+
 class BlendWindowReader:
     """Snare read of the actual blend windows, cached in `beat_phase_windows`.
 
@@ -257,6 +275,10 @@ class BlendWindowReader:
         self.beats = BLEND_WINDOW_BEATS
         self.cache: dict[tuple, dict] = {}
         self.pending: dict[tuple, tuple] = {}
+        # Double-time grids: real-beat reads (`real_beats`), cached in
+        # `real_beat_windows`.
+        self.real_cache: dict[tuple, dict] = {}
+        self.pending_real: dict[tuple, tuple] = {}
         self._loaded = False
 
     def _load(self) -> None:
@@ -275,6 +297,39 @@ class BlendWindowReader:
                     "bpm": row["bpm"], "first_beat_seconds": row["first_beat_seconds"],
                     "snare_parity": row["snare_parity"], "confidence": row["confidence"],
                 }
+            for row in db.execute(
+                "SELECT track_id, start_beat, beats, bpm, first_beat_seconds, beat_phase, "
+                "snare_parity, confidence, other_confidence FROM real_beat_windows"
+            ):
+                key = (row["track_id"], row["start_beat"], row["beats"])
+                self.real_cache[key] = dict(row)
+
+    def real_beats(self, track_id: str, grid: dict, beat_index: int) -> dict | None:
+        """Real-beat read of a double-time grid around `beat_index` (or None)."""
+        from brain.onset_analysis import REAL_BEAT_WINDOW_BEATS, blend_window_start_beat
+
+        bpm, first_beat = grid.get("bpm"), grid.get("first_beat_seconds")
+        if not bpm or first_beat is None or not os.path.exists(track_id):
+            return None
+        self._load()
+        start = blend_window_start_beat(beat_index)
+        key = (track_id, start, REAL_BEAT_WINDOW_BEATS)
+        cached = self.real_cache.get(key)
+        if (
+            cached
+            and abs(float(cached["bpm"]) - float(bpm)) < 1e-3
+            and abs(float(cached["first_beat_seconds"]) - float(first_beat)) < 1e-3
+        ):
+            return {
+                field: cached[field]
+                for field in ("beat_phase", "snare_parity", "confidence", "other_confidence")
+            }
+        job = (track_id, float(bpm), float(first_beat), start, REAL_BEAT_WINDOW_BEATS)
+        if self.collect_only:
+            self.pending_real[key] = job
+            return None
+        self._store_real([_measure_real_job(job)])
+        return self.real_beats(track_id, grid, beat_index)
 
     def __call__(self, track_id: str, grid: dict, beat_index: int) -> dict | None:
         from brain.onset_analysis import blend_window_start_beat
@@ -302,22 +357,56 @@ class BlendWindowReader:
     def measure_pending(self, progress=print) -> int:
         """Measure every recorded window in parallel and cache the reads."""
         jobs = list(self.pending.values())
+        real_jobs = list(self.pending_real.values())
         self.pending.clear()
-        if not jobs:
+        self.pending_real.clear()
+        if not jobs and not real_jobs:
             return 0
         if progress:
-            progress(f"  [blend-window] measuring the snare in {len(jobs)} blend windows")
+            progress(
+                f"  [blend-window] measuring the snare in {len(jobs)} blend windows"
+                + (f" and the real beats of {len(real_jobs)} double-time windows" if real_jobs else "")
+            )
         from concurrent.futures import ProcessPoolExecutor
 
         try:
             with ProcessPoolExecutor(max_workers=self.workers) as pool:
                 results = list(pool.map(_measure_window_job, jobs))
+                real_results = list(pool.map(_measure_real_job, real_jobs))
         except Exception:
             # e.g. a caller script without a __main__ guard cannot spawn
             # workers on macOS: measure in this process instead.
             results = [_measure_window_job(job) for job in jobs]
+            real_results = [_measure_real_job(job) for job in real_jobs]
         self._store(results)
-        return len(results)
+        self._store_real(real_results)
+        return len(results) + len(real_results)
+
+    def _store_real(self, results: list[tuple]) -> None:
+        import time
+
+        from brain.library_index import connect
+
+        if not results:
+            return
+        with closing(connect()) as db:
+            for (track_id, bpm, first_beat, start, beats), read in results:
+                row = {
+                    "track_id": track_id, "start_beat": start, "beats": beats, "bpm": bpm,
+                    "first_beat_seconds": first_beat,
+                    "beat_phase": int(read["beat_phase"]), "snare_parity": int(read["snare_parity"]),
+                    "confidence": float(read["confidence"]),
+                    "other_confidence": float(read["other_confidence"]),
+                }
+                db.execute(
+                    "INSERT OR REPLACE INTO real_beat_windows"
+                    "(track_id, start_beat, beats, bpm, first_beat_seconds, analyzed_at, beat_phase, "
+                    "snare_parity, confidence, other_confidence) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (track_id, start, beats, bpm, first_beat, time.time(), row["beat_phase"],
+                     row["snare_parity"], row["confidence"], row["other_confidence"]),
+                )
+                self.real_cache[(track_id, start, beats)] = row
+            db.commit()
 
     def _store(self, results: list[tuple]) -> None:
         import time
@@ -420,6 +509,14 @@ def track_directives(track: dict) -> dict:
         "chorus_seconds": number("chorus_seconds"),
         "hook_acapella_seconds": number("hook_acapella_seconds"),
         "intro_loop_seconds": number("intro_loop_seconds"),
+        # Ernest's own reason for a rare abrupt exit (echo-out, filter drop,
+        # beat drop), e.g. abrupt_reason="highlight the drop". Without it
+        # those styles are ignored: no abrupt cut-offs (2026-10-17).
+        "abrupt_reason": (
+            matches[-1].strip()
+            if (matches := re.findall(r"\babrupt_reason\s*=\s*\"([^\"]+)\"", notes, re.I))
+            else None
+        ),
         "full_track": bool(re.search(r"\bfull_track\b", notes, re.I)),
         "no_flourish": bool(re.search(r"\bno_flourish\b", notes, re.I)),
         # Ear override: the human certified this exact ride length by
@@ -647,15 +744,20 @@ def build_plan(
     transition_beats_by_pair: dict[tuple[str, str], int] | None = None,
     showcase_plan: dict[int, dict] | None = None,
     window_phase=None,
+    real_beat_phase=None,
 ) -> dict:
     from brain.dj_formats import format_provenance, get_format
     from brain.mix_profiles import PROFILES
     from brain.onset_analysis import (
         BLEND_WINDOW_LEAD_BEATS,
         SNARE_CONFIDENCE_GATE,
+        bar_count_guessed,
         count_shift_beats,
+        double_time_shifts,
+        double_time_side,
         phase_shift_beats,
         prefer_blend_window,
+        trust_real_beats,
     )
 
     profile = profile or PROFILES["dj-showcase"]
@@ -1501,8 +1603,6 @@ def build_plan(
     segments = []
     previous_fade_beats = 0
     # Hard-cut budget for the whole mix; see the enforcement block below.
-    hard_cuts_used = 0
-    previous_was_hard_cut = False
     skip_outgoing_body = False
     bed_live_label = None
     bed_live_track = None
@@ -1657,44 +1757,30 @@ def build_plan(
         tech = pick_technique(outgoing, incoming, aff, avoid_silence=profile.avoid_silence)
         incoming_directive = track_directives(incoming)
 
-        # "Use sparingly" has to be enforced, not just written in the recipe's
-        # own notes (Ernest, 2026-08-03, after hearing two brake-and-drop cuts
-        # land back to back -- "it's almost lazy. Use sparingly really means
-        # use sparingly"). A hard cut stops the music dead; one per mix can be
-        # a deliberate statement, two is a habit, and two in a row reads as the
-        # planner giving up on beatmatching. Profiles with avoid_silence=True
-        # never reach this because pick_technique won't propose the recipe at
-        # all -- this is the backstop for every other profile.
+        # The planner never chooses a hard cut by itself. Ernest, 2026-08-03,
+        # on two brake-and-drop cuts back to back: "Use sparingly really means
+        # use sparingly"; 2026-10-17, on an echo-out fix: "I hate the sharp cut
+        # off ... DO NOT DO THAT." An extreme tempo gap gets the gentle
+        # tempo_gap_blend; if that still clashes, the pair needs re-pairing.
         if tech["technique"] == "half_time_or_cut":
-            reason = (
-                "back-to-back hard cut" if previous_was_hard_cut
-                else ("mix already spent its one hard cut" if hard_cuts_used else "")
+            tech.update(
+                technique="tempo_gap_blend",
+                # Same downgrade shape the smooth-opening path already
+                # uses; "sync" stays out for the reason documented on the
+                # other tempo_gap_blend definition.
+                moves=[
+                    "rate_nudge_in", "filter_sweep_out",
+                    "crossfade", "filter_reset", "eq_restore",
+                ],
+                notes=(
+                    "Extreme tempo gap: rate-nudge into a longer EQ/filter blend. "
+                    "No abrupt cut-offs; re-pair if this still clashes."
+                ),
             )
-            if reason:
-                tech.update(
-                    technique="tempo_gap_blend",
-                    # Same downgrade shape the smooth-opening path already
-                    # uses; "sync" stays out for the reason documented on the
-                    # other tempo_gap_blend definition.
-                    moves=[
-                        "rate_nudge_in", "filter_sweep_out",
-                        "crossfade", "filter_reset", "eq_restore",
-                    ],
-                    notes=(
-                        "Extreme tempo gap, but a hard cut was declined here "
-                        f"({reason}) — rate-nudge into a longer EQ/filter "
-                        "blend instead. At most one hard cut per mix, never "
-                        "two in a row."
-                    ),
-                )
-                print(
-                    f"  [hard-cut budget] {outgoing['artist']} — {outgoing['title']} -> "
-                    f"{incoming['artist']} — {incoming['title']}: downgraded "
-                    f"half_time_or_cut to tempo_gap_blend ({reason})"
-                )
-            else:
-                hard_cuts_used += 1
-        previous_was_hard_cut = tech["technique"] == "half_time_or_cut"
+            print(
+                f"  [no abrupt cut-offs] {outgoing['artist']} — {outgoing['title']} -> "
+                f"{incoming['artist']} — {incoming['title']}: tempo_gap_blend instead of a hard cut"
+            )
 
         # Compatibility chooses the base recipe; the profile controls how
         # often we show off and how long the landing takes.
@@ -1754,7 +1840,13 @@ def build_plan(
             tech["notes"] += " Opening directive: longer beat-matched blend, no flourish."
 
         incoming_directive = track_directives(incoming)
-        if incoming_directive["entry_style"] == "beat_drop":
+        if incoming_directive["entry_style"] == "beat_drop" and not incoming_directive["abrupt_reason"]:
+            print(
+                f"  [no abrupt cut-offs] {incoming['artist']} — {incoming['title']}: entry_style=beat_drop "
+                'ignored without abrupt_reason="..." (Ernest\'s reason)'
+            )
+        elif incoming_directive["entry_style"] == "beat_drop":
+            tech["abrupt_exit"] = {"reason": incoming_directive["abrupt_reason"], "source": "incoming DJ note"}
             tech.update(
                 technique="beat_drop_entry",
                 transition_beats=4,
@@ -1878,24 +1970,25 @@ def build_plan(
         pattern = profile.ride_phrases_pattern
         ride_phrases = pattern[index % len(pattern)]
         directive = track_directives(outgoing)
-        model_exit = ((showcase_plan or {}).get(index) or {}).get("exit")
-        if (
-            model_exit in ("echo_out", "filter_drop")
-            and directive["exit_style"] is None
-            and incoming_directive["entry_style"] is None
-            and index >= profile.smooth_opening_transitions
-        ):
-            # Model-chosen dramatic exit; a human note would have won above.
-            directive = {**directive, "exit_style": model_exit}
+        # A model never chooses an abrupt exit (echo-out, filter drop): those
+        # end the outgoing song with a sharp cut-off. Only Ernest's DJ note,
+        # with his abrupt_reason, may ask for one (2026-10-17).
+        if directive["exit_style"] in ("echo_out", "filter_drop") and not directive["abrupt_reason"]:
+            print(
+                f"  [no abrupt cut-offs] {outgoing['artist']} — {outgoing['title']}: "
+                f'exit_style={directive["exit_style"]} ignored without abrupt_reason="..." (Ernest\'s reason)'
+            )
+            directive = {**directive, "exit_style": None}
+        elif directive["exit_style"] in ("echo_out", "filter_drop"):
+            tech["abrupt_exit"] = {"reason": directive["abrupt_reason"], "source": "outgoing DJ note"}
         if directive["exit_style"] == "echo_out":
             # Echo-out exit (docs/DJ_TRANSITIONS_PLAYBOOK.md #4): the
             # outgoing track fades under a rising echo tail, then the
-            # incoming starts clean at its own tempo. The standard gentle
-            # answer for large tempo gaps -- nothing rhythmic overlaps, so
-            # no tempo bridging (and none of tempo_gap_blend's forced
-            # stretch) is needed. Directive-driven only, per the playbook's
-            # "use as an exit strategy, not a habit" warning. Overrides the
-            # incoming's entry_style: there is no overlap to land into.
+            # incoming starts clean at its own tempo. It cuts the outgoing
+            # song off, so it plays only on Ernest's request with his
+            # abrupt_reason (2026-10-17), never as the answer to a tempo gap
+            # -- re-pair instead. Overrides the incoming's entry_style: there
+            # is no overlap to land into.
             tech.update(
                 technique="echo_out_exit",
                 transition_beats=4,
@@ -2322,6 +2415,22 @@ def build_plan(
                 )
                 if read is not None
             }
+        # A double-time grid on one side (onset_analysis.double_time_side):
+        # every grid beat there is an eighth note, so the odd/even snare test
+        # compares on-beats with off-beats. Found live 2026-10-15: Shanice
+        # "I Love Your Smile" (187.88) -> SWV (94.0) said "matched" and came
+        # in a count off. Align on that song's measured real beats instead.
+        double_side = None
+        if (
+            not directive["trust_ride_beats"]
+            and outgoing_phase and incoming_phase
+            and outgoing_entry_beat is not None and incoming_entry_beat is not None
+        ):
+            double_side = double_time_side(outgoing_phase.get("bpm"), incoming_phase.get("bpm"))
+            if double_side and blend_window:
+                # that side's odd/even window read means nothing either
+                blend_window.pop(double_side, None)
+        double_time = None
         # Recorded on the body event so the GUI can show, per blend, whether
         # the snares were actually matched or only the bar count was.
         if directive["trust_ride_beats"]:
@@ -2332,7 +2441,112 @@ def build_plan(
             backbeat = {"status": "unverified", "reason": "cue not on the beatgrid"}
         else:
             backbeat = None
-        if (
+        if double_side is not None:
+            anchor = outgoing_entry_beat + previous_fade_beats + ride_beats + 1
+            double_track, double_grid, double_beat = (
+                (outgoing, outgoing_phase, anchor - BLEND_WINDOW_LEAD_BEATS)
+                if double_side == "out"
+                else (incoming, incoming_phase, incoming_entry_beat)
+            )
+            real = (
+                real_beat_phase(double_track["track_id"], double_grid, double_beat)
+                if real_beat_phase is not None
+                else None
+            )
+            other = incoming_phase if double_side == "out" else outgoing_phase
+            other_conf = float(other.get("confidence") or 0.0)
+            confidences = [
+                round(float(real["confidence"]) if real and double_side == "out" else float(outgoing_phase.get("confidence") or 0.0), 3),
+                round(float(real["confidence"]) if real and double_side == "in" else float(incoming_phase.get("confidence") or 0.0), 3),
+            ]
+            shift, cue_shift = 0, 0
+            real_usable = trust_real_beats(real) and other_conf >= min_snare_confidence
+            bar_ambiguous = bool(
+                real_usable
+                and int(real["snare_parity"]) != int(other["snare_parity"])
+            )
+            if real_usable and not bar_ambiguous:
+                shift, cue_shift = double_time_shifts(
+                    side=double_side,
+                    outgoing_anchor_beat_index=anchor,
+                    incoming_cue_beat_index=incoming_entry_beat,
+                    outgoing_read=real if double_side == "out" else outgoing_phase,
+                    incoming_read=incoming_phase if double_side == "out" else real,
+                )
+                moved = not cue_shift
+                certified = bool(incoming_directive.get("trust_cue_seconds"))
+                if cue_shift and not certified:
+                    # Put the incoming cue on a real beat: one grid beat later.
+                    # A cue Ernest certified (trust_cue_seconds) never moves.
+                    period = 60.0 / float(incoming_phase["bpm"])
+                    for ev in reversed(events):
+                        if (
+                            ev.get("op") in {"load", "preload_after_transition"}
+                            and ev.get("track_id") == incoming["track_id"]
+                        ):
+                            ev["cue_seconds"] = round(float(ev.get("cue_seconds") or 0.0) + cue_shift * period, 4)
+                            if ev.get("cue_beat_index") is not None:
+                                ev["cue_beat_index"] = int(ev["cue_beat_index"]) + cue_shift
+                            src = str(ev.get("cue_source") or "analyzed")
+                            if not src.endswith("+real_beat"):
+                                ev["cue_source"] = f"{src}+real_beat"
+                            moved = True
+                            break
+                    if moved:
+                        incoming_entry_beat += cue_shift
+                        cue_beat_index_cache[incoming["track_id"]] = incoming_entry_beat
+                if moved:
+                    if ride_beats + shift < 0:
+                        # whole real bars keep the alignment
+                        shift += 8 if double_side == "out" else 4
+                    ride_beats += shift
+                    backbeat = {
+                        "status": "matched",
+                        "reason": "real beats + snare parity + bar count (double-time grid)",
+                        "confidence": confidences,
+                    }
+                else:
+                    shift, cue_shift = 0, 0
+                    backbeat = {
+                        "status": "unverified",
+                        "reason": (
+                            "double-time grid: the certified incoming cue is on an off-beat"
+                            if certified
+                            else "double-time grid: could not move the incoming cue onto a real beat"
+                        ),
+                        "confidence": confidences,
+                    }
+            else:
+                backbeat = {
+                    "status": "bar_guessed" if bar_ambiguous else "unverified",
+                    "reason": (
+                        "double-time grid: musical count 1 unresolved; withheld guessed beat/cue shifts"
+                        if bar_ambiguous else
+                        "double-time grid: real beats not measured" if real is None
+                        else "double-time grid: on-beats and off-beats unclear"
+                    ),
+                    "count1_verified": False,
+                    "confidence": confidences,
+                }
+            double_time = {
+                "side": double_side,
+                "grid_bpm": round(float(double_grid["bpm"]), 2),
+                "beat_phase": real.get("beat_phase") if real else None,
+                "snare_parity": real.get("snare_parity") if real else None,
+                "confidence": real.get("confidence") if real else None,
+                "other_confidence": real.get("other_confidence") if real else None,
+                "cue_shift_beats": cue_shift,
+            }
+            if shift or cue_shift:
+                print(
+                    f"  [beat-phase] {outgoing['artist']} — {outgoing['title']} -> "
+                    f"{incoming['artist']} — {incoming['title']}: double-time grid on the "
+                    f"{'outgoing' if double_side == 'out' else 'incoming'} side; ride "
+                    f"{ride_beats - shift} -> {ride_beats}"
+                    + (f", incoming cue +{cue_shift} grid beat" if cue_shift else "")
+                    + " to land on the real beats"
+                )
+        elif (
             not directive["trust_ride_beats"]
             and outgoing_phase and incoming_phase
             and outgoing_entry_beat is not None and incoming_entry_beat is not None
@@ -2344,30 +2558,41 @@ def build_plan(
             out_conf = float(outgoing_phase.get("confidence") or 0.0)
             in_conf = float(incoming_phase.get("confidence") or 0.0)
             if out_conf >= min_snare_confidence and in_conf >= min_snare_confidence:
-                shift = count_shift_beats(
+                phase_args = dict(
                     outgoing_snare_parity=outgoing_phase["snare_parity"],
                     outgoing_anchor_beat_index=anchor,
                     incoming_snare_parity=incoming_phase["snare_parity"],
                     incoming_cue_beat_index=incoming_entry_beat,
                 )
-                reason = "snare parity + bar count"
+                shift = count_shift_beats(**phase_args)
+                if bar_count_guessed(**phase_args):
+                    # snares match either way; count 1 may land on count 3
+                    reason = "musical count 1 unresolved; withheld guessed whole-beat shift (grid beat 0 is not proven count 1)"
+                    status = "bar_guessed"
+                    # +/-1 can both satisfy parity without establishing count 1.
+                    # Do not turn that uncertainty into an audible correction.
+                    shift = 0
+                else:
+                    reason = "snare parity + bar count"
+                    status = "matched"
                 backbeat = {
-                    "status": "matched",
+                    "status": status,
                     "reason": reason,
                     "confidence": [round(out_conf, 3), round(in_conf, 3)],
                 }
             else:
-                bar_shift = (incoming_entry_beat - anchor) % 4
-                shift = bar_shift if bar_shift <= 2 else bar_shift - 4
+                shift = 0
                 reason = (
                     f"bar count only (weak snare conf "
-                    f"{out_conf:.3f}/{in_conf:.3f})"
+                    f"{out_conf:.3f}/{in_conf:.3f}); withheld guessed whole-beat shift"
                 )
                 backbeat = {
                     "status": "unverified",
                     "reason": reason,
                     "confidence": [round(out_conf, 3), round(in_conf, 3)],
                 }
+            if backbeat["status"] in {"bar_guessed", "unverified"}:
+                backbeat["count1_verified"] = False
             if shift:
                 print(
                     f"  [beat-phase] {outgoing['artist']} — {outgoing['title']} -> "
@@ -2383,6 +2608,10 @@ def build_plan(
         want_snare_align = bool(incoming_directive.get("snare_align"))
         if (
             not want_snare_align
+            # An unresolved count must not sneak back in as an automatic jump.
+            and (backbeat or {}).get("status") not in {"bar_guessed", "unverified"}
+            # a one-grid-beat jump on a double-time grid is half a real beat
+            and double_side is None
             and outgoing_phase
             and incoming_phase
             and outgoing_entry_beat is not None
@@ -2445,11 +2674,13 @@ def build_plan(
         if directive["trust_ride_beats"]:
             body_event["trust_ride_beats"] = True
         if backbeat is not None:
-            if backbeat.get("status") == "matched" and shift:
+            if backbeat.get("status") in ("matched", "bar_guessed") and shift:
                 backbeat["nudged_beats"] = shift
+            if double_time:
+                backbeat["double_time"] = double_time
             if blend_window:
                 backbeat["blend_window"] = blend_window
-                if backbeat.get("status") == "matched" and any(
+                if backbeat.get("status") in ("matched", "bar_guessed") and any(
                     side["flipped"] or side["upgraded"] for side in blend_window.values()
                 ):
                     backbeat["reason"] += " (blend-window read)"
@@ -2954,10 +3185,13 @@ def compose_mix_plan(
 
         window_phase = BlendWindowReader(collect_only=True)
         with contextlib.redirect_stdout(io.StringIO()):
-            build_plan(pool, window_phase=window_phase, **plan_inputs)
+            build_plan(pool, window_phase=window_phase, real_beat_phase=window_phase.real_beats, **plan_inputs)
         window_phase.measure_pending()
         window_phase.collect_only = False
-    plan = build_plan(pool, window_phase=window_phase, **plan_inputs)
+    plan = build_plan(
+        pool, window_phase=window_phase,
+        real_beat_phase=window_phase.real_beats if window_phase else None, **plan_inputs
+    )
     if control_port is not None:
         plan.setdefault("runtime", {})["mixxx_control_port"] = int(control_port)
     assert_vocals_layered(plan, {row["track_id"]: row.get("dj_notes") or "" for row in pool})

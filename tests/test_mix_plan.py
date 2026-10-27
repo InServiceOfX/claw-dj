@@ -283,14 +283,15 @@ class MixPlanTest(TestCase):
         self.assertEqual(tech["technique"], "sample_callback_blend")
         self.assertGreaterEqual(tech["transition_beats"], 16)
 
-    def test_hard_cuts_are_capped_at_one_per_mix_and_never_back_to_back(self) -> None:
-        """"Use sparingly" is enforced by the planner, not left to the recipe.
+    def test_planner_never_chooses_a_hard_cut(self) -> None:
+        """No hard cut unless Ernest asks: the planner always blends instead.
 
         Four tracks whose tempos alternate wildly with no lineage or chroma
         support: every pairing is exactly what pick_technique answers with
-        half_time_or_cut. Without a budget the plan would brake the platter
-        to a stop three times, twice of them back to back (heard live,
-        2026-08-03). At most the first survives; the rest downgrade.
+        half_time_or_cut. Ernest heard three platter stops, two back to back,
+        on 2026-08-03 ("Use sparingly really means use sparingly"), and on
+        2026-10-17 said of an abrupt exit: "DO NOT DO THAT AGAIN". Every one
+        becomes a tempo_gap_blend.
         """
         tracks = [
             {"track_id": "/music/a.mp3", "artist": "A", "title": "A",
@@ -312,13 +313,7 @@ class MixPlanTest(TestCase):
         techniques = [e["technique"] for e in plan["events"] if e["op"] == "transition"]
         hard_cuts = [t for t in techniques if t == "half_time_or_cut"]
         self.assertGreaterEqual(len(techniques), 3, techniques)
-        self.assertLessEqual(len(hard_cuts), 1, techniques)
-        # And never two in a row, whatever the budget allowed.
-        for earlier, later in zip(techniques, techniques[1:]):
-            self.assertFalse(
-                earlier == "half_time_or_cut" and later == "half_time_or_cut",
-                f"back-to-back hard cuts in {techniques}",
-            )
+        self.assertEqual(hard_cuts, [], techniques)
         # A declined hard cut must become a real blend, not silently keep
         # brake_out/hard_cut moves under a different technique name.
         for event in plan["events"]:
@@ -1342,7 +1337,7 @@ class MixPlanTest(TestCase):
                 "title": "Drop",
                 "bpm": 95.0,
                 "key": "Am",
-                "dj_notes": "cue_seconds=0; entry_style=beat_drop; play_bpm=100",
+                "dj_notes": 'cue_seconds=0; entry_style=beat_drop; play_bpm=100; abrupt_reason="Ernest wants the drop"',
             },
             {
                 "track_id": "/music/blend.mp3",
@@ -1470,14 +1465,14 @@ class MixPlanTest(TestCase):
         self.assertEqual(start_event["bpm_target"], 103.0)
 
     def test_exit_style_echo_out_overrides_technique(self) -> None:
-        # docs/DJ_TRANSITIONS_PLAYBOOK.md #4: an echo-out exit is the gentle
-        # large-gap escape -- no tempo bridging at all, so sync must be gone
-        # from the moves and the incoming enters clean.
+        # An echo-out exit plays only when Ernest's note gives his reason
+        # (2026-10-17: no abrupt cut-offs as a fix). Then there is no tempo
+        # bridging at all: sync is gone and the incoming enters clean.
         tracks = [
             {
                 "track_id": "/m/a.mp3", "artist": "A", "title": "Out",
                 "bpm": 92.0, "key": "Db",
-                "dj_notes": "cue_seconds=0; ride_beats=32; exit_style=echo_out",
+                "dj_notes": 'cue_seconds=0; ride_beats=32; exit_style=echo_out abrupt_reason="highlight the drop"',
             },
             {
                 "track_id": "/m/b.mp3", "artist": "B", "title": "In",
@@ -1488,8 +1483,24 @@ class MixPlanTest(TestCase):
         transition = next(e for e in plan["events"] if e["op"] == "transition")
         self.assertEqual(transition["technique"], "echo_out_exit")
         self.assertEqual(transition["moves"], ["echo_out_exit"])
+        self.assertEqual(transition["abrupt_exit"]["reason"], "highlight the drop")
         self.assertNotIn("sync", transition["moves"])
         self.assertIsNone(transition.get("incoming_bpm_target"))
+
+    def test_echo_out_note_without_ernests_reason_stays_a_gentle_blend(self) -> None:
+        # Ernest, 2026-10-17: "I hate the sharp cut off of Sade's song. DO NOT DO THAT."
+        tracks = [
+            {"track_id": "/m/a.mp3", "artist": "A", "title": "Out", "bpm": 92.0, "key": "Db",
+             "dj_notes": "cue_seconds=0; ride_beats=32; exit_style=echo_out"},
+            {"track_id": "/m/b.mp3", "artist": "B", "title": "In", "bpm": 90.0, "key": "Db",
+             "dj_notes": "cue_seconds=5"},
+        ]
+        plan = build_plan(tracks, count=2, seconds_per_track=20.0, affinity_lookup={})
+        transition = next(e for e in plan["events"] if e["op"] == "transition")
+        self.assertNotEqual(transition["technique"], "echo_out_exit")
+        self.assertNotIn("echo_out_exit", transition["moves"])
+        self.assertNotIn("abrupt_exit", transition)
+        self.assertGreaterEqual(transition["transition_beats"], 16)
 
     def test_beat_phase_mismatch_auto_corrects_ride_beats(self) -> None:
         # Ernest, 2026-07-17: three separate "beats don't match" complaints
@@ -1742,7 +1753,7 @@ class MixPlanTest(TestCase):
                 "bpm": 121.97, "key": "A",
                 "dj_notes": (
                     "entry_style=halftime_blend; ride_beats=80; trust_ride_beats; "
-                    "exit_style=filter_drop"
+                    'exit_style=filter_drop abrupt_reason="pitch-play drop"'
                 ),
             },
             {

@@ -11,6 +11,7 @@ import numpy as np
 
 from brain.onset_analysis import (
     beat_phase_energies,
+    bar_count_guessed,
     count_shift_beats,
     detect_snare_phase,
     phase_shift_beats,
@@ -202,3 +203,30 @@ class CountShiftBeatsTests(TestCase):
             incoming_cue_beat_index=8,
         )
         self.assertEqual(shift, 1)
+
+
+class BarCountGuessedTest(TestCase):
+    # SWV "You're The One" remix -> "I'm So Into You", Build of 2026-10-14:
+    # remix snares odd (parity 1), "I'm So Into You" even (0), cue 16,
+    # anchor 420 before the phase step. Parity forces an odd shift and
+    # +1 / -1 both match the snares; +1 (beat 421) put count 1 on count 3.
+    SWV = dict(
+        outgoing_snare_parity=1,
+        outgoing_anchor_beat_index=420,
+        incoming_snare_parity=0,
+        incoming_cue_beat_index=16,
+    )
+
+    def test_swv_remix_bar_count_is_a_guess(self) -> None:
+        self.assertEqual(count_shift_beats(**self.SWV), 1)
+        self.assertTrue(bar_count_guessed(**self.SWV))
+
+    def test_agreeing_parities_are_not_a_guess(self) -> None:
+        self.assertFalse(
+            bar_count_guessed(
+                outgoing_snare_parity=1,
+                outgoing_anchor_beat_index=8,
+                incoming_snare_parity=1,
+                incoming_cue_beat_index=10,
+            )
+        )

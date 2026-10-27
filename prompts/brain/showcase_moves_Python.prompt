@@ -16,7 +16,7 @@
 
 % Goal
 
-In the DJ showcase Mix feel with a model provider selected, the model picks one move per transition of the final order: a flourish (bass_swap, stutter_fill, loop_roll, censor_fill, transformer_cut) and an exit (none, echo_out, filter_drop), aiming for variety and well-placed drama. Without a model, or in any other Mix feel, the built-in flourish rotation is unchanged.
+In the DJ showcase Mix feel with a model provider selected, the model picks one move per transition of the final order: a flourish (bass_swap, stutter_fill, loop_roll, censor_fill, transformer_cut), aiming for variety and well-placed drama. The exit is always "none": since 2026-10-17 the model never chooses an abrupt exit (echo_out, filter_drop). Ernest, after an agent's echo-out "fix": "I hate the sharp cut off of Sade's song. DO NOT DO THAT." `EXITS` is empty; only Ernest's DJ note with his `abrupt_reason` may ask for one (see docs/intents/intent__no-abrupt-cut-offs-echo-cut-and-brake-exits-only-22291d42.md). Without a model, or in any other Mix feel, the built-in flourish rotation is unchanged.
 
 % Requirements
 
@@ -30,8 +30,9 @@ R3 (MUST): dramatic exits are never on consecutive transitions, never more than 
 R4 (MUST NOT): a model error, timeout or unparsable reply fails the build; the rotation is used and the order notes say so.
 R5 (MUST): model-chosen moves are marked in the plan segments (`showcase_source: model`, with the model's one-line reason) and summarized in the order notes.
 R6 (MUST NOT): change backbeat matching; snare-parity alignment runs after move selection exactly as before.
+R7 (MUST NOT): offer or accept a model-chosen abrupt exit. `EXITS` stays empty, so any "exit" other than "none" is dropped as unknown; R3 then holds trivially.
 </contract_rules>
 
 % Verification
 
-`tests/test_showcase_moves.py`: unknown moves dropped; exit spacing and budget; notes, lineage and opening win; DJ showcase uses model moves (including an echo-out exit); Mix to listen ignores choreography; a DJ-noted exit beats the model; model failure keeps the rotation with a note.
+`tests/test_showcase_moves.py`: unknown moves dropped; exit spacing and budget; notes, lineage and opening win; DJ showcase uses model moves, and a model-chosen echo-out is dropped; Mix to listen ignores choreography; a DJ-noted exit with Ernest's abrupt_reason beats the model, and without one it is ignored; model failure keeps the rotation with a note.

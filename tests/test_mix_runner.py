@@ -130,13 +130,65 @@ class MixRunnerTests(TestCase):
         self.assertGreater(seek_at, sync_at)
         self.assertAlmostEqual(mixxx.writes[seek_at][2], 0.01 + 0.1 / 200.0)
         self.assertEqual(mixxx.writes[seek_at - 1], ("[Channel2]", "quantize", 0))
-        self.assertEqual(mixxx.writes[seek_at + 1], ("[Channel2]", "quantize", 1.0))
+        restore_at = mixxx.writes.index(("[Channel2]", "quantize", 1.0))
+        self.assertGreater(restore_at, seek_at)
 
     def test_incoming_nudge_refuses_more_than_a_quarter_second(self) -> None:
         from hands.run_mix_plan import nudge_incoming
 
         with self.assertRaises(ValueError):
             nudge_incoming(FakeMixxx(), 2, 400.0)  # type: ignore[arg-type]
+
+    class PhaseMixxx(FakeMixxx):
+        """Deck 2's beat_distance follows its playposition; deck 1 sits on a tick."""
+
+        def __init__(self, *, ignore_first_seek: bool = False) -> None:
+            super().__init__()
+            self.values.update({
+                ("[Channel1]", "bpm"): 100.0,
+                ("[Channel1]", "beat_distance"): 0.0,
+                ("[Channel2]", "duration"): 300.0,
+                ("[Channel2]", "playposition"): 0.1,  # 30 s = beat 50 at 100 BPM, on a tick
+                ("[Channel2]", "quantize"): 1.0,
+            })
+            self.ignore_first_seek = ignore_first_seek
+            self.quantize_during_seeks: list[float] = []
+
+        def get(self, group: str, key: str) -> float:
+            if (group, key) == ("[Channel2]", "beat_distance"):
+                seconds = self.values[("[Channel2]", "playposition")] * 300.0
+                return (seconds / 0.6) % 1.0
+            return super().get(group, key)
+
+        def set(self, group: str, key: str, value: float) -> None:
+            if (group, key) == ("[Channel2]", "playposition"):
+                self.quantize_during_seeks.append(self.values[("[Channel2]", "quantize")])
+                if self.ignore_first_seek:
+                    self.ignore_first_seek = False
+                    self.writes.append((group, key, value))
+                    return  # Mixxx snapped this seek back onto the grid
+            super().set(group, key, value)
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_incoming_nudge_reports_the_measured_deck_lead(self, _sleep) -> None:
+        from hands.run_mix_plan import nudge_incoming
+
+        mixxx = self.PhaseMixxx()
+        lead = nudge_incoming(mixxx, 2, 140.0, from_deck=1)  # type: ignore[arg-type]
+        self.assertAlmostEqual(lead, 140.0, places=3)
+        self.assertEqual(mixxx.quantize_during_seeks, [0])
+        self.assertEqual(mixxx.values[("[Channel2]", "quantize")], 1.0)
+
+    @patch("hands.run_mix_plan.time.sleep")
+    def test_incoming_nudge_reseeks_when_mixxx_drops_the_first_seek(self, _sleep) -> None:
+        # Ernest, 2026-10-17: #199 with +140 ms still sounded off by more than
+        # an eighth note; the old nudge restored quantize before the seek landed.
+        from hands.run_mix_plan import nudge_incoming
+
+        mixxx = self.PhaseMixxx(ignore_first_seek=True)
+        lead = nudge_incoming(mixxx, 2, -220.0, from_deck=1)  # type: ignore[arg-type]
+        self.assertAlmostEqual(lead, -220.0, places=3)
+        self.assertEqual(mixxx.quantize_during_seeks, [0, 0])
 
     def test_cue_deck_retries_when_the_first_seek_is_ignored(self) -> None:
         # Live: Back Down rode to end-of-track, then loading Magic Stick
@@ -425,6 +477,33 @@ class MixRunnerTests(TestCase):
         ]
         self.assertEqual(pitch_writes[0], -1.0)
         self.assertEqual(pitch_writes[-1], 0.0)
+
+    @patch("hands.run_mix_plan.wait_for_next_beat")
+    @patch("hands.run_mix_plan.time.sleep")
+    @patch("hands.run_mix_plan.time.monotonic", side_effect=[0.0, 0.0, 4.0, 8.0, 40.0])
+    def test_outgoing_level_eases_down_gently_then_restores(
+        self, _monotonic, _sleep, _wait_for_next_beat
+    ) -> None:
+        mixxx = FakeMixxx()
+        perform_transition(
+            mixxx,
+            {
+                "from_deck": 1,
+                "to_deck": 2,
+                "transition_beats": 64,
+                "technique": "smooth_blend",
+                "moves": ["crossfade"],
+                "outgoing_level": 0.85,
+            },
+            port=9995,
+        )
+        levels = [v for g, k, v in mixxx.writes if (g, k) == ("[Channel1]", "volume")]
+        stop = mixxx.writes.index(("[Channel1]", "play", 0))
+        last_level = max(i for i, w in enumerate(mixxx.writes) if w[:2] == ("[Channel1]", "volume"))
+        self.assertAlmostEqual(min(levels), 0.85)
+        self.assertGreater(levels[1], 0.85)  # eased, not jumped
+        self.assertEqual(levels[-1], 1.0)
+        self.assertGreater(last_level, stop)  # restored only after the deck stops
 
     def test_key_blend_rejects_excessive_shift(self) -> None:
         mixxx = FakeMixxx()
@@ -754,6 +833,42 @@ class GentleBlendTests(TestCase):
             self._transition(4, technique="filter_drop_exit", moves=("filter_drop_exit",)),
             {"op": "load", "deck": 1},
         ])
+
+    def test_unrequested_abrupt_exits_are_refused_before_anything_plays(self) -> None:
+        # Ernest, 2026-10-17, on a 4-beat echo-out "fix" for Sade - Turn My
+        # Back -> Sorry: "I hate the sharp cut off of Sade's song. DO NOT DO THAT."
+        from hands.run_mix_plan import check_no_abrupt_exits
+        for technique, moves in (
+            ("echo_out_exit", ("echo_out_exit",)),
+            ("filter_drop_exit", ("filter_drop_exit",)),
+            ("half_time_or_cut", ("brake_out", "hard_cut")),
+            ("beat_drop_entry", ("brake_out", "hard_cut")),
+            ("standard_blend", ("sync", "spinback_out", "crossfade")),
+        ):
+            with self.subTest(technique=technique), self.assertRaisesRegex(ValueError, "A — Out -> B — In"):
+                check_no_abrupt_exits([self._transition(32), self._transition(4, technique, moves)])
+
+    def test_abrupt_exit_with_ernests_reason_and_gentle_blends_pass(self) -> None:
+        from hands.run_mix_plan import check_no_abrupt_exits
+        asked = self._transition(4, "echo_out_exit", ("echo_out_exit",))
+        asked["abrupt_exit"] = {"reason": "highlight the drop"}
+        check_no_abrupt_exits([
+            asked, self._transition(32),
+            self._transition(24, "tempo_gap_blend", ("rate_nudge_in", "filter_sweep_out", "crossfade")),
+        ])
+        asked["abrupt_exit"] = {"reason": "  "}
+        with self.assertRaises(ValueError):
+            check_no_abrupt_exits([asked])
+
+    def test_run_plan_refuses_a_plan_with_an_unrequested_echo_out(self) -> None:
+        plan = {"events": [
+            {"op": "reset_instrument"},
+            self._transition(4, "echo_out_exit", ("echo_out_exit",)),
+        ]}
+        from hands.run_mix_plan import run_plan
+        with patch("hands.source_cutoffs.prepare_plan", side_effect=lambda p, dry_run: p), \
+                self.assertRaisesRegex(ValueError, "abrupt cut-off"):
+            run_plan(plan, port=9995, dry_run=True, max_events=None)
 
     def test_perform_transition_refuses_a_short_blend(self) -> None:
         mixxx = FakeMixxx()

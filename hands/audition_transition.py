@@ -50,6 +50,7 @@ from hands.mixxx_control import DEFAULT_PORT, MixxxControl
 from hands.run_mix_plan import (
     LOAD_TIMEOUT_S,
     _run_events,
+    cue_options,
     load_deck,
     load_executable_plan,
     neutralize_deck_effects,
@@ -304,6 +305,12 @@ def plan_audition(
     number = int(number)
     t_index = indexes[number - 1]
     transition = dict(events[t_index])
+    from hands.run_mix_plan import check_no_abrupt_exits
+
+    try:
+        check_no_abrupt_exits([transition])
+    except ValueError as error:
+        raise AuditionError(str(error)) from error
     from_deck, to_deck = int(transition["from_deck"]), int(transition["to_deck"])
     bpms = _track_bpms(plan)
     notes: list[str] = []
@@ -470,6 +477,11 @@ def plan_audition(
     play_events.append({"op": "stop_all"})
 
     moves = list(transition.get("moves") or [])
+    try:
+        for load in (out_setup, in_setup):
+            cue_options(load)  # reject invalid strict options before live setup
+    except (TypeError, ValueError) as error:
+        raise AuditionError(str(error)) from error
     return {
         "number": number,
         "count": len(indexes),
@@ -644,6 +656,7 @@ def _setup(mixxx, spec: dict, expected_bpms: dict) -> None:
             event.get("cue_fraction", 0.1),
             event.get("cue_seconds"),
             expected_bpms.get(event["track_id"]),
+            **cue_options(event),
         )
     pitch = spec["outgoing"]["pitch_semitones"]
     if pitch:
@@ -736,10 +749,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="print what would happen; never connects to Mixxx")
     parser.add_argument("--take-over", action="store_true",
                         help="allow loading over decks that are already playing")
+    parser.add_argument("--nudge-ms", type=float, default=None, metavar="MS",
+                        help="try this incoming nudge instead of the plan's incoming_nudge_ms "
+                             "(positive = incoming hits earlier; 0 = none; the plan file is not changed)")
     args = parser.parse_args(argv)
 
     plan_path = resolve_plan_argument(args.plan)
     plan = load_executable_plan(plan_path)
+    if args.nudge_ms is not None and args.transition is not None:
+        from hands.run_mix_plan import MAX_NUDGE_MS
+
+        if abs(args.nudge_ms) > MAX_NUDGE_MS:
+            parser.error(f"--nudge-ms must be within ±{MAX_NUDGE_MS:g}")
+        indexes = _transition_indexes(plan.get("events") or [])
+        if not 1 <= args.transition <= len(indexes):
+            parser.error(f"--transition must be 1-{len(indexes)}")
+        event = plan["events"][indexes[args.transition - 1]]
+        planned = event.get("incoming_nudge_ms")
+        if args.nudge_ms:
+            event["incoming_nudge_ms"] = args.nudge_ms
+        else:
+            event.pop("incoming_nudge_ms", None)
+        print(f"[audition] nudge for this run: {args.nudge_ms:+g} ms (plan: {planned if planned is not None else 'none'}; plan file unchanged)")
     if args.list:
         for item in list_transitions(plan):
             print(

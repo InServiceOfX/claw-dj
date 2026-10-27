@@ -6,7 +6,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from brain.build_mix_plan import compose_mix_plan
-from brain.showcase_moves import validate
+from brain.showcase_moves import build_prompt, validate
 
 
 def _t(n: int, **extra) -> list[dict]:
@@ -18,13 +18,13 @@ class ValidateTest(TestCase):
         plan, _ = validate([{"i": 3, "flourish": "laser_show", "exit": "teleport"}], _t(8), smooth_opening=0)
         self.assertNotIn(3, plan)
 
-    def test_no_two_dramatic_exits_in_a_row_and_budget(self) -> None:
+    def test_model_never_gets_an_abrupt_exit(self) -> None:
+        # Ernest, 2026-10-17: "I hate the sharp cut off ... DO NOT DO THAT."
         moves = [{"i": i, "flourish": "loop_roll", "exit": "echo_out"} for i in range(8)]
         plan, notes = validate(moves, _t(8), smooth_opening=0)
-        exits = [i for i, p in plan.items() if p["exit"] != "none"]
-        self.assertLessEqual(len(exits), 2)  # 25% of 8
-        self.assertTrue(all(b - a > 1 for a, b in zip(exits, exits[1:])))
-        self.assertTrue(any("declined" in n for n in notes))
+        self.assertEqual([i for i, p in plan.items() if p["exit"] != "none"], [])
+        self.assertTrue(any("declined (no abrupt cut-offs)" in n for n in notes))
+        self.assertNotIn("echo_out", build_prompt(_t(2), ""))
 
     def test_notes_and_lineage_and_opening_win(self) -> None:
         transitions = _t(8)
@@ -76,7 +76,8 @@ class ComposeShowcaseTest(TestCase):
         sources = [s.get("showcase_source") for s in plan["segments"]]
         self.assertIn("model", sources)
         self.assertTrue(any(s["showcase_move"] == "transformer_cut" for s in plan["segments"]))
-        self.assertTrue(any(s["technique"] == "echo_out_exit" for s in plan["segments"]))
+        # Ernest, 2026-10-17: no abrupt cut-offs; the model's echo-out is dropped
+        self.assertFalse(any(s["technique"] == "echo_out_exit" for s in plan["segments"]))
 
     def test_other_mix_feels_ignore_choreography(self) -> None:
         plan = self._build("mix-to-listen", self._ask)
@@ -86,10 +87,19 @@ class ComposeShowcaseTest(TestCase):
         notes = {}
         plan_probe = self._build("dj-showcase", self._ask)
         outgoing = plan_probe["tracks"][3]["track_id"]
-        notes[outgoing] = "exit_style=filter_drop"
+        notes[outgoing] = 'exit_style=filter_drop abrupt_reason="highlight the drop"'
         plan = self._build("dj-showcase", self._ask, notes)
         index = [t["track_id"] for t in plan["tracks"]].index(outgoing)
         self.assertEqual(plan["segments"][index]["technique"], "filter_drop_exit")
+        transition = [e for e in plan["events"] if e["op"] == "transition"][index]
+        self.assertEqual(transition["abrupt_exit"]["reason"], "highlight the drop")
+
+    def test_dj_note_exit_without_ernests_reason_is_ignored(self) -> None:
+        plan_probe = self._build("dj-showcase", self._ask)
+        outgoing = plan_probe["tracks"][3]["track_id"]
+        plan = self._build("dj-showcase", self._ask, {outgoing: "exit_style=echo_out"})
+        index = [t["track_id"] for t in plan["tracks"]].index(outgoing)
+        self.assertNotIn(plan["segments"][index]["technique"], ("echo_out_exit", "filter_drop_exit"))
 
     def test_model_failure_keeps_rotation(self) -> None:
         def boom(prompt):

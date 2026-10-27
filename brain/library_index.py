@@ -102,6 +102,22 @@ CREATE TABLE IF NOT EXISTS beat_phase_windows (
     confidence REAL NOT NULL,
     PRIMARY KEY (track_id, start_beat, beats)
 );
+-- Real-beat reads of double-time grids at a blend window
+-- (onset_analysis.measure_real_beats): which grid beats are the real beats
+-- and which real beats carry the snare. Same reuse rule as above.
+CREATE TABLE IF NOT EXISTS real_beat_windows (
+    track_id TEXT NOT NULL,
+    start_beat INTEGER NOT NULL,
+    beats INTEGER NOT NULL,
+    bpm REAL NOT NULL,
+    first_beat_seconds REAL NOT NULL,
+    analyzed_at REAL NOT NULL,
+    beat_phase INTEGER NOT NULL,
+    snare_parity INTEGER NOT NULL,
+    confidence REAL NOT NULL,
+    other_confidence REAL NOT NULL,
+    PRIMARY KEY (track_id, start_beat, beats)
+);
 -- Synced-lyric timeline: raw LRC plus detected verse/chorus segments with
 -- vocal-start times snapped to the Mixxx beatgrid — the cut points the
 -- verse-tour / lyric-aware transitions build on. See brain/lyric_timeline.py.
