@@ -1,0 +1,347 @@
+{
+  "title": "claw-dj — public demo short",
+  "fps": 30,
+  "presenter": "Built by Ernest Yeung",
+  "url": "claw-dj-links.vercel.app",
+  "tagline": "The AI DJ that performs.",
+  "end_lines": [
+    "github.com/InServiceOfX/claw-dj",
+    "Open source · works with Claude Code, Codex & Hermes",
+    "claw-dj-links.vercel.app"
+  ],
+  "blend": {
+    "plan": "~/.openclaw/workspace/Data/Public/Music/claw-dj-demo/mix_plan.json",
+    "transition": 1,
+    "note": "Original, royalty-free music (scripts/demo/demo_music.py): Night Drive (90 BPM, Am) -> Velvet Hour (92 BPM, C), 32-beat smooth blend with a bass swap. Safe for public posting."
+  },
+  "agent": {
+    "title": "Claude Code  ·  ~/claw-dj",
+    "note": "Real session, 2026-10-19: these plan_cli commands and outputs were run by Claude Code in a sandbox copy of brain/data (the stills come from that same plan).",
+    "lines": [
+      {
+        "at": 0.25,
+        "kind": "prompt",
+        "cps": 38,
+        "text": "Make me a 12-song Sunday slow-jams mix from my library, around 90 BPM."
+      },
+      {
+        "at": 2.5,
+        "kind": "say",
+        "text": "I'll create a plan, add twelve analyzed slow jams near 90 BPM, and build it."
+      },
+      {
+        "at": 3.4,
+        "kind": "tool",
+        "text": "Bash(uv run python -m brain.plan_cli new \"Sunday Slow Jams\" --activate)"
+      },
+      {
+        "at": 3.9,
+        "kind": "out",
+        "text": "slug: sunday-slow-jams · status: wip"
+      },
+      {
+        "at": 4.9,
+        "kind": "tool",
+        "text": "Bash(uv run python -m brain.plan_cli add --plan sunday-slow-jams … 12 tracks)"
+      },
+      {
+        "at": 5.4,
+        "kind": "out",
+        "text": "added 12: Simply Red, Patrice Rushen, Anita Baker, Toni Braxton, 112, JoJo, Donell Jones, Majid Jordan, Ginuwine, Sade, Joe"
+      },
+      {
+        "at": 6.6,
+        "kind": "tool",
+        "text": "Bash(uv run python -m brain.plan_cli build --plan sunday-slow-jams --profile mix-to-listen)"
+      },
+      {
+        "at": 7.1,
+        "kind": "out",
+        "text": "[beat-phase] Holding Back The Years -> Sweetest Taboo: ride 347 -> 348 to match snare parity + bar count"
+      },
+      {
+        "at": 7.6,
+        "kind": "out",
+        "hl": true,
+        "text": "12 tracks · 11 transitions · 38 events · dry-run ready (4.3 s)"
+      },
+      {
+        "at": 8.6,
+        "kind": "say",
+        "text": "Done. Open claw-dj › Arrange to review it, or press Start mix."
+      }
+    ]
+  },
+  "segments": [
+    {
+      "id": "hook",
+      "dur": 4.4,
+      "visual": {
+        "kind": "agent"
+      },
+      "texts": [
+        {
+          "text": "ONE ASK. A WHOLE DJ MIX.",
+          "style": "kinetic",
+          "at": 0.1,
+          "size": 0.05
+        }
+      ],
+      "vo": "I asked my AI agent for a Sunday slow-jams mix.",
+      "vo_at": 0.5
+    },
+    {
+      "id": "agent_build",
+      "dur": 6.4,
+      "visual": {
+        "kind": "agent"
+      },
+      "texts": [
+        {
+          "text": "Claude Code | Codex | Hermes | any agent with a terminal",
+          "style": "chips",
+          "at": 0.8,
+          "y": 0.065
+        }
+      ],
+      "vo": "It drives claw-dj for me: twelve songs from my own library, with a complete mix plan ready to review.",
+      "vo_at": 0.2
+    },
+    {
+      "id": "arrange",
+      "dur": 7.0,
+      "visual": {
+        "kind": "still",
+        "src": "arrange",
+        "crop": [
+          234,
+          130,
+          1452,
+          900
+        ],
+        "zoom": [
+          1.18,
+          1.3
+        ],
+        "focus": [
+          0.35,
+          0.05
+        ],
+        "focus_end": [
+          0.35,
+          0.8
+        ],
+        "clamp": "roi",
+        "vertical_focus": [
+          0.12,
+          0.12
+        ],
+        "vertical_focus_end": [
+          0.12,
+          0.7
+        ]
+      },
+      "pulse": {
+        "box": [
+          1530,
+          505,
+          1668,
+          551
+        ],
+        "at": 3.4
+      },
+      "texts": [
+        {
+          "text": "SAME PLAN. RIGHT IN THE APP.",
+          "style": "kinetic",
+          "at": 0.15
+        }
+      ],
+      "vo": "And it all shows up in the app, ready to check, edit, or audition in Mixxx.",
+      "vo_at": 0.3
+    },
+    {
+      "id": "logo",
+      "dur": 3.6,
+      "visual": {
+        "kind": "logo"
+      },
+      "vo": "This is claw-dj: the AI DJ that performs.",
+      "vo_at": 0.25
+    },
+    {
+      "id": "curate",
+      "dur": 7.6,
+      "visual": {
+        "kind": "still",
+        "src": "curate",
+        "crop": [
+          225,
+          372,
+          1460,
+          640
+        ],
+        "zoom": [
+          1.28,
+          1.42
+        ],
+        "focus": [
+          0.0,
+          0.22
+        ],
+        "clamp": "roi"
+      },
+      "typing": {
+        "box": [
+          250,
+          460,
+          1159,
+          496
+        ],
+        "text": "Ja Rule & Lil' Mo duets, early-2000s R&B",
+        "at": 0.5,
+        "cps": 26
+      },
+      "pulse": {
+        "box": [
+          1623,
+          460,
+          1670,
+          496
+        ],
+        "at": 2.6
+      },
+      "texts": [
+        {
+          "text": "112,626 SONGS INDEXED",
+          "style": "stat",
+          "at": 3.8
+        }
+      ],
+      "vo": "Prefer clicking? Describe a set in plain English, and it picks from music you own.",
+      "vo_at": 0.3
+    },
+    {
+      "id": "build",
+      "dur": 7.2,
+      "visual": {
+        "kind": "still",
+        "src": "mix",
+        "crop": [
+          249,
+          612,
+          1421,
+          800
+        ],
+        "zoom": [
+          1.2,
+          1.32
+        ],
+        "focus": [
+          0.6,
+          0.3
+        ],
+        "focus_end": [
+          0.75,
+          0.55
+        ],
+        "clamp": "roi",
+        "vertical_focus": [
+          0.9,
+          0.5
+        ]
+      },
+      "pulse": {
+        "box": [
+          1497,
+          1008,
+          1647,
+          1053
+        ],
+        "at": 1.0
+      },
+      "texts": [
+        {
+          "text": "ONE CLICK.",
+          "style": "kinetic",
+          "at": 0.15
+        },
+        {
+          "text": "12 SONGS · 11 TRANSITIONS",
+          "style": "stat",
+          "at": 3.4
+        }
+      ],
+      "vo": "One click plans every transition: tempo, key, phrasing, even the backbeat.",
+      "vo_at": 0.3
+    },
+    {
+      "id": "perform",
+      "dur": 15.0,
+      "visual": {
+        "kind": "deck",
+        "window": "blend"
+      },
+      "blend_at": 0.6,
+      "texts": [
+        {
+          "text": "LIVE IN MIXXX",
+          "text_no_obs": "BLEND PREVIEW",
+          "style": "tag",
+          "at": 0.2
+        },
+        {
+          "text": "BEAT-MATCHED",
+          "style": "callout",
+          "at": 5.0
+        },
+        {
+          "text": "BASS SWAP",
+          "style": "callout",
+          "at": 8.2
+        },
+        {
+          "text": "32-COUNT BLEND",
+          "style": "callout",
+          "at": 11.2
+        }
+      ],
+      "vo": "Then it performs, live in Mixxx. The AI plans, and a real-time engine plays every beat.",
+      "vo_at": 0.5,
+      "music": "full_after_vo"
+    },
+    {
+      "id": "ear",
+      "dur": 6.0,
+      "visual": {
+        "kind": "note",
+        "title": "DJ NOTE · Sade — Cherry Pie  ›  Paradise",
+        "badge": "APPROVED BY EAR · SAVED FOR THE NEXT PASS",
+        "body": "Vinyl rip with a live drummer: it drifts off its grid, about 100 ms early at the fade. Match by measured hits, not the grid. Paradise nudged +140 ms. 32-beat blend, gradual bass swap.",
+        "meta": "Saved to the library’s DJ notes and the plan’s transition locks · 2026-10-17",
+        "quote": "“It sounds very good.”"
+      },
+      "texts": [
+        {
+          "text": "YOUR EAR. YOUR DJ NOTES.",
+          "style": "kinetic",
+          "at": 0.1,
+          "size": 0.045
+        }
+      ],
+      "vo": "Your listening notes stay with the music, so you and your agent can keep refining the mix.",
+      "vo_at": 0.25
+    },
+    {
+      "id": "end",
+      "dur": 6.0,
+      "visual": {
+        "kind": "end"
+      },
+      "vo": "claw-dj. It's open source. Bring your own agent.",
+      "vo_at": 0.45,
+      "music": "full_after_vo",
+      "captions": false
+    }
+  ]
+}
