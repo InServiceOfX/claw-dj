@@ -1,5 +1,16 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## 2026-10-30: TikTok DJ-transition research ingested (docs only)
+
+Ernest asked for three TikTok DJ-transition videos to be ingested as notes. Added
+`docs/research/tiktok-dj-transitions/` (per-video notes, timestamped
+transcripts, 720px screenshots, and an index mapping each technique to claw-dj),
+plus a short "Outside references" section in `docs/DJ_TRANSITIONS_PLAYBOOK.md`.
+Proposals only: a `drop_swap` technique (drop-to-drop with MID and LOW EQ
+trades), a `loop_chop_rhythm` flourish, and beat-quantized scratch releases.
+No code or behavior changed. Branch `bots/tiktok-dj-transitions` (bot account
+yeung-assistant). PR opened at Ernest's request; not merged.
+
 ## 2026-10-26 — Worktree audited and committed; artist-footage R&B videos ready
 
 Ernest explicitly requested review/commits of every accumulated modified and
