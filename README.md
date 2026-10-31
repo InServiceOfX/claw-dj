@@ -176,3 +176,55 @@ installed. New modules keep their path constants at module level
 (`DEFAULT_*`) and read them as `module.DEFAULT_X` at call time, because the
 suite isolates by patching those constants and a `from ... import` binds an
 unpatchable copy.
+
+## Short-form clip generation
+
+Generate vertical short-form clips (9:16, 1080x1920, 15-30s MP4) from claw-dj
+transitions for YouTube Shorts, TikTok, and Reels:
+
+```bash
+# From a mix plan (active plan or specify --plan <slug>)
+uv run python -m hands.clip --plan my-mix --transition 1 --template same_beat --output ~/clips/reveal.mp4
+
+# Or via plan_cli
+uv run python -m brain.plan_cli clip --transition 2 --template watch_ai_mix --output ~/clips/ai-mix.mp4
+
+# With rendered audio from Mixxx
+uv run python -m hands.clip --plan my-mix --transition 1 --audio ~/Music/Mixxx/Recordings/mix.wav \
+  --start-offset 120 --duration 25 --output ~/clips/transition.mp4
+
+# Test with synthetic data (no plan needed)
+uv run python -m hands.clip --synthetic --template same_beat --duration 15 --output /tmp/test.mp4
+```
+
+**Two templates:**
+
+1. **`same_beat`** — Sample reveal: shows track A → track B with "These use the
+   same beat" hook text, an animated waveform visualizer, and branded end card.
+
+2. **`watch_ai_mix`** — Shows the DJ brain's reasoning/plan as paced on-screen
+   captions: technique, transition beats, BPM match, and strategy over the
+   transition audio.
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--plan` | Plan slug or path to `mix_plan.json` |
+| `--transition` | Transition number (1-indexed, default 1) |
+| `--template` | `same_beat` or `watch_ai_mix` |
+| `--audio` | Source audio file (WAV/MP3/etc.) |
+| `--start-offset` | Start position in audio (seconds) |
+| `--duration` | Clip length (15-30s recommended) |
+| `--hook-text` | Override on-screen hook text |
+| `--seed` | Random seed for title/caption variation |
+| `--output` | Output MP4 path (required) |
+
+Each clip outputs:
+- **MP4** (H.264/AAC, 1080x1920, 30fps) — vertical video ready for upload
+- **JSON sidecar** — suggested title, caption, and hashtags derived from the
+  transition data
+
+**Copyright notice:** Clips with copyrighted tracks may be claimed by content
+owners. Use royalty-free, licensed, or Suno-generated music for monetizable
+content. See `scripts/demo/demo_music.py` for original royalty-free demo tracks.
