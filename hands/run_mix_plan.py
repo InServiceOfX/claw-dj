@@ -613,6 +613,263 @@ def cue_options(event: dict) -> dict:
     return {"cue_tolerance_ms": value}
 
 
+def backbeat_options(event: dict) -> dict | None:
+    """Only explicitly measured seams opt in; heard legacy recipes are unchanged."""
+    if 'backbeat_start' not in event:
+        return None
+    from shared.backbeat import validate_backbeat_start
+
+    if event.get('op') != 'transition' or not is_gentle_blend(event):
+        raise ValueError('measured backbeat starts require a gentle transition')
+    if ('sync' not in (event.get('moves') or [])
+            or 'snare_align' in event['moves'] or event.get('incoming_nudge_ms')
+            or event.get('incoming_bpm_target') or event.get('keep_outgoing_live')):
+        raise ValueError('measured backbeat start cannot also seek, nudge, or hold another tempo')
+    return validate_backbeat_start(event['backbeat_start'])
+
+
+def source_clock_anchor(event: dict) -> float | None:
+    """Opt-in absolute source anchor: preloads must not add unpaid ride counts."""
+    if not event.get('source_clock_anchor'):
+        return None
+    if event['source_clock_anchor'] is not True:
+        raise ValueError('source_clock_anchor must be boolean true')
+    if (event.get('op') != 'play_body' or event.get('handoff')
+            or event.get('skip_beats') or event.get('tempo_ramp_beats')):
+        raise ValueError('source-clock body requires an ordinary, non-skipping ride')
+    anchor = event.get('phase_anchor') or {}
+    try:
+        bpm = float(anchor['grid_bpm'])
+        first = float(anchor['first_beat_seconds'])
+        beat = float(anchor['planned_anchor_beat_index'])
+        target = first + beat * 60 / bpm
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as error:
+        raise ValueError('source-clock body requires a valid planned phase anchor') from error
+    if not all(math.isfinite(v) for v in (bpm, first, beat, target)) or min(bpm, target) <= 0 or beat < 0:
+        raise ValueError('source-clock anchor must be finite and within the source')
+    return target
+
+
+def read_source_clock(mixxx: MixxxControl, group: str, duration: float, grid: dict) -> tuple[float, float]:
+    """Unwrap audio-callback beat phase using the coarse position's beat number.
+
+    Mixxx's playposition slider updates at 15 Hz, too slowly for a 30 ms guard.
+    beat_distance updates each audio callback. Its fractional phase, combined
+    with the exact grid origin, resolves the current source time. The coarse
+    slider locates only the containing beat, never the millisecond deadline.
+    """
+    bpm = float(grid['grid_bpm'])
+    first = float(grid['first_beat_seconds'])
+    coarse = mixxx.get(group, 'playposition') * duration
+    before = time.monotonic()
+    fraction = mixxx.get(group, 'beat_distance')
+    after = time.monotonic()
+    if (not all(math.isfinite(v) for v in (bpm, first, coarse, fraction))
+            or bpm <= 0 or not 0 <= coarse <= duration or not 0 <= fraction <= 1):
+        raise CueVerificationError(f'{group}: invalid audio-callback source clock')
+    period = 60 / bpm
+    index = round((coarse-first)/period - fraction)
+    seconds = first + (index+fraction)*period
+    # A 15 Hz slider may lag, but must still identify the same nearby grid beat.
+    # Refuse a stale/mismatched origin instead of selecting a different count.
+    if not 0 <= seconds <= duration or not -.015 <= seconds-coarse <= .12:
+        raise CueVerificationError(f'{group}: fast phase and coarse source position disagree')
+    if after-before > .04:
+        raise CueVerificationError(f'{group}: source-clock read too slow for a 30 ms start check')
+    return seconds, (before+after)/2
+
+
+def wait_for_source_anchor(mixxx: MixxxControl, event: dict) -> None:
+    """Wait on original source time, irrespective of earlier load/counter delays."""
+    try:
+        _wait_for_source_anchor(mixxx, event)
+    except CueVerificationError:
+        raise
+    except Exception as error:
+        raise CueVerificationError(f'source-clock read failed: {error}') from error
+
+
+def _wait_for_source_anchor(mixxx: MixxxControl, event: dict) -> None:
+    target = source_clock_anchor(event)
+    if target is None:
+        raise ValueError('missing source-clock anchor')
+    group = deck_group(event['deck'])
+    grid = event['phase_anchor']
+    duration = mixxx.get(group, 'duration')
+    if not math.isfinite(duration) or duration <= target:
+        raise CueVerificationError('source-clock anchor lies outside the loaded recording')
+    if abs(mixxx.get(group, 'file_bpm') - float(grid['grid_bpm'])) > .01:
+        raise CueVerificationError('source-clock grid changed since the blend was measured')
+    # Return shortly before the desired beat, for the existing next-edge gate.
+    ready = target - .35 * 60 / float(grid['grid_bpm'])
+    start = mixxx.get(group, 'playposition') * duration
+    if not math.isfinite(start) or not 0 <= start < target:
+        raise CueVerificationError('source-clock fade anchor already missed; no rewind attempted')
+    bpm = mixxx.get(group, 'bpm')
+    if not math.isfinite(bpm) or bpm <= 0:
+        raise CueVerificationError('source clock has no valid live tempo')
+    rate = bpm / float(grid['grid_bpm'])
+    deadline = time.monotonic() + max(0., ready-start) / rate + 2.
+    while True:
+        current = mixxx.get(group, 'playposition') * duration
+        if mixxx.get(group, 'play') < .5 or not math.isfinite(current):
+            raise CueVerificationError('outgoing source stopped during the measured ride')
+        if current >= ready:
+            if current >= target:
+                raise CueVerificationError('source clock passed its fade anchor; no guessed count repair')
+            break
+        if time.monotonic() > deadline:
+            raise CueVerificationError('source clock stalled before its fade anchor')
+        time.sleep(.025)
+    print(f'  source-clock ride: fade anchor {target:.4f}s; ready at {current:.4f}s')
+
+
+def start_on_measured_backbeat(mixxx: MixxxControl, event: dict, *, outgoing_bpm: float) -> None:
+    """Tempo-sync while stopped; start the untouched cue on a measured snare phase.
+
+    beatsync after play can change the source beat, including a preserved 0:00
+    intro. This path waits on the OUTGOING source clock instead. It verifies
+    both real musical tempo and post-start phase before opening the fader.
+    No corrective jump, guessed count one, or successful-sounding fallback.
+    """
+    try:
+        _start_on_measured_backbeat(mixxx, event, outgoing_bpm=outgoing_bpm)
+    except CueVerificationError:
+        raise
+    except Exception as error:
+        raise CueVerificationError(f'measured-start preflight failed: {error}') from error
+
+
+def _start_on_measured_backbeat(mixxx: MixxxControl, event: dict, *, outgoing_bpm: float) -> None:
+    from shared.backbeat import next_start_source, phase_error_ms, target_grid_bpm
+
+    spec = backbeat_options(event)
+    if spec is None:
+        raise ValueError('missing measured backbeat start')
+    out_g, in_g = deck_group(event['from_deck']), deck_group(event['to_deck'])
+    if mixxx.get(out_g, 'play') < .5 or mixxx.get(in_g, 'play') >= .5:
+        raise CueVerificationError('measured start requires outgoing playing, incoming stopped')
+    if mixxx.get(in_g, 'sync_enabled') >= .5 or mixxx.get('[AutoDJ]', 'enabled') >= .5:
+        raise CueVerificationError('disable persistent Sync/AutoDJ before a measured start')
+    crossfader = mixxx.get('[Master]', 'crossfader')
+    if not math.isfinite(crossfader) or abs(crossfader - crossfader_target(event['from_deck'])) > .02:
+        raise CueVerificationError('incoming deck must remain inaudible during measured start')
+    for group, model in [(out_g, spec['outgoing']), (in_g, spec['incoming'])]:
+        actual = mixxx.get(group, 'file_bpm')
+        if not math.isfinite(actual) or abs(actual - model['grid_bpm']) > .01:
+            raise CueVerificationError(f'{group}: measured grid no longer matches the loaded track')
+    out_duration, in_duration = mixxx.get(out_g, 'duration'), mixxx.get(in_g, 'duration')
+    if not all(math.isfinite(d) and d > 0 for d in (out_duration, in_duration)):
+        raise CueVerificationError('measured start requires valid source durations')
+    if spec['cue_seconds'] > .95 * in_duration:
+        raise CueVerificationError('measured cue is outside the seekable source')
+    quantize = mixxx.get(in_g, 'quantize')
+    if not math.isfinite(quantize) or not 0 <= quantize <= 1:
+        raise CueVerificationError('incoming quantize state is unavailable')
+    def sample(group, duration):
+        model = spec['outgoing'] if group == out_g else spec['incoming']
+        return read_source_clock(mixxx, group, duration, model)
+    def check_phase():
+        target = target_grid_bpm(spec, outgoing_bpm)
+        if (mixxx.get(out_g, 'play') < .5 or mixxx.get(in_g, 'play') < .5
+                or abs(mixxx.get(in_g, 'bpm') - target) > .1):
+            raise CueVerificationError('tempo or transport changed during measured start')
+        out_seconds, out_time = sample(out_g, out_duration)
+        in_seconds, in_time = sample(in_g, in_duration)
+        # The two requests are sequential. Compare both decks at one instant,
+        # accounting for their different native source rates on doubled grids.
+        common = max(out_time, in_time)
+        out_seconds += (common-out_time) * outgoing_bpm/spec['outgoing']['grid_bpm']
+        in_seconds += (common-in_time) * target/spec['incoming']['grid_bpm']
+        error = phase_error_ms(spec, out_seconds, in_seconds, outgoing_bpm)
+        if abs(error) > spec['tolerance_ms']:
+            raise CueVerificationError(
+                f'measured backbeat miss {error:+.1f} ms; incoming stopped before fade '
+                f'(Play request {play_rtt*1000:.1f} ms; '
+                f'sent {(play_sent_at-launch_at)*1000:+.1f} ms from launch deadline)')
+        return error
+    try:
+        command_before = time.monotonic()
+        mixxx.set(in_g, 'quantize', 0)
+        command_rtt = time.monotonic() - command_before
+        if not 0 <= command_rtt <= .04:
+            raise CueVerificationError('control write too slow for a 30 ms start check')
+        # Tempo-only sync has no source seek. Verify the double-time multiplier
+        # rather than assuming that matching displayed BPM means matching beats.
+        target = target_grid_bpm(spec, outgoing_bpm)
+        mixxx.set(in_g, 'beatsync_tempo', 1)
+        _wait_for(mixxx, in_g, 'bpm', lambda b: math.isfinite(b) and abs(b-target) <= .1, 2.)
+        _strict_cue_position(mixxx, in_g, spec['cue_seconds']/in_duration,
+                             in_duration, 20., 0., 2.)
+        current, sampled_at = sample(out_g, out_duration)
+        source_rate = outgoing_bpm / spec['outgoing']['grid_bpm']
+        current += max(0., time.monotonic()-sampled_at) * source_rate
+        launch = next_start_source(spec, current, spec['cue_seconds'])
+        fade_source = float(event.get('transition_beats', 32)) * 60 / spec['outgoing']['real_bpm']
+        if launch + fade_source > out_duration - .25:
+            raise CueVerificationError('not enough outgoing audio for the complete measured blend')
+        window = spec['outgoing']
+        if (current < float(window.get('window_start_seconds', 0)) - .05
+                or launch + fade_source > float(window.get('window_end_seconds', out_duration)) + .05):
+            raise CueVerificationError('blend left the measured source window; remeasure before playback')
+        timeout = time.monotonic() + (launch-current) / source_rate + 2.
+        # A poll that first reports source >= launch is already late. Convert
+        # the timestamped phase to a host deadline, accounting for time spent
+        # receiving the sample. Refresh well before it, then send Play without
+        # another blocking TCP read in the critical final interval.
+        command_lead = command_rtt / 2
+        while True:
+            seconds, sampled_at = sample(out_g, out_duration)
+            launch_at = sampled_at + (launch-seconds) / source_rate
+            remaining = launch_at - time.monotonic() - command_lead
+            if remaining <= .08:
+                break
+            if mixxx.get(out_g, 'play') < .5 or time.monotonic() > timeout:
+                raise CueVerificationError('outgoing source clock stopped before measured start')
+            time.sleep(min(.025, remaining-.06))
+        remaining = launch_at - time.monotonic() - command_lead
+        if remaining < -.01:
+            raise CueVerificationError('missed measured launch deadline before play')
+        if remaining > 0:
+            time.sleep(remaining)
+        if time.monotonic() - (launch_at-command_lead) > .01:
+            raise CueVerificationError('launch scheduling stalled before play')
+        play_sent_at = time.monotonic()
+        mixxx.set(in_g, 'play', 1)
+        play_rtt = time.monotonic() - play_sent_at
+        # beat_distance is undefined before the first grid tick. Preserve the
+        # source head; let that brief pre-grid lead-in run, never seek past it.
+        initial_phase_wait = max(SEEK_SETTLE_S,
+            (max(0., spec['incoming']['first_beat_seconds']-spec['cue_seconds'])+.04)
+            / (target/spec['incoming']['grid_bpm']))
+        time.sleep(initial_phase_wait)
+        if mixxx.get(in_g, 'play') < .5:
+            raise CueVerificationError('incoming transport did not start')
+        error = check_phase()
+        mixxx.set(in_g, 'quantize', quantize)
+        time.sleep(SEEK_SETTLE_S)
+        error = check_phase()  # engine settlement must not undo the phase
+        if spec.get('approved_launch_delay'):
+            print(f'  human-approved launch: +1 musical beat; original cue {spec["cue_seconds"]:.4f}s; '
+                  f'error vs heard target {error:+.1f} ms (limit {spec["tolerance_ms"]:g} ms)')
+        else:
+            print(f'  measured backbeat: tempo-only sync; original cue {spec["cue_seconds"]:.4f}s; '
+                  f'snare phase {error:+.1f} ms (limit {spec["tolerance_ms"]:g} ms)')
+    except Exception as error:
+        try:
+            mixxx.set(in_g, 'play', 0)
+        except Exception:
+            pass
+        if isinstance(error, CueVerificationError):
+            raise
+        raise CueVerificationError(f'measured backbeat start failed: {error}') from error
+    finally:
+        try:
+            mixxx.set(in_g, 'quantize', quantize)
+        except Exception as error:
+            raise CueVerificationError('could not restore incoming quantize; manual stop may be required') from error
+
+
 def _strict_cue_position(mixxx, group, position, duration, tolerance_ms, settle_s, timeout_s):
     tolerance = tolerance_ms / 1000.0 / duration
     held = False
@@ -1278,6 +1535,7 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
     to_deck = int(event["to_deck"])
     beats = int(event.get("transition_beats", 16))
     moves = list(event.get("moves") or [])
+    measured_start = backbeat_options(event)
     technique = event.get("technique", "standard_blend")
     if is_gentle_blend(event) and beats < GENTLE_BLEND_BEATS:
         raise ValueError(f"{beats}-beat blend is too fast; blends take at least {GENTLE_BLEND_BEATS} counts")
@@ -1489,10 +1747,14 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
             f"  Song A intro loop armed at {loop_seconds:.3f}s "
             f"for {int(event.get('outgoing_loop_beats', 32))} beats"
         )
-    mixxx.set(in_g, "play", 1)
-    if sync:
+    if measured_start is not None:
+        start_on_measured_backbeat(mixxx, event, outgoing_bpm=bpm)
+        bpm = bpm / measured_start['outgoing']['grid_bpm'] * measured_start['outgoing']['real_bpm']
+    else:
+        mixxx.set(in_g, "play", 1)
+    if sync and measured_start is None:
         mixxx.set(in_g, "beatsync", 1)
-    elif phase_only_sync:
+    elif phase_only_sync and measured_start is None:
         mixxx.set(in_g, "beatsync_phase", 1)
         print(f"  phase-locked deck {to_deck} to {out_g} beat (tempo held at play_bpm)")
     if "snare_align" in moves:
@@ -1739,6 +2001,8 @@ def run_plan(
     check_no_abrupt_exits(events)
     for event in events:
         cue_options(event)  # validate explicit tolerances before connecting/playing
+        backbeat_options(event)
+        source_clock_anchor(event)
         cue_options((event.get("handoff") or {}).get("then_load") or {})
     if start_at is not None:
         events = start_at_transition(events, start_at)
@@ -1838,6 +2102,9 @@ def _run_events(mixxx: MixxxControl, events: list[dict], expected_bpms: dict, *,
                 f" (bumped to {float(bpm_target):.2f} BPM)" if bpm_target is not None else ""
             ))
         elif op == "play_body":
+            if event.get('source_clock_anchor'):
+                wait_for_source_anchor(mixxx, event)
+                continue
             beats = event.get("beats")
             seconds = float(event.get("seconds", 30))
             ensure_deck_playing(mixxx, int(event["deck"]))
@@ -2141,10 +2408,13 @@ def main() -> None:
     options = {}
     if args.source_map:
         options['source_map'] = json.loads(Path(args.source_map).read_text())
-    run_plan(
-        plan, port=port, dry_run=args.dry_run, max_events=args.max_events, record=args.record,
-        start_at=args.start_at, **options,
-    )
+    try:
+        run_plan(
+            plan, port=port, dry_run=args.dry_run, max_events=args.max_events, record=args.record,
+            start_at=args.start_at, **options,
+        )
+    except CueVerificationError as error:
+        raise SystemExit(f'[mix] stopped safely: {error}') from None
 
 
 if __name__ == "__main__":

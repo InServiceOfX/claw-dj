@@ -48,14 +48,17 @@ from pathlib import Path
 
 from hands.mixxx_control import DEFAULT_PORT, MixxxControl
 from hands.run_mix_plan import (
+    CueVerificationError,
     LOAD_TIMEOUT_S,
     _run_events,
+    backbeat_options,
     cue_options,
     load_deck,
     load_executable_plan,
     neutralize_deck_effects,
     reset_instrument,
     resolve_plan_argument,
+    source_clock_anchor,
 )
 from hands.transition import deck_group
 
@@ -465,6 +468,8 @@ def plan_audition(
     }
     if guard_anchor:
         lead_body["phase_anchor"] = guard_anchor
+    if (body or {}).get('source_clock_anchor'):
+        lead_body['source_clock_anchor'] = True
     if ramp_beats and body.get("exit_bpm_target") is not None:
         lead_body["tempo_ramp_beats"] = ramp_beats
         lead_body["exit_bpm_target"] = body["exit_bpm_target"]
@@ -478,6 +483,8 @@ def plan_audition(
 
     moves = list(transition.get("moves") or [])
     try:
+        backbeat_options(transition)
+        source_clock_anchor(lead_body)
         for load in (out_setup, in_setup):
             cue_options(load)  # reject invalid strict options before live setup
     except (TypeError, ValueError) as error:
@@ -560,8 +567,12 @@ def describe(spec: dict, *, plan_path: Path | str | None = None) -> list[str]:
     )
     if spec["snare_align"]:
         lines.append("[audition] snare_align: the incoming deck jumps one beat after sync, as in the full mix")
+    if tr.get('backbeat_start'):
+        model = tr['backbeat_start']
+        lines.append('[audition] measured backbeat start: source-clock ride, tempo-only sync before play; '
+                     f'cue preserved, phase checked within {model["tolerance_ms"]:g} ms before fade; no after-start jump')
     anchor = spec["phase_anchor"]
-    if anchor:
+    if anchor and not tr.get('backbeat_start'):
         lines.append(
             f"[audition] runtime bar guard: lands on beat-in-bar {anchor['target_beat_mod4']} "
             f"of the outgoing grid{' (synthesized for this audition)' if anchor.get('synthesized_for_audition') else ''}"
@@ -808,7 +819,7 @@ def main(argv: list[str] | None = None) -> int:
     except AuditionRefused as error:
         print(f"[audition] refused ({error.code}): {error}")
         return EXIT_REFUSED
-    except AuditionError as error:
+    except (AuditionError, CueVerificationError) as error:
         print(f"[audition] error: {error}")
         return EXIT_REFUSED
     except KeyboardInterrupt:

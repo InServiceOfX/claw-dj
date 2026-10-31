@@ -91,3 +91,70 @@ inputs remain unchanged because Ernest started the current full mix. Pending
 note/order intent is saved beside the candidate, NOT marked human-approved or
 installed. Apply plan-only notes/lock and current revisions after the stream if
 this candidate is promoted. Do not blindly run an old installer.
+
+## 2026-10-29 follow-up — three installed source-time repairs
+
+The October23 Maxwell candidate was never installed; the current artifact
+still requested9.7274s. Ernest requested repair of only109/159/235 from the
+Desktop October22/28 logs. These now opt in to measured source-time starts:
+tempo-only sync while stopped, strict original cue, source-clock outgoing
+anchor, and actual settled source-phase verification before the fade. A full
+beatsync after play can seek to another grid tick and invalidate inferred
+parity. Joe's75/154 grids need real75/77 cadence normalization. New Edition
+and the exact Lloyd I Want You Remix remain98-grid recordings; no re-grid or
+version swap was justified by the measured windows.
+
+All266 other audition setups/events and all31 prior note records are unchanged.
+The three new repair notes are agent-authored, pending live listening. The
+shared path rejects bad source clocks, weak evidence, a wrong tempo multiplier,
+an out-of-window blend and a >30ms start miss. It does not establish count1 or
+erase existing approved jump/nudge recipes. See the accepted October29 intent,
+matching story/prompts and tests/test_measured_backbeat_start.py. No generic
+Build, real playback, library/grid write or commit accompanied this repair.
+
+
+Live-clock correction (2026-10-29): audition109 failed at +32.3 ms against the
+unchanged 30 ms limit. Local Mixxx enginebuffer.cpp sets playposition updates
+at 15 Hz (about67 ms); bpmcontrol.cpp updates beat_distance on each audio
+callback. Do not launch or verify a millisecond start using the display slider.
+Require exact first_beat_seconds on both measured models; unwrap the callback
+phase with the coarse beat number and that grid origin. Timestamp each phase
+read and project both deck samples to one instant before comparing. Reject
+invalid/stale clocks or excessive read latency. Preserve the 0:00 source head
+and wait until its first grid tick before checking phase; never seek past it.
+The 30 ms guard, three pairings/cues, gentle fades and all266 other audition
+recipes are unchanged. CueVerificationError prints a concise CLI error and
+uses the existing stop-both-decks cleanup. Live listening remains pending.
+
+
+Human-approved launch timing (2026-10-29): Ernest kept109 and159, then
+approved the private235 one-count-later comparison and requested the entire
+current mix ready for run_mix.sh. Preserve all268 other audition recipes.
+An optional approved_launch_delay object on backbeat_start records beats=1,
+author=human, approved=true and a nonempty quote. Reject missing approval,
+bools, larger/arbitrary offsets or agent approvals. Add exactly one outgoing
+real musical beat to the existing next-start result (including its normal
+next-cycle choice), without altering the original cue, detector phases or
+confidence. Verify phase against that explicitly heard target with the
+existing30ms guard. Label it human-approved launch/error-vs-heard-target,
+not a newly measured snare identity. No after-start seek, full/phase sync,
+rebuild, reorder or hidden fallback. Absent approval metadata preserves all
+existing behavior. Keep exact provenance and pending/approved states.
+
+
+Deadline-based start scheduling (2026-10-30): full-run109 stopped with+38.8ms
+against the30ms limit. A synchronous poll that first sees position>=launch
+already starts late. Project each timestamped outgoing source sample to the
+current host time before selecting the next approved phase. Refresh the host
+launch deadline ahead of time, estimate command delivery from half a bounded
+preflight control-write round trip, then wait/send Play without blocking TCP
+reads in the final interval. Reject excessive write latency or scheduler
+stalls before play; retain post-start phase/tempo checks, original cues,
+quantize restoration, source-window bounds and30ms limit. No post-start seek
+or new inferred count correction. Keep109/159/235 approvals and all plan
+artifacts byte-identical. Test transport writes, engine queuing, callback
+phase sampling and multiple launch positions, not only instantaneous writes.
+Full CLI CueVerificationError should exit with a concise stopped-safely
+message using existing cleanup, without a traceback. Validate --start-at109
+against this actual plan; it restarts the outgoing song from its cue and then
+continues the remaining original event sequence. No automatic live playback.

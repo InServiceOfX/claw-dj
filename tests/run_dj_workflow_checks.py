@@ -24,6 +24,7 @@ MODULES = (
     "test_alignment_safety", "test_double_time_grid", "test_center_hold",
     "test_pitch_play", "test_onset_analysis", "test_blend_window",
     "test_audition_transition", "test_popups",
+    "test_measured_backbeat_start",
 )
 
 

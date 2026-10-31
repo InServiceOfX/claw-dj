@@ -85,11 +85,23 @@ at 0:00. This is an observed fact and an available entry choice, not a
 mandatory cue or an excluded opening. Audio before 43s remains allowed. The
 separate mandatory skip inside the recording stays in force.
 
-If a live blend is "on beat but off the backbeat / off by one count," put
-`snare_align` on the incoming track. The runner jumps one beat after
-Mixxx beatsync. Do not slide the incoming cue one beat later, and do not
-treat outgoing `ride_beats` ±1 as the snare lock. Story:
+If a live blend is "on beat but off the backbeat / off by one count," first
+check the exact recording, actual cue, current grid, real musical cadence and
+blend-window snare timing. Do not infer a one-beat jump from that description.
+The shared measured `backbeat_start` / `source_clock_anchor` path preserves
+the original cue and verifies snare phase before fading; ordinary grid sync
+is not proof of backbeat identity. Keep existing ear-approved `snare_align`
+recipes unchanged: those deliberately jump one grid beat after sync. Never
+combine that jump with a measured start, slide a requested0:00 intro, or use
+`ride_beats` ±1 as an inferred snare lock. Story:
 `user_stories/story__when_i_blend_i_match_the_snare_not_just_the_beat.md`.
+
+Ernest's standing rules (2026-10-29): tight backbeat/snare matching comes first
+for new repairs; never introduce a percussive groovy track straight into a
+ballad. Iconic or late-snare intros start at0:00, timed independently of their
+first detected grid tick. Never pair SWV with Bieber's Sorry. Preserve every
+unrequested approved seam. Propose a recording substitution or re-pair before
+changing it; automated measurements are not new human listening approvals.
 
 ## Continuous instrumental support beneath a full mix
 

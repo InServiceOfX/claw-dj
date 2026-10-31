@@ -47,7 +47,17 @@ the next-beat anchor, `snare_align` and grid alignment.
 11. No rendered audio, no ffmpeg, no plan writes, no network beyond the localhost Mixxx control API.
 12. Preserve an explicitly authored incoming load's optional cue_tolerance_ms through setup and load_deck. It must be finite in (0,250]; validate before live setup. Omitted/None preserves legacy heard cue behavior and arguments exactly. The shared runner's strict stopped-deck cue path temporarily disables quantize, waits for the requested source position to hold, restores quantize even on failure, waits for engine settlement and verifies again within the millisecond tolerance. A failed strict cue raises CueVerificationError, never a misleading verified label or play=1; full-run failure stops/neutralizes both decks, and audition cleanup remains mandatory. This checks requested versus observed cue position, not musical count-1 or audible approval. Do not enable strict mode retroactively on approved loads.
 
+13. Explicit measured `backbeat_start` metadata stays on the selected transition verbatim and is validated with the shared runner's `backbeat_options` before any live setup. Version 1 contains outgoing/incoming grid_bpm, real_bpm, snare_phase_seconds and usable confidence, the untouched cue_seconds and tolerance_ms (at most50). The shared runner tempo-syncs while stopped, verifies the source cue, waits on the outgoing source clock for the measured two-beat snare cycle, starts with quantize off, and checks actual tempo/phase after engine settlement before raising the fader. It MUST NOT issue full beatsync, phase-sync, a snare jump or an inferred nudge after that start. A failure is CueVerificationError and uses existing cleanup. This establishes measured 2/4 phase, not musical count1 or audible approval. Omitted metadata leaves approved legacy control sequences unchanged; do not retrofit other auditions. Preserve pairing, exclusions, gentle faders and later exit anchors. Do not start playback as an agent verification step without separate authorization.
+
 % Output
+
+For a selected source-clock repair, copy the outgoing body's explicit
+`source_clock_anchor` flag onto the lead-in body and validate its phase_anchor
+before connecting. The shared runner waits until just before that absolute
+source beat instead of counting from when a potentially delayed preload
+finished. It refuses an already-missed anchor, missing/stale grid, stalled
+source or unsupported skip/handoff/ramp; it never rewinds or guesses a count.
+This opt-in flag must not appear on any other approved audition.
 
 - Primary output: `hands/audition_transition.py`.
 - Callers: `brain/playlist_editor.py` (session + routes), `brain/web/plan_client.js` and `brain/web/arrange.js` (Arrange controls).
@@ -56,3 +66,50 @@ the next-beat anchor, `snare_align` and grid alignment.
 
 - `.venv/bin/python -m unittest tests/test_audition_transition.py` with fake Mixxx connections only; never a live Mixxx.
 - Cover: lead-in seek seconds from `phase_anchor`; incoming cue from the plan (load and preload); `snare_align` and the plan's `phase_anchor` reaching the real `_run_events` / `wait_for_beats`; play_bpm hold carried to the next transition's outgoing deck; entry and skip clamps; the vocal-layer chain; prev/next bounds and pair lookup; refusal for a running mix and for playing decks; dry-run output; CLI exit codes; session phases, refusal parsing, stop-before-step, kill-and-silence; editor refusal both ways; Arrange controls in node.
+
+
+Live-clock correction (2026-10-29): audition109 failed at +32.3 ms against the
+unchanged 30 ms limit. Local Mixxx enginebuffer.cpp sets playposition updates
+at 15 Hz (about67 ms); bpmcontrol.cpp updates beat_distance on each audio
+callback. Do not launch or verify a millisecond start using the display slider.
+Require exact first_beat_seconds on both measured models; unwrap the callback
+phase with the coarse beat number and that grid origin. Timestamp each phase
+read and project both deck samples to one instant before comparing. Reject
+invalid/stale clocks or excessive read latency. Preserve the 0:00 source head
+and wait until its first grid tick before checking phase; never seek past it.
+The 30 ms guard, three pairings/cues, gentle fades and all266 other audition
+recipes are unchanged. CueVerificationError prints a concise CLI error and
+uses the existing stop-both-decks cleanup. Live listening remains pending.
+
+
+Human-approved launch timing (2026-10-29): Ernest kept109 and159, then
+approved the private235 one-count-later comparison and requested the entire
+current mix ready for run_mix.sh. Preserve all268 other audition recipes.
+An optional approved_launch_delay object on backbeat_start records beats=1,
+author=human, approved=true and a nonempty quote. Reject missing approval,
+bools, larger/arbitrary offsets or agent approvals. Add exactly one outgoing
+real musical beat to the existing next-start result (including its normal
+next-cycle choice), without altering the original cue, detector phases or
+confidence. Verify phase against that explicitly heard target with the
+existing30ms guard. Label it human-approved launch/error-vs-heard-target,
+not a newly measured snare identity. No after-start seek, full/phase sync,
+rebuild, reorder or hidden fallback. Absent approval metadata preserves all
+existing behavior. Keep exact provenance and pending/approved states.
+
+
+Deadline-based start scheduling (2026-10-30): full-run109 stopped with+38.8ms
+against the30ms limit. A synchronous poll that first sees position>=launch
+already starts late. Project each timestamped outgoing source sample to the
+current host time before selecting the next approved phase. Refresh the host
+launch deadline ahead of time, estimate command delivery from half a bounded
+preflight control-write round trip, then wait/send Play without blocking TCP
+reads in the final interval. Reject excessive write latency or scheduler
+stalls before play; retain post-start phase/tempo checks, original cues,
+quantize restoration, source-window bounds and30ms limit. No post-start seek
+or new inferred count correction. Keep109/159/235 approvals and all plan
+artifacts byte-identical. Test transport writes, engine queuing, callback
+phase sampling and multiple launch positions, not only instantaneous writes.
+Full CLI CueVerificationError should exit with a concise stopped-safely
+message using existing cleanup, without a traceback. Validate --start-at109
+against this actual plan; it restarts the outgoing song from its cue and then
+continues the remaining original event sequence. No automatic live playback.

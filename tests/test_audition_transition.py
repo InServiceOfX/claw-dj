@@ -326,6 +326,18 @@ class RunAuditionTests(TestCase):
             self.assertEqual(path.read_text(), before)
             self.assertIn("nudge for this run: -120 ms", output.getvalue())
 
+    def test_cli_reports_phase_failure_without_a_traceback(self, _prepare) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "mix_plan.json"
+            path.write_text(json.dumps(make_plan()))
+            output = io.StringIO()
+            with redirect_stdout(output), patch.object(
+                audition, "run_audition", side_effect=audition.CueVerificationError("measured backbeat miss +32.3 ms")
+            ):
+                code = audition.main(["--plan", str(path), "--transition", "1", "--dry-run"])
+        self.assertEqual(code, audition.EXIT_REFUSED)
+        self.assertIn("[audition] error: measured backbeat miss +32.3 ms", output.getvalue())
+
 
 class RunningProcessTests(TestCase):
     def test_finds_live_runners_but_not_dry_runs_or_own_launcher(self) -> None:

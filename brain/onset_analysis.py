@@ -304,6 +304,79 @@ def measure_blend_window(
     )
 
 
+def fit_backbeat_timing(envelope, times, *, real_bpm: float) -> dict:
+    """Fit actual transient timing, without declaring grid beat zero count one.
+
+    The beat cadence is independently supplied, not selected from the largest
+    autocorrelation peak (syncopated music often has a stronger dotted-beat peak).
+    Absolute source seconds survive silent/late intros and double-time grids.
+    Constant hats and weak/irregular evidence are refused, not called matched.
+    """
+    from shared.backbeat import positive_number
+
+    bpm = positive_number(real_bpm, 'real BPM')
+    env, clock = np.asarray(envelope, dtype=float), np.asarray(times, dtype=float)
+    if (env.ndim != 1 or env.shape != clock.shape or len(env) < 3
+            or not np.all(np.isfinite(env)) or not np.all(np.isfinite(clock))
+            or np.any(np.diff(clock) <= 0)):
+        raise ValueError('backbeat timing needs finite, increasing source times')
+    period, cycle = 60 / bpm, 120 / bpm
+    step = max(.002, min(.006, float(np.median(np.diff(clock)))))
+    phases = np.arange(0, cycle, step)
+    lo, hi = float(clock[0]) + .04, float(clock[-1]) - .04
+    scores, rows = [], []
+    for phase in phases:
+        first = phase + np.ceil((lo - phase) / cycle) * cycle
+        beats = np.arange(first, hi, cycle)
+        # Small local envelope maximum avoids quantization of the analysis hop.
+        values = np.max([np.interp(beats + d, clock, env) for d in (-.012, 0, .012)], axis=0)
+        rows.append((beats, values))
+        scores.append(float(np.median(values)) if len(values) >= 8 else 0.)
+    best = int(np.argmax(scores))
+    peak = scores[best]
+    opposite = float(np.interp((phases[best] + period) % cycle, phases, scores, period=cycle))
+    beats, values = rows[best]
+    agreement = float(np.mean(values >= peak * .45)) if peak > 0 else 0.
+    contrast = max(0., (peak - opposite) / max(peak, 1e-12))
+    confidence = contrast * agreement
+    if peak <= 1e-10 or confidence < .2 or len(beats) < 8:
+        raise ValueError('no stable, contrasting snare cycle in this source window')
+    # Refine the phase from observed peak times, not the broad search-window edge.
+    residuals, observed = [], []
+    for beat in beats:
+        near = np.flatnonzero(np.abs(clock - beat) <= .025)
+        if len(near):
+            j = int(near[np.argmax(env[near])])
+            if env[j] >= peak * .45:
+                residuals.append(float(clock[j] - beat)); observed.append(float(clock[j]))
+    phase = (float(phases[best]) + float(np.median(residuals))) % cycle
+    residual = np.asarray([((t - phase + period) % cycle - period) for t in observed])
+    jitter = float(np.median(np.abs(residual)))
+    if jitter > .035:
+        raise ValueError('snare timing wanders beyond the measured-start tolerance')
+    return {'real_bpm': bpm, 'snare_phase_seconds': round(phase, 6),
+            'confidence': round(confidence, 3), 'observed_hits': len(observed),
+            'median_residual_ms': round(jitter * 1000, 3),
+            'first_observed_hit_seconds': round(min(observed), 6),
+            'window_start_seconds': float(clock[0]), 'window_end_seconds': float(clock[-1]),
+            'count1_verified': False}
+
+
+def measure_backbeat_timing(path: str, *, real_bpm: float, offset_seconds: float,
+                            window_seconds: float = 32., sr: int = 11025) -> dict:
+    """Short, read-only source-window measurement; never modifies grid/cache/audio."""
+    from scipy.signal import stft
+
+    if not 8 <= window_seconds <= 60 or not np.isfinite(offset_seconds) or offset_seconds < 0:
+        raise ValueError('backbeat measurement requires a bounded source window')
+    y = load_audio(path, sr=sr, offset_seconds=offset_seconds, max_seconds=window_seconds)
+    _, times, spectrum = stft(y, fs=sr, nperseg=512, noverlap=448, boundary='zeros')
+    freqs = np.fft.rfftfreq(512, 1 / sr)
+    band = np.abs(spectrum[(freqs >= 700) & (freqs <= min(5000, sr / 2))])
+    envelope = np.maximum(0., np.diff(band, axis=1, prepend=band[:, :1])).sum(axis=0)
+    return fit_backbeat_timing(envelope, times + offset_seconds, real_bpm=real_bpm)
+
+
 def prefer_blend_window(song_wide: dict, window: dict | None) -> tuple[dict, bool]:
     """Pick the snare read to align on: the blend window's when it is sure.
 
