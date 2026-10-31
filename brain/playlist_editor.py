@@ -76,6 +76,7 @@ def ensure_plan_workspace() -> dict:
 
 class PlaylistApp:
     def __init__(self, *, control_port: int | None = None) -> None:
+        self.editor_started_at = time.time()
         self.registry_path = collection_registry.DEFAULT_REGISTRY
         self.legacy_index = library_index.DEFAULT_INDEX
         self.control_port_override = int(control_port) if control_port is not None else None
@@ -233,7 +234,11 @@ class PlaylistApp:
                 "error": self.collection_error,
             }
         try:
-            status = scan_status(self._collection_index_path())
+            status = scan_status(
+                self._collection_index_path(),
+                scan_worker_alive=bool(self.scan_thread and self.scan_thread.is_alive()),
+                editor_started_at=getattr(self, 'editor_started_at', None),
+            )
         except Exception as error:  # never crash the HTTP thread on status polls
             scanning = bool(self.scan_thread and self.scan_thread.is_alive())
             return {

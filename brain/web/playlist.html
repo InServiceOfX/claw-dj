@@ -1136,7 +1136,8 @@
     });
 
     (async()=>{
-      await Promise.all([loadMeta(),loadIngest(),loadProviders(true)]);
+      const [, initialIngest] = await Promise.all([loadMeta(),loadIngest(),loadProviders(true)]);
+      if (initialIngest.running) pollIngest('Scan already in progress.');
       await Promise.all([loadLibrary(),loadSelected()]);
       const brain=await pollBrain();
       if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}

@@ -18,6 +18,7 @@ R3 (MUST): Store roots and scan state only in the target collection database.
 R4 (MUST NOT): A scan must never change registry activation, another collection database, or network/API enrichment state.
 R5 (MUST NOT): Missing roots or an unavailable active volume must fail before availability is rewritten.
 R6 (MUST): Keep absolute path track identity unchanged and refresh compatibility exports only from the scanned database.
+R7 (MUST): begin_scan records scan_pid before discovery. Clear scan_pid on success and handled failure along with running=0. A crash may leave ownership behind; status recovery must distinguish that orphan from a live scanner. Do not use elapsed time alone as proof of an interrupted scan.
 
 % Output
 

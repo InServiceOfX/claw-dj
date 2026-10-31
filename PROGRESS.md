@@ -1,5 +1,38 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## 2026-10-31 — Interrupted scan recovery implemented and activated
+
+Branch `fix/interrupted-scan-recovery` extends the committed R&B fixes. Curate
+was displaying stale 0/4000 discovery progress from 01:36:18 after an editor
+restart at 01:36:57. The legacy row had no PID. No scan worker was active.
+
+New scans record their PID and clear it on success or handled failure. Status
+recovers dead owners and ended local workers. A legacy no-PID row requires
+an older start than this editor, no local scan worker, and lsof proof that
+only this editor holds the database; unknown ownership and other holders
+remain protected. Atomic comparison prevents clearing a competing new scan;
+a bounded write timeout preserves active writers. A status-only schema read
+no longer suppresses the next required additive migration. Curate resumes
+progress polling when reloaded during a genuinely active scan.
+
+521 isolated DJ/collection/scan regressions pass, including a real second
+process holding a temporary database and behavioral Node initialization
+checks. Three strict prompt checks pass. The isolated runner now preserves
+real collection-path resolution instead of overriding away collection-switch
+behavior. No bulk metadata scan, model call or actual playback was run.
+
+After confirming the GUI and Mixxx idle, restarted only the GUI on localhost
+8787/control9995. PID37644 now returns running=0 and an honest interrupted
+message. All113207 available tracks (113469 total), roots and indexed size
+totals match; current plan/notes/transition hashes unchanged, mix ready/not
+stale. Refresh Curate and Check for new music is enabled. No automatic scan.
+Recovery backup/evidence: `Data/claw-dj-backups/interrupted-scan-recovery-20261031-022350`.
+
+The old unmerged scan branch's PID recovery alone would not clear this exact
+legacy record. Its separate progress-meter/log redesign was not pulled in.
+The updated workflow contract, intent and independent story accompany code.
+
+
 ## 2026-10-30: TikTok DJ-transition research ingested (docs only)
 
 Ernest asked for three TikTok DJ-transition videos to be ingested as notes. Added

@@ -62,3 +62,14 @@ preview, retired-engine rejection before a worker starts, scope and count limits
 H API auth/model and .env refresh without leaking credentials, browser selection
 retention, unavailable-provider handling, one shared model selection, and the
 existing optimizer/notes/gentle-fader/source-boundary/performance tests.
+
+
+Interrupted-scan recovery (2026-10-31): PlaylistApp captures its start time and
+passes that plus actual local scan-thread liveness to library_index.scan_status.
+Do not display an orphan scan as permanently busy after editor restart. Legacy
+no-PID records need proof that only this editor holds the database; live or
+unknown owners remain protected. Surface the interruption and re-enable Check
+for new music after verified recovery. Never trigger a scan, enrichment, model
+call, mix rebuild or playback as part of status recovery. On page load, resume
+pollIngest if initial ingest status is running; do not leave a static snapshot.
+Keep collection isolation and every approved mix artifact unchanged.

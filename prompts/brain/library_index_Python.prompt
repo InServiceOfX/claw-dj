@@ -4,7 +4,7 @@
   {"name":"current_index_path","signature":"current_index_path(path: Path | None = None) -> Path"},
   {"name":"connect","signature":"connect(path: Path | None = None) -> sqlite3.Connection"},
   {"name":"configured_roots","signature":"configured_roots(path: Path | None = None) -> list[str]"},
-  {"name":"scan_status","signature":"scan_status(path: Path | None = None) -> dict"},
+  {"name":"scan_status","signature":"scan_status(path: Path | None = None, *, scan_worker_alive: bool | None = None, editor_started_at: float | None = None) -> dict"},
   {"name":"export_records","signature":"export_records(path: Path | None = None) -> list[dict]"}
 ]}}
 </pdd-interface>
@@ -23,6 +23,10 @@ R4 (MUST): Existing callers using `connect()` immediately follow a live collecti
 R5 (MUST NOT): Never mutate the registry from `connect`, and never silently fall back to another database when a registered active collection is unavailable.
 R6 (MUST NOT): Never merge collection rows, scan roots or enrichment caches across databases.
 R7 (MUST): Keep the existing absolute-path track primary key and all current schema/data-preservation behavior.
+R8 (MUST): Migrate scan_state.scan_pid additively; begin_scan records its process. A status-only open of an existing schema must not mark required migrations complete.
+R9 (MUST): Recover a running row with a dead owner; a current-process owner may be recovered only when the editor explicitly reports no active scan thread. Never clear an active thread or a live foreign PID.
+R10 (MUST): A legacy row without PID may recover only with explicit idle-editor context, a finite positive started_at older than this editor, and open-file ownership proving only this editor holds the database. Missing lsof, timeouts, unknown ownership, another holder or a recent/unknown start must preserve it. Old scanners retain an open database throughout discovery and reading, including custom harnesses.
+R11 (MUST): Recovery updates only the scan-state row, preserving counters, warnings, tracks, notes, roots and mix artifacts. Compare running/started_at/owner atomically so a competing new scan wins. Use a bounded write wait and retain busy state under writer contention. Record an interrupted message and finish timestamp, log the recovery, then report fresh state. It never starts a new scan.
 
 % Output
 

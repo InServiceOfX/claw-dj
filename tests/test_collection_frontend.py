@@ -1,6 +1,9 @@
 """Static browser contracts for the Curate collection picker."""
 from pathlib import Path
+import shutil
+import subprocess
 from unittest import TestCase
+from unittest import skipUnless
 
 
 ROOT = Path(__file__).parents[1]
@@ -8,6 +11,11 @@ WEB = ROOT / "brain" / "web"
 
 
 class CollectionPickerFrontendTest(TestCase):
+    @skipUnless(shutil.which('node'), 'Node is needed for page initialization checks')
+    def test_reloaded_active_scan_resumes_polling(self):
+        subprocess.run(['node', 'tests/scan_status_frontend.cjs'], cwd=ROOT,
+                       capture_output=True, text=True, check=True)
+
     def test_picker_is_above_existing_active_collection_ingest_controls(self):
         html = (WEB / "playlist.html").read_text()
         self.assertLess(html.index('id="collection-picker"'), html.index('id="add-root"'))

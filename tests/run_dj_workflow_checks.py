@@ -25,6 +25,9 @@ MODULES = (
     "test_pitch_play", "test_onset_analysis", "test_blend_window",
     "test_audition_transition", "test_popups",
     "test_measured_backbeat_start",
+    "test_scan_recovery", "test_scan_status_lock", "test_incremental_scan",
+    "test_scan_complete", "test_collection", "test_collection_frontend",
+    "test_per_volume_collections", "test_music_collection_identity",
 )
 
 
@@ -35,7 +38,6 @@ def main():
         with (
             patch.object(collection_registry, "DEFAULT_REGISTRY", root / "registry.json"),
             patch.object(library_index, "DEFAULT_INDEX", index),
-            patch.object(library_index, "current_index_path", side_effect=lambda path=None: Path(path) if path is not None else index),
             patch.object(playlist_editor, "DEFAULT_CRATE_CACHE", root / "crate.json"),
             patch.object(playlist_editor, "load_crate", return_value=[]),
         ):

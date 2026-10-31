@@ -390,7 +390,7 @@ def incremental_scan(
         db.execute(
             """UPDATE scan_state SET running=0,finished_at=?,processed=?,new_count=?,
             changed_count=?,unchanged_count=?,missing_count=?,skipped_count=?,
-            warnings=? WHERE id=1""",
+            warnings=?,scan_pid=NULL WHERE id=1""",
             (finished, len(paths_by_root), new_count, changed_count, unchanged + migrated_count,
              len(missing), len(skipped), warnings),
         )
@@ -401,7 +401,7 @@ def incremental_scan(
                 "suspect_roots": suspect_roots, "warnings": warnings}
     except Exception as error:
         db.execute(
-            "UPDATE scan_state SET running=0,finished_at=?,error=? WHERE id=1",
+            "UPDATE scan_state SET running=0,finished_at=?,error=?,scan_pid=NULL WHERE id=1",
             (time.time(), str(error)),
         )
         db.commit()

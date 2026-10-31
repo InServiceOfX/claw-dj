@@ -6,7 +6,11 @@ export consumed by the existing curation pipeline.
 from __future__ import annotations
 
 import json
+import logging
+import math
+import os
 import sqlite3
+import subprocess
 import time
 from contextlib import closing
 from pathlib import Path
@@ -157,6 +161,7 @@ CREATE TABLE IF NOT EXISTS scan_state (
     unchanged_count INTEGER NOT NULL DEFAULT 0,
     missing_count INTEGER NOT NULL DEFAULT 0,
     skipped_count INTEGER NOT NULL DEFAULT 0,
+    scan_pid INTEGER,
     error TEXT
 );
 INSERT OR IGNORE INTO scan_state(id) VALUES (1);
@@ -201,6 +206,8 @@ def _apply_schema(db: sqlite3.Connection) -> None:
     scan_columns = {row[1] for row in db.execute("PRAGMA table_info(scan_state)")}
     if "warnings" not in scan_columns:
         db.execute("ALTER TABLE scan_state ADD COLUMN warnings TEXT NOT NULL DEFAULT ''")
+    if "scan_pid" not in scan_columns:
+        db.execute("ALTER TABLE scan_state ADD COLUMN scan_pid INTEGER")
     # Additive migration for indexes whose `collections` table predates the
     # separately-recorded data directory. Defaults to empty rather than to
     # `<mount_base>/clawdj`, so a stale row can never silently point the
@@ -258,7 +265,7 @@ def connect(
                 db.execute("SELECT 1 FROM scan_state WHERE id = 1").fetchone()
             except sqlite3.Error:
                 _apply_schema(db)
-            _SCHEMA_READY.add(key)
+                _SCHEMA_READY.add(key)
     return db
 
 
@@ -290,8 +297,84 @@ def _locked_scan_status_placeholder() -> dict:
     }
 
 
-def scan_status(path: Path | None = None) -> dict:
-    """Read scan progress without taking a schema write lock.
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        # Permission errors and uncertain OS responses do not prove death.
+        return True
+    return True
+
+
+def _database_owners(index: Path) -> set[int] | None:
+    """Legacy scans keep this database open throughout discovery/tag reading.
+
+    Missing ownership information never authorizes clearing a legacy scan.
+    Unlike recognizing CLI names, open-file ownership also covers old scans
+    started by custom Python harnesses. This runs only for an old orphan candidate.
+    """
+    try:
+        result = subprocess.run(['lsof', '-t', '--', str(index.resolve())],
+                                capture_output=True, text=True, timeout=2)
+        if result.returncode not in (0, 1) or result.stderr.strip():
+            return None
+        owners = {int(line) for line in result.stdout.splitlines() if line.strip()}
+        return owners if os.getpid() in owners else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def _recover_interrupted_scan(db: sqlite3.Connection, index: Path, state: dict, *,
+                              scan_worker_alive: bool | None,
+                              editor_started_at: float | None) -> bool:
+    """Release a proven orphan atomically; return whether to reload the row."""
+    if not state.get('running') or scan_worker_alive is True:
+        return False
+    pid = state.get('scan_pid')
+    if pid is not None:
+        if type(pid) is not int or pid <= 0:
+            return False
+        orphan = (pid == os.getpid() and scan_worker_alive is False) or not _pid_alive(pid)
+    else:
+        started = state.get('started_at')
+        if (scan_worker_alive is not False or not isinstance(started, (int, float))
+                or not isinstance(editor_started_at, (int, float))
+                or not all(math.isfinite(v) for v in (started, editor_started_at))
+                or not 0 < started < editor_started_at):
+            return False
+        owners = _database_owners(index)
+        orphan = owners is not None and owners == {os.getpid()}
+    if not orphan:
+        return False
+    has_pid = 'scan_pid' in state
+    message = 'The previous scan was interrupted. Nothing is scanning. Press Check for new music to try again.'
+    # A status poll must not wait behind a real writer for the normal 60s timeout.
+    db.execute('PRAGMA busy_timeout=100')
+    try:
+        result = db.execute(
+            'UPDATE scan_state SET running=0, finished_at=?, error=?'
+            + (', scan_pid=NULL' if has_pid else '')
+            + ' WHERE id=1 AND running=1 AND started_at IS ?'
+            + (' AND scan_pid IS ?' if has_pid else ''),
+            (time.time(), message, state.get('started_at'), *((pid,) if has_pid else ())),
+        )
+        db.commit()
+    except sqlite3.OperationalError as error:
+        db.rollback()
+        if any(word in str(error).lower() for word in ('locked', 'busy')):
+            return False
+        raise
+    if result.rowcount:
+        logging.getLogger(__name__).warning('Recovered interrupted scan in %s', index)
+    # A competing begin_scan may have won the comparison: report its fresh row.
+    return True
+
+
+def scan_status(path: Path | None = None, *, scan_worker_alive: bool | None = None,
+                editor_started_at: float | None = None) -> dict:
+    """Read progress and recover proven orphans without a schema write lock.
 
     GUI polls this every ~750ms during "Check for new music". Competing with
     the scan writer's commits used to raise sqlite3.OperationalError and
@@ -304,6 +387,10 @@ def scan_status(path: Path | None = None) -> dict:
             if row is None:
                 return _locked_scan_status_placeholder()
             state = dict(row)
+            if _recover_interrupted_scan(db, index, state,
+                                         scan_worker_alive=scan_worker_alive,
+                                         editor_started_at=editor_started_at):
+                state = dict(db.execute('SELECT * FROM scan_state WHERE id=1').fetchone())
             state["roots"] = [
                 r["path"] for r in db.execute("SELECT path FROM roots ORDER BY path")
             ]
@@ -357,8 +444,8 @@ def begin_scan(db: sqlite3.Connection, discovered: int) -> float:
     db.execute(
         "UPDATE scan_state SET running=1, started_at=?, finished_at=NULL, "
         "discovered=?, processed=0, new_count=0, changed_count=0, "
-        "unchanged_count=0, missing_count=0, skipped_count=0, error=NULL WHERE id=1",
-        (now, discovered),
+        "unchanged_count=0, missing_count=0, skipped_count=0, error=NULL, scan_pid=? WHERE id=1",
+        (now, discovered, os.getpid()),
     )
     db.commit()
     return now
