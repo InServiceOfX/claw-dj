@@ -9,7 +9,12 @@ plus a short "Outside references" section in `docs/DJ_TRANSITIONS_PLAYBOOK.md`.
 Proposals only: a `drop_swap` technique (drop-to-drop with MID and LOW EQ
 trades), a `loop_chop_rhythm` flourish, and beat-quantized scratch releases.
 No code or behavior changed. Branch `bots/tiktok-dj-transitions` (bot account
-yeung-assistant). PR opened at Ernest's request; not merged.
+yeung-assistant). Originally recorded as PR opened at Ernest's request; now included in master via PR #1 (`c1931c3`).
+## 2026-10-30 — Three TikTok DJ references archived (research only)
+
+See `docs/research/tiktok/README.md`: @lilianbilottaa (one-beat acapella loop/reverb/rhythmic crossfader), @djaystayhigh (scratch practice progression), @tayxsounds (drop swap/drop alignment/low-EQ handoff). Downloaded public media outside Git, inspected semantic keyframes, recorded URLs/hashes/timestamps and caption availability. Only tayxsounds supplied captions; no independent audio transcription or listening verdict. No product code, saved mix, library note, playback or Mixxx-control changes. References do not override gentle faders, no-abrupt-exit rules, source boundaries or human-approved mixes. Next is audio verification and selection of one opt-in experiment, not automatic adoption. Branch `docs/tiktok-learning-intake`; committed locally to preserve this pass during integration with the latest master. No push.
+
+Both research passes cover the same three videos. Preserve their separate evidence trails: `tiktok-dj-transitions/` contains the folder-based ingest and screenshots; `tiktok/` contains the complementary caption-backed notes and media hashes. Audio/transcription limits are pass-specific, not a claim that the other pass lacks transcript artifacts. Rebased `docs/tiktok-learning-intake` onto `origin/master` with both progress entries retained.
 
 ## 2026-10-26 — Worktree audited and committed; artist-footage R&B videos ready
 

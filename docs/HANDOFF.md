@@ -1,5 +1,10 @@
 # Handoff / continuation notes
 
+## 2026-10-30 — Three TikTok DJ references archived (research only)
+
+See `docs/research/tiktok/README.md`: @lilianbilottaa (one-beat acapella loop/reverb/rhythmic crossfader), @djaystayhigh (scratch practice progression), @tayxsounds (drop swap/drop alignment/low-EQ handoff). Downloaded public media outside Git, inspected semantic keyframes, recorded URLs/hashes/timestamps and caption availability. Only tayxsounds supplied captions; no independent audio transcription or listening verdict. No product code, saved mix, library note, playback or Mixxx-control changes. References do not override gentle faders, no-abrupt-exit rules, source boundaries or human-approved mixes. Next is audio verification and selection of one opt-in experiment, not automatic adoption. Branch `docs/tiktok-learning-intake`; committed locally to preserve this pass during integration with the latest master. No push.
+
+
 ## 2026-10-26 — Worktree audited and committed; artist-footage R&B videos ready
 
 Ernest explicitly requested review/commits of every accumulated modified and
