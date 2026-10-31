@@ -1,5 +1,7 @@
 # AGENTS.md — claw-dj
 
+> Bots: read [`BOTS.md`](BOTS.md) first for identity, branch, PR, and Git workflow rules.
+
 ## Mission
 
 Build and operate `claw-dj`: an autonomous or semi-autonomous DJ that plays Mixxx like an instrument. Selection matters, but the defining work is phrase-aware transitions, beat-accurate execution, EQ, loops, cueing, effects, and a recognizable hip-hop/R&B DJ style. Do not reduce the project to playlist generation plus automatic crossfades.
