@@ -141,6 +141,55 @@ def cmd_status(args):
     return {"slug": slug, **plan_staleness.is_stale(slug), "rev": rev(slug)}
 
 
+def cmd_clip(args):
+    from hands import clip as clip_module
+    
+    plan_path = None
+    if args.plan:
+        # Could be a slug or a path
+        try:
+            paths = plan_paths.resolve(args.plan)
+            plan_path = paths.mix_plan
+        except plan_paths.PlanNotFound:
+            from pathlib import Path
+            plan_path = Path(args.plan).expanduser().resolve()
+    else:
+        paths = plan_paths.resolve(_active(args))
+        plan_path = paths.mix_plan
+    
+    if not plan_path.exists():
+        raise ApiError(404, "mix_plan_not_found", f"mix_plan.json not found at {plan_path}")
+    
+    transition = clip_module.load_transition_from_plan(plan_path, args.transition)
+    
+    config = clip_module.ClipConfig(
+        template=args.template,
+        start_offset=args.start_offset,
+        duration=args.duration,
+        hook_text=args.hook_text,
+        brand_image=args.brand_image,
+        output_path=args.output,
+        seed=args.seed,
+    )
+    
+    audio_path = None
+    if args.audio:
+        from pathlib import Path
+        audio_path = Path(args.audio).expanduser().resolve()
+    
+    output_path, sidecar = clip_module.generate_clip(transition, config, audio_path)
+    verification = clip_module.verify_output(output_path, config.duration)
+    
+    return {
+        "output": str(output_path),
+        "sidecar": str(output_path.with_suffix(".json")),
+        "verified": verification["verified"],
+        "errors": verification["errors"],
+        "suggested_title": sidecar["suggested_title"],
+        "suggested_hashtags": sidecar["suggested_hashtags"],
+    }
+
+
 def parser():
     root = argparse.ArgumentParser(description=__doc__)
     commands = root.add_subparsers(dest="command", required=True)
@@ -172,6 +221,22 @@ def parser():
     item.set_defaults(func=cmd_build)
     item = commands.add_parser("log"); item.add_argument("--plan"); item.add_argument("--limit", type=int, default=50); item.add_argument("--actor"); item.add_argument("--author"); item.set_defaults(func=cmd_log)
     item = commands.add_parser("status"); _plan_json(item); item.set_defaults(func=cmd_status)
+    
+    item = commands.add_parser("clip", help="Generate a vertical short-form clip from a transition")
+    item.add_argument("--plan", help="Plan slug or path to mix_plan.json")
+    item.add_argument("--transition", type=int, default=1, help="Transition number (1-indexed)")
+    item.add_argument("--template", choices=["same_beat", "watch_ai_mix"], default="same_beat",
+                      help="Clip template: same_beat (sample reveal) or watch_ai_mix (reasoning captions)")
+    item.add_argument("--audio", help="Source audio file for the clip")
+    item.add_argument("--start-offset", type=float, default=0.0, dest="start_offset",
+                      help="Start offset in audio (seconds)")
+    item.add_argument("--duration", type=float, default=20.0, help="Clip duration (15-30s recommended)")
+    item.add_argument("--hook-text", dest="hook_text", help="Override hook text on screen")
+    item.add_argument("--brand-image", dest="brand_image", help="Optional brand/mascot image path")
+    item.add_argument("--output", required=True, help="Output MP4 path")
+    item.add_argument("--seed", type=int, help="Random seed for variation")
+    item.set_defaults(func=cmd_clip)
+    
     return root
 
 
