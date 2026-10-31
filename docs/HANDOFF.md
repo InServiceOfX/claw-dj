@@ -5,6 +5,132 @@
 See `docs/research/tiktok/README.md`: @lilianbilottaa (one-beat acapella loop/reverb/rhythmic crossfader), @djaystayhigh (scratch practice progression), @tayxsounds (drop swap/drop alignment/low-EQ handoff). Downloaded public media outside Git, inspected semantic keyframes, recorded URLs/hashes/timestamps and caption availability. Only tayxsounds supplied captions; no independent audio transcription or listening verdict. No product code, saved mix, library note, playback or Mixxx-control changes. References do not override gentle faders, no-abrupt-exit rules, source boundaries or human-approved mixes. Next is audio verification and selection of one opt-in experiment, not automatic adoption. Branch `docs/tiktok-learning-intake`; committed locally to preserve this pass during integration with the latest master. No push.
 
 
+
+2026-10-30 — Requested commit and local branch audit: runtime/intent/tests committed as5b19d79 (13 relevant files). Current deadline fix still needs live confirmation;456 regressions and resume109 dry-run pass. Saved plan SHA80855a878b2e30419c68108db9920dfefde12427f6d89813e13aa46dca1c224d remains unchanged. Fresh origin/master and local master are2cbbe7c. Reviewed all21 local branches:12 merged pointers and5 patch-equivalent/superseded pointers recommended for deletion after review. Keep current fix/master, scan recovery and the substantial unmerged rhythm/Arrange-note branch. Scan recovery:7 targeted tests pass, only2 documentation conflicts in simulated merge. Rhythm branch:39 Rust+50 Python tests and Node UI checks pass, but15 merge conflicts and old15Hz/60ms/permissive runtime policy require staged integration with current safeguards. Full list and evidence: docs/LOCAL_BRANCH_AUDIT_2026-10-30.md. No rebase, merge, branch deletion or push performed. No agent playback or OBS changes.
+
+
+2026-10-30 — Full-run109 intermittent launch deadline fixed (live retest pending). Ernest reported event331/812 stopping at+38.8ms. The previous fix still polled until the target was already passed, adding read/write/engine delays before Play. A new transport/engine-queue/callback simulation reproduced failures (including true phase>30ms despite an approximate clock check). Timestamped source samples now define a host launch deadline; project sample receive time, compensate half a bounded preflight write RTT, refresh ahead of time, and avoid TCP reads in the final interval. Stalls/slow control writes refuse before Play; post-start30ms checks/cleanup remain. Further failures include Play RTT and send-offset diagnostics; full CLI errors are concise. No cue/model/approval/artifact changes: SHA80855a878b2e30419c68108db9920dfefde12427f6d89813e13aa46dca1c224d remains current.109/159/235 approvals retained.
+
+456 isolated regressions pass;36 measured-start tests include transport delay sweeps, scheduler stalls, excess-write latency, extra-count engine faults and CLI safe-stop handling. Real-model/fake full812-event checks pass. Actual ./scripts/run_mix.sh --dry-run --start-at109 passes with488 remaining events: reloads Sumthin' Sumthin' on deck2 and Urban Theme on deck1, starts Sumthin from its original cue, preserves absolute fade anchor and all later events. User may resume using ./scripts/run_mix.sh --start-at109. No actual playback/OBS control or claims of new human verification. Backup Data/claw-dj-backups/rnb-cooldown-mix-vol-02/launch-deadline-20261030-211824. User subsequently explicitly requested relevant commits and a local-branch merge/deletion audit; no rebase/merge/delete/push performed as part of that audit.
+
+
+2026-10-29 — ALL THREE REQUESTED REPAIRS APPROVED AND INSTALLED. Ernest kept the235 one-count-later comparison and requested the full current mix ready immediately for ./scripts/run_mix.sh.109 and159 remain exact;235 now carries explicit approved_launch_delay={beats:1,author:human,approved:true,quote:...}. Detector measurements and cue19.6337s unchanged; next launch equals the heard probe's original next-start result plus exactly1 real beat. Phase verification uses that human-approved target with30ms guard, with truthful log wording. All268 other audition setups/events identical; all270 tracks/order and gentle fades preserved. No generic Build/reorder; full existing authored artifact updated in place.
+
+Active R&B installed SHA80855a878b2e30419c68108db9920dfefde12427f6d89813e13aa46dca1c224d. Backup Data/claw-dj-backups/rnb-cooldown-mix-vol-02/install-three-approved-20261029-091659. Human235 verdict and exact approved artifact saved privately.452 isolated regressions pass; numerical equivalence to the heard comparison, negative approval/extra-jump guards, fake real-model starts/full812-event execution pass. Both prompt checks0 errors/warnings. The actual ./scripts/run_mix.sh --dry-run succeeds through all812 events, active correct270-track/269-transition plan, no missing paths. Estimated21hr18min printed by runner. GUI refreshed PID68589 ready/not-stale; source revisions current. No agent live playback, OBS changes, recording, commit/push. User can now run ./scripts/run_mix.sh. Earlier235 pending/rejection statuses and SHA14b67bf are historical/superseded; private comparison script intentionally refuses the newly installed plan to prevent applying the offset twice.
+
+
+2026-10-29 listening update (supersedes prior pending statuses): Ernest approved159: "a159 is good keep it";109 remains approved. He rejected235: "still off, i think by1 count." Saved exact human verdicts/private recipe records and journal entries; installed plan SHA14b67bf975c7e5296cc8c1edcbfab98fb52c67ed760142f753241b2d8fbf9fcc remains byte-identical. All other seams frozen.
+
+For235, a bounded multiband/HPSS recheck supports strong periodic transients but does not establish snare identity; do not report a verified1-count correction. Private audition_235_one_count_comparison.py delays only235's launch one beat (~612ms at98BPM), retaining cue19.6337s and32-beat gentle fade. Process-local explicit hypothesis; no production code/model/artifact changes, no after-start seek or installation. Its30ms residual is against the TEST TARGET, not proof of matching snares. CLI dry-run/fake helper/full-transition checks pass; normal audition preflight/cleanup retained. At8ms simulated TCP latency a full trial could safely refuse36.2ms; guard retained. Await human verdict before any promotion. No playback/recording, rebuild, commit or push. Private snapshot mix_plan.10-29-approved-109-and-159-235-rejected.json preserves exact current artifact.
+
+
+2026-10-29 listening update: Ernest approved a109 (Maxwell Sumthin' Sumthin' → The Urban Theme): "a 109 sounds better, let's keep it." Exact installed plan SHA14b67bf975c7e5296cc8c1edcbfab98fb52c67ed760142f753241b2d8fbf9fcc retained byte-for-byte. Human verdict and heard recipe saved privately in audition.10-29-maxwell-109.verdict.json and plan journal. 159 (Joe And Then… → Sweeter Than Sugar) and235 (New Edition If It Isn't Love → Lloyd I Want You Remix) remain pending; audition159 next. Do not rebuild or retune109.
+
+
+## 2026-10-29 — Follow-up: Mixxx clock sampling corrected
+
+Ernest's live audition109 stopped at +32.3 ms (30 ms limit). Earlier fake
+controls did not model Mixxx's 15 Hz playposition updates. Launch/verification
+now unwrap audio-callback beat_distance with exact grid origins and compare
+timestamped deck samples at a shared instant. Do not relax the guard or seek
+after play. Only origin metadata added to the three existing repaired events;
+all266 other audition recipes, all cues/notes/locks and gentle blends preserved.
+Current installed SHA `14b67bf975c7e5296cc8c1edcbfab98fb52c67ed760142f753241b2d8fbf9fcc`; former54c4891 is backed up
+as before-live-clock-followup.json in the original repair backup directory.
+448 isolated regressions pass, including15 Hz sampling/TCP delay and true
+engine-phase checks; real-model fake runs pass. CLI reports safe phase errors
+without a traceback. Human listening is still pending: retry a109 first;
+no generic Build. No agent playback/recording or commit/push.
+
+
+## 2026-10-29 — Three R&B backbeat repairs installed; live listening pending
+
+Ernest requested exact diagnosis before edits, repair only109/159/235, no
+other approved seam changes. Read Desktop logs October22/28; active R&B has
+270 tracks/269 transitions/812 events. Maxwell October23 candidate was never
+installed: active Urban Theme still cued9.7274s. OBS and all Mixxx decks/recorder
+idle; no playback/recording during this repair. New branch
+`fix/three-rnb-backbeats-2026-10-29`; no commit/push. Prior dirty hip-hop
+progress/handoff additions preserved.
+
+Initial installed SHA (superseded by the clock follow-up above) `54c4891a666040572c2c1ad5d0f4ff98d26dd48a9f6fd3c41a66ca21a21d2b2b`:
+-109 Maxwell Sumthin' Sumthin'→The Urban Theme: requested0:00, strict20ms.
+-159 Joe And Then…→Sweeter Than Sugar: requested0:00;154-grid=77 musical BPM,
+ tempo-only target150-grid=75 musical BPM during overlap.
+-235 New Edition If It Isn't Love→Lloyd I Want You Remix(feat.André3000&Nas),
+ Street Love track15: keep recording/cue19.6337s; both grids98, no re-grid/swap.
+
+Shared source-time snare fits and opt-in start replace unchecked grid seeks:
+source-clock body anchors avoid extra ride time from preload/settle delays;
+stopped-deck tempo-only sync preserves cue; actual tempo and snare phase must
+verify within30ms before fade. No after-start beatsync/jump/nudge. Models do
+not certify musical count1. Ear-approved legacy recipes remain unchanged.
+Only the three transition events change; accompanying targeted load metadata,
+three outgoing body flags and two entry-compensation counts preserve later
+recipes. All266 other audition setups/events identical; all31 prior note
+records/pair overrides/order preserved; three agent repair notes added.
+Inputs current, GUI ready/not-stale. Refreshed idle GUI with same8787/9995
+settings so it loads current runner; no browser opened, plan unchanged by refresh.
+
+Tests:419 baseline;443 expanded isolated regressions including24 new tests;
+full812-event fake runner, actual model/helper checks on advancing fake source
+clocks, all3 supported CLI dry-runs; two strict prompt checks0 errors/warnings.
+Whole-plan load/wait I/O mocked; no new human listening verdict. Exact PDD
+intake recorded; no broad apply/sync or model semantic certification claimed.
+Standing no-groove→ballad, iconic-intro0, noSWV/Sorry rules recorded; new source
+path supersedes blanket “off-one means add snare_align” advice for new repairs.
+
+Private report `Data/claw-dj-candidates/rnb-cooldown-mix-vol-02/BACKBEAT_REPAIR_2026-10-29.txt`,
+models/manifest/checks and reconstruction scripts beside it. Backup:
+`Data/claw-dj-backups/rnb-cooldown-mix-vol-02/repair-three-backbeats-20261029-071008`.
+User tests, separately: `.venv/bin/python -m hands.audition_transition --plan
+rnb-cooldown-mix-vol-02 --transition N --lead-bars 4 --tail-bars 4`,
+N109/159/235. Expect “measured backbeat
+start” and phase-check logs. Arrange→Refresh; do not generic Build. All repairs
+are installed predictions pending Ernest's ear. Propose any Lloyd re-pair or
+alternate recording before changing it.
+
+## 2026-10-27 — Expanded hip-hop anthology reviewed in place (WIP, unheard)
+
+Ernest requested review/refinement after a new Build. Rechecked actual state:
+121 recordings, not yesterday's98; active pointer is now hip-hop-anthology-vol-01.
+Started on clean master (human branch switch/merge), created
+`feat/hip-hop-anthology-review-2026-10-27` before edits. No commits/pushes.
+
+Installed revision-checked editorial artifact in the same named plan:
+SHA `a2724159684987832f42f8284e856f17f5109cc2cfb66840b639bdc9160a9d7c`.
+121 exact original recordings /120 transitions /365 events; all121 effective
+notes available and empty, no saved transition approvals or active bunches.
+Only11 new adjacencies: move fast island plus Around The Way Girl LP into
+closing LL/Firm/Public Enemy/Rakim run ending Juice; Make It Hot joins the
+~87BPM Junior MAFIA/Case pocket. All recordings/remixes retained once.
+Nas requested0:00 uses recognized strict `cue_tolerance_ms=20` (yesterday's
+artifact used unrecognized `cue_tolerance_seconds`). Opening two selected
+spoken scenes retain native tempos without forced sync/pitch bridge.
+Withheld53 inherited pair-specific/uncertain automatic timing corrections;
+no guessed snare jump/nudge added. Retained8 cached-LRC exit proposals and
+added5 provisional late-verse/hook/outro choices plus Get Me Home's new exit.
+None are listening-approved; source-zero verification is not musical count1.
+
+**Unresolved priority seams:** #8 edited Affirmative Action has a mismatched
+LRC exceeding source duration; #66 Give Up The Goods still fades during the
+last verse with insufficient natural outro room. Do not certify these as
+verse-safe or repair by hard cut. Hear exact sources to choose real exits.
+Also hear #1/2 dual spoken opener, #74 Guillitine→Luv U Better, #93/94/102
+late exits, #112 Get Me Home→Mama Said, and #119/120 closing joins.
+
+Evidence/report/reconstruction and verified pre-edit plan/input/runtime/journal
+backup: `Data/claw-dj-candidates/hip-hop-anthology-vol-01/`, specifically
+`REVIEW_2026-10-27.md`, `review-manifest.2026-10-27.json`,
+`installed.2026-10-27.json`, `tools-2026-10-27/`,
+`backup-before-review-2026-10-27/`. All365-event dry-run/fake-control execution
+(sockets forbidden, load/clock mocked), all120 audition specifications and125
+runner/alignment/double-time/audition regressions pass. Source fade budgets
+retain >=1s indexed file-end room; some margins are small and need listening.
+Active pointer and R&B artifact unchanged; no playback/recording/rendering,
+model calls, library edits, product/runtime/prompt changes. Plan stays WIP.
+Arrange→Refresh, not generic Build, to preserve this authored artifact.
+
 ## 2026-10-26 — Worktree audited and committed; artist-footage R&B videos ready
 
 Ernest explicitly requested review/commits of every accumulated modified and
