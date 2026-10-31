@@ -134,6 +134,17 @@ have, play that record next (their example: In Da Club, landing on
 - Lineage seed: Holla Boyz *Show Me Love In Da Club* → 50 Cent *In Da
   Club* / Robin S *Show Me Love*.
 
+## 7. Outside references: TikTok transition tips (2026-10-30)
+
+Three short tutorials with notes, screenshots, and claw-dj mappings are in
+[`docs/research/tiktok-dj-transitions/`](research/tiktok-dj-transitions/README.md):
+a **drop swap** (a concrete recipe for the "drop-to-drop" gap above, with
+gradual MID-then-LOW EQ trades during the build), a **crossfader rhythm on a
+1-beat reverbed acapella loop** (a `transformer_cut` variant), and a
+**scratch drill** whose rule "every release lands on the beat" is a timing
+constraint for any `scratch2` gesture. These are research proposals, not
+implemented techniques.
+
 ## Scorecard: what claw-dj has vs. what to build
 
 | Video technique   | claw-dj today                          | Gap / action |
