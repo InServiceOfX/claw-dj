@@ -7,9 +7,9 @@ use std::{
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use clawdj::{
-    JsonCommand, StemTrack, VerseCueRequest, analyze_paths, classify_stem, command::Deck,
-    open_mixxx_database, open_output_port, pair_vocals, port_presence_summary, queue_clear,
-    queue_init, queue_set, respect_verse_entry, send_message,
+    JsonCommand, StemTrack, VerseCueRequest, analyze_paths, classify_stem_with_notes,
+    command::Deck, open_mixxx_database, open_output_port, pair_vocals, port_presence_summary,
+    queue_clear, queue_init, queue_set, respect_verse_entry, send_message,
 };
 use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -119,6 +119,9 @@ enum StemCommands {
         title: String,
         #[arg(long, default_value = "")]
         path: String,
+        /// The track's DJ note; `track_kind=<kind>` there is a hand override.
+        #[arg(long, default_value = "")]
+        notes: String,
     },
     /// Read a JSON array of tracks on stdin; write pairing JSON on stdout.
     Pair,
@@ -265,8 +268,8 @@ fn main() -> Result<()> {
 
 fn run_stems(command: StemCommands) -> Result<()> {
     match command {
-        StemCommands::Classify { title, path } => {
-            let kind = classify_stem(&title, &path);
+        StemCommands::Classify { title, path, notes } => {
+            let kind = classify_stem_with_notes(&title, &path, &notes);
             println!("{}", serde_json::to_string(&kind)?);
             Ok(())
         }

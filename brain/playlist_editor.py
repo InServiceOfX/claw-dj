@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 from brain import collection_registry, library_index
 from brain.llm_providers import PROVIDERS
+from brain.stems import classify_stem
 from brain.library import DEFAULT_CRATE_CACHE, Energy, Track, load_crate
 from brain.track_preview import PreviewError, content_type, parse_byte_range, resolve_preview_path
 from brain.library_index import configured_roots, export_records, scan_status
@@ -98,6 +99,12 @@ class PlaylistApp:
         # Live transition audition (Arrange page): one at a time, in a child
         # process so Stop can always interrupt it.
         self.audition = AuditionSession()
+        from hands.stem_layer import StemLayerSession
+
+        # Stems page: one vocal over one instrumental, live, in a child process.
+        self.stem_layer = StemLayerSession()
+        self._stem_rows: list[dict] | None = None
+        self._stem_rows_at = 0.0
         self.mix_state: dict = {
             "building": 0,
             "running": 0,
@@ -676,7 +683,11 @@ class PlaylistApp:
         return {
             "total": total,
             "truncated": total > limit,
-            "tracks": [{**track_record(track), "enabled": track.track_id in self.selected} for track in tracks[:limit]],
+            "tracks": [
+                {**track_record(track), "enabled": track.track_id in self.selected,
+                 "track_kind": classify_stem(track.title, track.track_id, track.dj_notes)}
+                for track in tracks[:limit]
+            ],
         }
 
     def set_enabled(self, track_id: str, enabled: bool) -> None:
@@ -1517,6 +1528,87 @@ class PlaylistApp:
     def stop_audition(self) -> dict:
         return self.audition.stop()
 
+    # -- Stems page: vocals-only and instrumental-only tracks ----------------
+
+    def _stem_index_path(self) -> Path:
+        if Path(self.registry_path).exists():
+            return collection_registry.active_index_path(
+                registry_path=self.registry_path, fallback=self.legacy_index
+            )
+        return Path(self.legacy_index)
+
+    def stem_rows(self, *, refresh: bool = False) -> list[dict]:
+        """Every stem in the active collection (cached for a minute)."""
+        from brain import stem_crate
+
+        if refresh or self._stem_rows is None or time.time() - self._stem_rows_at > 60:
+            self._stem_rows = stem_crate.scan(self._stem_index_path())
+            self._stem_rows_at = time.time()
+        return self._stem_rows
+
+    def stem_list(self, *, kind: str | None = None, search: str = "", refresh: bool = False) -> dict:
+        from brain import stem_crate
+
+        return stem_crate.list_stems(kind, search=search, rows=self.stem_rows(refresh=refresh))
+
+    def set_stem_kind(self, track_id: str, kind: str) -> dict:
+        """Hand override (global DJ note); the Curate list sees it too."""
+        from dataclasses import replace
+
+        from brain import stem_crate
+
+        result = stem_crate.set_track_kind(track_id, kind, self._stem_index_path())
+        if track_id in self.by_id:
+            track = replace(self.by_id[track_id], dj_notes=result["dj_notes"])
+            self.by_id[track_id] = track
+            self.tracks = [track if t.track_id == track_id else t for t in self.tracks]
+        self._stem_rows = None
+        return result
+
+    def stem_beds(self, vocal_id: str, limit: int = 12) -> dict:
+        from brain import stem_crate
+
+        rows = self.stem_rows()
+        vocal = next((row for row in rows if row["track_id"] == vocal_id), None)
+        if vocal is None or vocal["kind"] != "vocals_only":
+            raise ValueError("choose a vocals-only track")
+        return {"vocal": vocal, "beds": stem_crate.suggest_beds(vocal, rows, limit=limit)}
+
+    def stem_layer_status(self) -> dict:
+        return self.stem_layer.status()
+
+    def start_stem_layer(self, body: dict) -> dict:
+        """Only from an explicit button press. Refuses a running mix or audition."""
+        vocal_id, bed_id = str(body.get("vocal_id") or ""), str(body.get("bed_id") or "")
+        if not vocal_id or not bed_id:
+            raise ValueError("choose one vocal and one instrumental")
+        dry_run = bool(body.get("dry_run"))
+        if not dry_run:
+            if (self.mix_run_thread and self.mix_run_thread.is_alive()) or self.mix_state.get("running"):
+                raise ValueError("a full mix is playing in Mixxx — stop it before playing a layer")
+            if self.audition.is_playing():
+                raise ValueError("a transition audition is playing — stop it first")
+        options = {}
+        for key, cast in (("vocal_from_seconds", float), ("vocal_to_seconds", float),
+                          ("count_shift_beats", int), ("lead_bars", int), ("bed_cue_seconds", float)):
+            if body.get(key) not in (None, ""):
+                options[key] = cast(body[key])
+        if options.get("count_shift_beats", 0) % 2:
+            raise ValueError("the count A/B moves a whole snare cycle (2 beats), never 1")
+        options["take_over"] = bool(body.get("take_over"))
+        options["dry_run"] = dry_run
+        port = int(self.control_port_override if self.control_port_override is not None
+                   else self.mix_state["mixxx_control_port"])
+        info = {}
+        for key, track_id in (("vocal_label", vocal_id), ("bed_label", bed_id)):
+            track = self.by_id.get(track_id)
+            info[key] = f"{track.artist} — {track.title}" if track else track_id
+        return self.stem_layer.start(vocal_id=vocal_id, bed_id=bed_id, port=port, options=options,
+                                     index_path=self._stem_index_path(), info=info)
+
+    def stop_stem_layer(self) -> dict:
+        return self.stem_layer.stop()
+
 
 def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
     from brain import api_router, plan_paths
@@ -1538,7 +1630,11 @@ def make_handler(app: PlaylistApp) -> type[BaseHTTPRequestHandler]:
         api_static_assets,
     )
 
+    from brain.api import api_stems
+
     api_router.clear()
+    for pattern, methods, handler in api_stems.ROUTES:
+        api_router.register(pattern, methods, handler)
     route_modules = (
         api_static_assets, api_collections, api_plans_collection, api_plans_active, api_plan_detail,
         api_plan_duplicate, api_plan_journal, api_plan_arrange, api_plan_order,

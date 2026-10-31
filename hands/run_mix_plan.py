@@ -37,6 +37,9 @@ FILTER_GROUP = "[QuickEffectRack1_{channel}]"
 # Verified live 2026-10-03. The runner used 0.5 as "unity" before, i.e.
 # about -6 dB on every band, with its boost/dip/bass-swap values scaled to it.
 EQ_UNITY = 1.0
+# vocal_over_bed over a full mix (bed_loop): its own vocal steps back.
+VOCAL_BED_FULL_MIX_MID = 0.35
+VOCAL_BED_FULL_MIX_HIGH = 0.7
 FILTER_NEUTRAL = 0.5
 
 
@@ -1778,6 +1781,14 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         if loop_beats in {1, 2, 4, 8, 16, 32}:
             mixxx.set(out_g, f"beatloop_{loop_beats}_activate", 1)
             print(f"  bed loop {loop_beats} beats on deck {from_deck}")
+        # A full-mix bed still has its own singer: push its mids and highs
+        # back under the acapella (Ernest, 2026-10-31). Instrumental-only beds
+        # are left exactly as the approved Get Up / Outta Control layer.
+        full_mix_bed = "bed_loop" in moves
+        if full_mix_bed:
+            mixxx.set(eq_group(from_deck), "parameter2", VOCAL_BED_FULL_MIX_MID)
+            mixxx.set(eq_group(from_deck), "parameter3", VOCAL_BED_FULL_MIX_HIGH)
+            print(f"  full-mix bed on deck {from_deck}: mids {VOCAL_BED_FULL_MIX_MID}, highs {VOCAL_BED_FULL_MIX_HIGH}")
         if sync:
             mixxx.set(in_g, "beatsync", 1)
         elif phase_only_sync:
@@ -1804,6 +1815,9 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         mixxx.set(in_g, "volume", 1.0)
         if loop_beats in {1, 2, 4, 8, 16, 32}:
             mixxx.set(out_g, "loop_enabled", 0)
+        if full_mix_bed:
+            mixxx.set(eq_group(from_deck), "parameter2", EQ_UNITY)
+            mixxx.set(eq_group(from_deck), "parameter3", EQ_UNITY)
         print(f"  vocal-over-bed {beats} beats; bed deck {from_deck} still live")
         return
 

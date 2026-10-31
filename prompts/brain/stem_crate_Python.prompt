@@ -1,0 +1,50 @@
+<pdd-reason>Ernest (2026-10-31) wants a list, in the CLI and the GUI, of every vocals-only and every instrumental-only track in his library, with BPM, key and length, found from the title tag or filename, and a way to correct one by hand.</pdd-reason>
+<pdd-interface>
+{
+  "type": "module",
+  "module": {
+    "functions": [
+      {
+        "name": "scan",
+        "signature": "(index_path: Path | None = None, *, mixxx_db: Path | None = None, with_mixxx: bool = True) -> list[dict]"
+      },
+      {
+        "name": "list_stems",
+        "signature": "(kind: str | None = None, *, search: str = '', index_path: Path | None = None, mixxx_db: Path | None = None, rows: list[dict] | None = None) -> dict"
+      },
+      {
+        "name": "set_track_kind",
+        "signature": "(track_id: str, kind: str, index_path: Path | None = None) -> dict"
+      },
+      {
+        "name": "suggest_beds",
+        "signature": "(vocal: dict, rows: list[dict], *, limit: int = 10) -> list[dict]"
+      },
+      {
+        "name": "main",
+        "signature": "(argv: list[str] | None = None) -> int"
+      }
+    ]
+  }
+}
+</pdd-interface>
+<pdd-dependency>brain/library_index_Python.prompt</pdd-dependency>
+
+% Goal
+
+Implement and maintain `brain/stem_crate.py`. The stem crate. scan(index_path, *, mixxx_db=None, with_mixxx=True) reads available tracks from the library index through a cheap SQL prefilter (title/path/dj_notes containing inst, cap, apel, vocal, karaoke or track_kind=), classifies each with brain.stems.classify_track (hand override, then title tag, then filename, then an exact `instrumental` folder), and keeps vocals-only and instrumental-only rows plus every hand override. BPM, key and length come from Mixxx's own library database (read-only, shared.mixxx_db) when analyzed, else from tags, else None (Mixxx analyzes on load); each row records bpm_source, kind_source, kind_evidence and a clean/radio flag. list_stems(kind=None, *, search='', ...) returns {'vocals_only': [...], 'instrumental_only': [...], 'counts'}; kind accepts vocals/instrumentals aliases; search matches every word of artist/title/album/genre ignoring apostrophes. set_track_kind(track_id, kind, index_path) stores the hand override as `track_kind=<kind>` in the GLOBAL tracks.dj_notes (so rescans and plan overlays keep it; brain.plan_notes carries it), preserving other note text; `auto` removes it. suggest_beds(vocal, rows, *, limit) ranks instrumentals for one vocal: tempo compatibility x3 (half/double allowed), key x2, +0.5 for a different song (a vocal on its own instrumental is just the original record, legal but not preferred). CLI `python -m brain.stem_crate list|set-kind|beds` with --json.
+
+Human story: `user_stories/story__when_i_pick_a_vocal_and_an_instrumental_mixxx_plays_them_together_live.md`; it extends `user_stories/story__when_i_add_vocals_only_and_instrumental_only_tracks_i_layer_them_i_do_not_play_the_acapella_in_full.md`, whose rules (never a dry acapella, the bed stays live, Get Up over Outta Control is the canonical layer) still hold.
+
+% Product contract
+
+- Preserve the exact public interface declared in `<pdd-interface>`.
+- Treat the reviewed architecture description in this prompt as normative behavior.
+- Preserve compatible behavior outside this module's stated responsibility; do not redesign unrelated mixing or playback logic.
+- Nothing in this module renders audio; Mixxx plays the original files live.
+- Target Python 3.13+.
+- Inspect the current implementation, its declared dependency modules, and the focused tests (`tests/test_stem_layer.py`, `tests/test_stems.py`) before changing code. This is a brownfield source prompt: working, tested behavior not contradicted here remains part of the contract.
+
+% Architecture detail
+
+The stem crate. scan(index_path, *, mixxx_db=None, with_mixxx=True) reads available tracks from the library index through a cheap SQL prefilter (title/path/dj_notes containing inst, cap, apel, vocal, karaoke or track_kind=), classifies each with brain.stems.classify_track (hand override, then title tag, then filename, then an exact `instrumental` folder), and keeps vocals-only and instrumental-only rows plus every hand override. BPM, key and length come from Mixxx's own library database (read-only, shared.mixxx_db) when analyzed, else from tags, else None (Mixxx analyzes on load); each row records bpm_source, kind_source, kind_evidence and a clean/radio flag. list_stems(kind=None, *, search='', ...) returns {'vocals_only': [...], 'instrumental_only': [...], 'counts'}; kind accepts vocals/instrumentals aliases; search matches every word of artist/title/album/genre ignoring apostrophes. set_track_kind(track_id, kind, index_path) stores the hand override as `track_kind=<kind>` in the GLOBAL tracks.dj_notes (so rescans and plan overlays keep it; brain.plan_notes carries it), preserving other note text; `auto` removes it. suggest_beds(vocal, rows, *, limit) ranks instrumentals for one vocal: tempo compatibility x3 (half/double allowed), key x2, +0.5 for a different song (a vocal on its own instrumental is just the original record, legal but not preferred). CLI `python -m brain.stem_crate list|set-kind|beds` with --json.

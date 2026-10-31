@@ -82,6 +82,8 @@ LIVE_RUNNER_MARKERS = (
     "hands/showcase_mix.py",
     "hands.audition_transition",
     "hands/audition_transition.py",
+    "hands.stem_layer",
+    "hands/stem_layer.py",
 )
 
 EXIT_REFUSED = 2

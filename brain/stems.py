@@ -12,14 +12,18 @@ from typing import Any
 
 from brain.mix_graph import bpm_compatibility, key_compatibility
 
-VOCALS_ONLY = re.compile(
-    r"(?:\bacap+ell+a?\b|\ba\s+cappella\b|\bvocals?[- ]only\b)",
-    re.IGNORECASE,
-)
-_INSTRUMENTAL_TAG = re.compile(
-    r"(\((?:instrumental|instr\.)\)|\[(?:instrumental|instr\.)\]|\s-\s*instrumental\s*$)",
-    re.IGNORECASE,
-)
+KINDS = ("full_mix", "instrumental_only", "vocals_only")
+# A hand override in a track's DJ note wins over every name rule. It lives in
+# the global library note so a rescan keeps it; plan notes carry it too.
+TRACK_KIND = re.compile(r"\btrack_kind\s*=\s*(full_mix|instrumental_only|vocals_only)\b", re.IGNORECASE)
+_INSTRUMENTAL_WORDS = {"instrumental", "instrumentals", "instr", "inst", "karaoke"}
+# A bare "(Vocal)" is the 12" single's main vocal version (next to the
+# Instrumental and the Acapella), so it stays a full mix.
+_VOCAL_TAGS = {
+    ("vocal", "stem"), ("vocals", "stem"), ("vocal", "stems"), ("vocals", "stems"),
+    ("stem", "vocals"), ("dry", "vocal"), ("dry", "vocals"),
+}
+_CLEAN_WORDS = {"clean", "radio"}
 _VERSION_STOP = {
     "instrumental",
     "acapella",
@@ -35,18 +39,198 @@ _VERSION_STOP = {
 }
 
 
-def classify_stem(title: str, path: str = "") -> str:
-    hay = f"{title} {path}".lower()
-    if VOCALS_ONLY.search(hay):
-        return "vocals_only"
-    lower_title = title.lower()
-    if _INSTRUMENTAL_TAG.search(title) or lower_title.endswith(" instrumental"):
-        if "instrumental hip" in lower_title:
-            return "full_mix"
-        return "instrumental_only"
-    if "/instrumental/" in hay:
-        return "instrumental_only"
-    return "full_mix"
+def _words(text: str) -> list[str]:
+    """Lower-case alphanumeric runs; every other character separates words."""
+    words, current = [], []
+    for char in text.lower():
+        if char.isalnum():
+            current.append(char)
+        elif current:
+            words.append("".join(current))
+            current = []
+    if current:
+        words.append("".join(current))
+    return words
+
+
+def is_acapella_word(word: str) -> bool:
+    """acapella, acappella, accapella, acappela, a(-)cappella (joined), plurals.
+
+    Letter runs must spell a-c-a-p-e-l-a with c, p and l at most doubled.
+    """
+    word = word.lower()
+    if word.endswith("s"):
+        word = word[:-1]
+    runs: list[list] = []
+    for char in word:
+        if runs and runs[-1][0] == char:
+            runs[-1][1] += 1
+        else:
+            runs.append([char, 1])
+    if "".join(char for char, _ in runs) != "acapela":
+        return False
+    return all(count <= (2 if char in "cpl" else 1) for char, count in runs)
+
+
+def _acapella_at(words: list[str]) -> list[int]:
+    """Word indexes where an acapella spelling starts ("a capella" joins).
+
+    A joined "a" right after a single letter is an abbreviation ("L.A.
+    Cappella", a song name), not the version tag.
+    """
+    found = []
+    for index, word in enumerate(words):
+        if is_acapella_word(word):
+            found.append(index)
+        elif (word == "a" and index + 1 < len(words) and is_acapella_word("a" + words[index + 1])
+              and not (index > 0 and len(words[index - 1]) == 1)):
+            found.append(index)
+    return found
+
+
+def _is_track_number(word: str) -> bool:
+    """"02", "13", or a vinyl side like "b2" at the front of a filename."""
+    def digits(text: str) -> bool:
+        return bool(text) and all("0" <= char <= "9" for char in text)
+
+    if digits(word):
+        return True
+    return len(word) in (2, 3) and word[0] in "abcd" and digits(word[1:])
+
+
+def _song_words(words: list[str]) -> list[str]:
+    index = 0
+    while index < len(words) and _is_track_number(words[index]):
+        index += 1
+    return words[index:]
+
+
+def _vocals_only_phrase(words: list[str]) -> bool:
+    return any(
+        words[index] in ("vocal", "vocals") and words[index + 1] == "only"
+        for index in range(len(words) - 1)
+    )
+
+
+def version_parts(text: str) -> tuple[list[str], str]:
+    """Version tags of a title, and the bare title left over.
+
+    Tags are every (...) or [...] group (an unclosed one runs to the end, for
+    truncated tags) plus the text after the last hyphen outside the groups.
+    """
+    parts: list[str] = []
+    bare: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char in "([":
+            close = index + 1
+            while close < len(text) and text[close] not in ")]([":
+                close += 1
+            parts.append(text[index + 1:close])
+            bare.append(" ")
+            index = close + 1 if close < len(text) and text[close] in ")]" else close
+            continue
+        bare.append(char)
+        index += 1
+    bare_text = "".join(bare)
+    if "-" in bare_text:
+        head, tail = bare_text.rsplit("-", 1)
+        parts.append(tail)
+        bare_text = head
+    return parts, bare_text
+
+
+def _has_vocal_tag(part: str) -> bool:
+    words = _words(part)
+    return bool(_acapella_at(words)) or _vocals_only_phrase(words) or tuple(words) in _VOCAL_TAGS
+
+
+def _has_instrumental_tag(part: str) -> bool:
+    words = _words(part)
+    if "intro" in words:
+        return False
+    for index, word in enumerate(words):
+        if word in _INSTRUMENTAL_WORDS:
+            if word == "instrumental" and index + 1 < len(words) and words[index + 1] == "hip":
+                continue
+            return True
+    return False
+
+
+def _text_kind(text: str) -> tuple[str, str]:
+    """(kind, evidence) for one title or filename; ("full_mix", "") if neither."""
+    parts, bare = version_parts(text)
+    bare_words = _song_words(_words(bare))
+    for part in parts:
+        if _has_vocal_tag(part):
+            return "vocals_only", part.strip()
+    # A bare acapella word names the version unless it IS the song's name
+    # (Kelis "Accapella", Karmin "Acapella"): skip a match on the first word.
+    if _vocals_only_phrase(bare_words) or any(index > 0 for index in _acapella_at(bare_words)):
+        return "vocals_only", bare.strip()
+    return "full_mix", ""
+
+
+def _text_instrumental(text: str) -> tuple[bool, str]:
+    parts, bare = version_parts(text)
+    for part in parts:
+        if _has_instrumental_tag(part):
+            return True, part.strip()
+    bare_words = _song_words(_words(bare))
+    if len(bare_words) >= 2 and bare_words[-1] == "instrumental":
+        return True, bare.strip()
+    return False, ""
+
+
+def _filename_stem(path: str) -> str:
+    name = (path or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if "." in name:
+        head, extension = name.rsplit(".", 1)
+        if 1 <= len(extension) <= 5 and extension.isalnum():
+            name = head
+    return name
+
+
+def track_kind_override(notes: str) -> str | None:
+    match = TRACK_KIND.search(notes or "")
+    return match.group(1).lower() if match else None
+
+
+def classify_track(title: str, path: str = "", notes: str = "") -> dict[str, str]:
+    """{"kind", "source", "evidence"} for one library track.
+
+    Order: a hand override (`track_kind=` in the DJ note); a vocals-only tag in
+    the title tag, then the filename; an instrumental tag in the title, then
+    the filename; a folder named exactly `instrumental`; otherwise a full mix.
+    Keep in lockstep with core-rust/clawdj/src/stems.rs (shared cases in
+    tests/fixtures/stem_kinds.json).
+    """
+    override = track_kind_override(notes)
+    if override:
+        return {"kind": override, "source": "override", "evidence": f"track_kind={override}"}
+    texts = (("title", title or ""), ("filename", _filename_stem(path)))
+    for source, text in texts:
+        kind, evidence = _text_kind(text)
+        if kind == "vocals_only":
+            return {"kind": kind, "source": source, "evidence": evidence}
+    for source, text in texts:
+        found, evidence = _text_instrumental(text)
+        if found:
+            return {"kind": "instrumental_only", "source": source, "evidence": evidence}
+    if "/instrumental/" in (path or "").lower():
+        return {"kind": "instrumental_only", "source": "folder", "evidence": "instrumental/"}
+    return {"kind": "full_mix", "source": "default", "evidence": ""}
+
+
+def classify_stem(title: str, path: str = "", notes: str = "") -> str:
+    return classify_track(title, path, notes)["kind"]
+
+
+def is_clean_version(title: str) -> bool:
+    """Radio / clean edit tag: the clean vocal is not the default showcase stem."""
+    parts, _ = version_parts(title or "")
+    return any(_CLEAN_WORDS & set(_words(part)) for part in parts)
 
 
 def is_showcase_acapella(notes: str) -> bool:
@@ -73,7 +257,7 @@ def pair_vocals(tracks: list[dict[str, Any]]) -> dict[str, Any]:
     claimed: set[str] = set()
     vocals = []
     for vocal_index, vocal in enumerate(tracks):
-        kind = classify_stem(vocal.get("title") or "", vocal.get("track_id") or "")
+        kind = classify_stem(vocal.get("title") or "", vocal.get("track_id") or "", vocal.get("dj_notes") or "")
         if kind != "vocals_only":
             continue
         if is_showcase_acapella(vocal.get("dj_notes") or ""):
@@ -128,7 +312,7 @@ def apply_vocal_layers(tracks: list[dict[str, Any]]) -> tuple[list[dict[str, Any
         if not is_vocal_over_bed(vocal_notes):
             extra = (
                 "Two-deck layer, not a mix transition. "
-                "entry_style=vocal_over_bed; ride_beats=96; trust_ride_beats; no_flourish"
+                f"entry_style=vocal_over_bed; ride_beats={layer_beats(vocal, bed)}; trust_ride_beats; no_flourish"
             )
             if pair["loop_bed"]:
                 extra += "; bed_loop_beats=32"
@@ -145,6 +329,18 @@ def apply_vocal_layers(tracks: list[dict[str, Any]]) -> tuple[list[dict[str, Any
         )
     layered = [by_id[track_id] for track_id in order]
     return layered, notes
+
+
+def layer_beats(vocal: dict[str, Any], bed: dict[str, Any]) -> int:
+    """The whole vocal, counted in the bed's beats (Ernest, 2026-10-31: "play
+    both decks together for the length of the vocal"). 96 when the length or
+    tempo is unknown; the runner still trims a layer that would outrun a file.
+    """
+    duration = vocal.get("duration_seconds")
+    bpm = bed.get("bpm") or vocal.get("bpm")
+    if not duration or not bpm:
+        return 96
+    return max(16, int(float(duration) * float(bpm) / 60.0 / 4) * 4)
 
 
 def assert_vocals_layered(plan: dict[str, Any], notes: dict[str, str] | None = None) -> None:
@@ -181,9 +377,9 @@ def assert_vocals_layered(plan: dict[str, Any], notes: dict[str, str] | None = N
     for track in tracks:
         title = str(track.get("title") or "")
         track_id = str(track.get("track_id") or "")
-        if classify_stem(title, track_id) != "vocals_only":
-            continue
         note = notes.get(track_id, "") or str(track.get("dj_notes") or "")
+        if classify_stem(title, track_id, note) != "vocals_only":
+            continue
         if is_showcase_acapella(note):
             continue
         display = f"{track.get('artist', '')} — {title}"
@@ -217,6 +413,7 @@ def assert_vocals_layered(plan: dict[str, Any], notes: dict[str, str] | None = N
         bed_kind = classify_stem(
             str((bed or {}).get("title") or ""),
             str((bed or {}).get("track_id") or bed_id),
+            notes.get(str((bed or {}).get("track_id") or bed_id), "") or str((bed or {}).get("dj_notes") or ""),
         )
         moves = event.get("moves") or []
         if bed_kind == "instrumental_only" or "bed_loop" in moves:
@@ -242,7 +439,7 @@ def _neighbor_instrumental(
         bed = tracks[index]
         if bed.get("track_id") in used:
             continue
-        kind = classify_stem(bed.get("title") or "", bed.get("track_id") or "")
+        kind = classify_stem(bed.get("title") or "", bed.get("track_id") or "", bed.get("dj_notes") or "")
         if kind == "instrumental_only":
             return _score_bed(vocal, vocal_index, bed, index, kind)
     return None
@@ -260,7 +457,7 @@ def _best_bed(
             continue
         if bed.get("track_id") in used:
             continue
-        kind = classify_stem(bed.get("title") or "", bed.get("track_id") or "")
+        kind = classify_stem(bed.get("title") or "", bed.get("track_id") or "", bed.get("dj_notes") or "")
         if kind == "vocals_only":
             continue
         pair = _score_bed(vocal, vocal_index, bed, bed_index, kind)
