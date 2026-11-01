@@ -85,7 +85,7 @@ def find_siblings(vocal: dict, index_path: Path | None = None) -> list[dict[str,
     artists = _artist_tokens(vocal.get("artist") or "")
     with closing(library_index.connect(index_path or library_index.current_index_path())) as db:
         rows = db.execute(
-            "SELECT track_id, title, artist, duration_seconds, bpm, key, dj_notes FROM tracks "
+            "SELECT track_id, title, artist, album, duration_seconds, bpm, key, dj_notes FROM tracks "
             "WHERE available = 1 AND lower(title) LIKE ?",
             (f"%{first}%",),
         ).fetchall()
@@ -95,7 +95,7 @@ def find_siblings(vocal: dict, index_path: Path | None = None) -> list[dict[str,
             continue
         if artists and not (artists & _artist_tokens(row["artist"])):
             continue
-        if classify_track(row["title"], row["track_id"], row.get("dj_notes") or "")["kind"] != "full_mix":
+        if classify_track(row["title"], row["track_id"], row.get("dj_notes") or "", row.get("album") or "")["kind"] != "full_mix":
             continue
         found.append(row)
     found.sort(key=lambda r: (is_clean_version(r["title"]), r["track_id"]))
@@ -576,8 +576,8 @@ def plan_layer(
         raise LayerPlanError("a count shift must be a whole snare cycle (2 beats): "
                              "1 beat would put the snare on 1 and 3")
     vocal_row, bed_row = library_row(vocal_id, index_path), library_row(bed_id, index_path)
-    vocal_kind = classify_track(vocal_row["title"], vocal_id, vocal_row.get("dj_notes") or "")
-    bed_kind = classify_track(bed_row["title"], bed_id, bed_row.get("dj_notes") or "")
+    vocal_kind = classify_track(vocal_row["title"], vocal_id, vocal_row.get("dj_notes") or "", vocal_row.get("album") or "")
+    bed_kind = classify_track(bed_row["title"], bed_id, bed_row.get("dj_notes") or "", bed_row.get("album") or "")
     if vocal_kind["kind"] != "vocals_only":
         raise LayerPlanError(f"{vocal_row['title']} is not marked vocals-only (it is {vocal_kind['kind']}); "
                              "mark it by hand if the name hides it")

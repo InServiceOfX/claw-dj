@@ -122,7 +122,9 @@ def _mark_stems(songs: list[dict], ids: dict[str, dict]) -> None:
 
     stems = {}
     for sid, row in ids.items():
-        kind = classify_track(row.get("title") or "", row["track_id"], row.get("dj_notes") or "")["kind"]
+        kind = classify_track(
+            row.get("title") or "", row["track_id"], row.get("dj_notes") or "", row.get("album") or ""
+        )["kind"]
         if kind != "full_mix":
             stems[sid] = {"track_id": sid, "kind": kind, "title": row.get("title") or "",
                           "artist": row.get("artist") or "", "bpm": row.get("bpm"), "key": row.get("key")}

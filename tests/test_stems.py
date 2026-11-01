@@ -248,7 +248,7 @@ class SharedStemCasesTests(TestCase):
         for case in cases:
             with self.subTest(title=case["title"], path=case["path"]):
                 self.assertEqual(
-                    classify_stem(case["title"], case["path"], case.get("notes", "")), case["kind"]
+                    classify_stem(case["title"], case["path"], case.get("notes", ""), case.get("album", "")), case["kind"]
                 )
 
 

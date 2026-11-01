@@ -28,6 +28,10 @@ pub struct StemTrack {
     pub key: Option<String>,
     #[serde(default)]
     pub path: Option<String>,
+    /// Album tag; an album named for its instrumentals makes every song on
+    /// it an instrumental.
+    #[serde(default)]
+    pub album: String,
     /// Effective dj_notes. `showcase_acapella` opts out of forced layering.
     #[serde(default)]
     pub dj_notes: String,
@@ -60,13 +64,21 @@ pub fn classify_stem(title: &str, path: &str) -> StemKind {
     classify_stem_with_notes(title, path, "")
 }
 
-/// Classify with the track's DJ note: `track_kind=<kind>` there is a hand
-/// override and wins over every name rule. Then a vocals-only tag in the
-/// title tag, then the filename; an instrumental tag in the title, then the
-/// filename; a folder named exactly `instrumental`; otherwise a full mix.
-/// Lockstep with `brain/stems.py`: both run `tests/fixtures/stem_kinds.json`.
+/// Classify with the track's DJ note and no album tag.
 #[must_use]
 pub fn classify_stem_with_notes(title: &str, path: &str, notes: &str) -> StemKind {
+    classify_track_kind(title, path, notes, "")
+}
+
+/// Classify with the track's DJ note and album: `track_kind=<kind>` in the
+/// note is a hand override and wins over every name rule. Then a vocals-only
+/// tag in the title tag, then the filename; an instrumental tag in the title,
+/// then the filename; an instrumental album (the album tag, then the folder
+/// the file sits in); a folder named exactly `instrumental`; otherwise a full
+/// mix. On an instrumentals album every song counts except a titled acapella.
+/// Lockstep with `brain/stems.py`: both run `tests/fixtures/stem_kinds.json`.
+#[must_use]
+pub fn classify_track_kind(title: &str, path: &str, notes: &str, album: &str) -> StemKind {
     if let Some(kind) = track_kind_override(notes) {
         return kind;
     }
@@ -75,6 +87,8 @@ pub fn classify_stem_with_notes(title: &str, path: &str, notes: &str) -> StemKin
         StemKind::VocalsOnly
     } else if text_is_instrumental(title)
         || text_is_instrumental(&filename)
+        || is_instrumental_album(album)
+        || is_instrumental_album(&album_folder(path))
         || path.to_lowercase().contains("/instrumental/")
     {
         StemKind::InstrumentalOnly
@@ -283,6 +297,27 @@ fn text_is_instrumental(text: &str) -> bool {
     bare_words.len() >= 2 && bare_words.last().is_some_and(|w| w == "instrumental")
 }
 
+/// An album named for its instrumentals ("The Ownerz (The Instrumentals)",
+/// "Acapellas + Instrumentals"). Only the album itself: a parent folder like
+/// "Compilations & Instrumentals" holds full songs too.
+#[must_use]
+pub fn is_instrumental_album(name: &str) -> bool {
+    words(name).iter().any(|word| {
+        matches!(
+            word.as_str(),
+            "instrumental" | "instrumentals" | "instr" | "inst" | "karaoke"
+        )
+    })
+}
+
+/// The folder the file sits in (its album folder), or "".
+fn album_folder(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let mut parts = normalized.rsplit('/');
+    parts.next();
+    parts.next().unwrap_or("").to_string()
+}
+
 fn filename_stem(path: &str) -> String {
     let normalized = path.replace('\\', "/");
     let name = normalized.rsplit('/').next().unwrap_or("");
@@ -318,7 +353,9 @@ pub fn pair_vocals(tracks: &[StemTrack]) -> StemPairReport {
     let mut vocals = Vec::new();
     for (vocal_index, vocal) in tracks.iter().enumerate() {
         let path = vocal.path.as_deref().unwrap_or(vocal.track_id.as_str());
-        if classify_stem_with_notes(&vocal.title, path, &vocal.dj_notes) != StemKind::VocalsOnly {
+        if classify_track_kind(&vocal.title, path, &vocal.dj_notes, &vocal.album)
+            != StemKind::VocalsOnly
+        {
             continue;
         }
         if is_showcase_acapella(&vocal.dj_notes) {
@@ -374,7 +411,9 @@ fn neighbor_instrumental(
             continue;
         }
         let path = bed.path.as_deref().unwrap_or(bed.track_id.as_str());
-        if classify_stem_with_notes(&bed.title, path, &bed.dj_notes) == StemKind::InstrumentalOnly {
+        if classify_track_kind(&bed.title, path, &bed.dj_notes, &bed.album)
+            == StemKind::InstrumentalOnly
+        {
             return Some(score_bed(
                 vocal,
                 vocal_index,
@@ -402,7 +441,7 @@ fn best_bed(
             continue;
         }
         let path = bed.path.as_deref().unwrap_or(bed.track_id.as_str());
-        let kind = classify_stem_with_notes(&bed.title, path, &bed.dj_notes);
+        let kind = classify_track_kind(&bed.title, path, &bed.dj_notes, &bed.album);
         if kind == StemKind::VocalsOnly {
             continue;
         }
@@ -643,6 +682,7 @@ mod tests {
             bpm: Some(bpm),
             key: Some(key.to_string()),
             path: Some(id.to_string()),
+            album: String::new(),
             dj_notes: String::new(),
         }
     }
@@ -656,10 +696,11 @@ mod tests {
             let title = case["title"].as_str().unwrap_or_default();
             let path = case["path"].as_str().unwrap_or_default();
             let notes = case["notes"].as_str().unwrap_or_default();
+            let album = case["album"].as_str().unwrap_or_default();
             let expected: StemKind =
                 serde_json::from_value(case["kind"].clone()).expect("known kind");
             assert_eq!(
-                classify_stem_with_notes(title, path, notes),
+                classify_track_kind(title, path, notes, album),
                 expected,
                 "{title} | {path}"
             );

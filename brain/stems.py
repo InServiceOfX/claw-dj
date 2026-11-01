@@ -192,17 +192,34 @@ def _filename_stem(path: str) -> str:
     return name
 
 
+def is_instrumental_album(name: str) -> bool:
+    """An album named for its instrumentals ("The Ownerz (The Instrumentals)",
+    "Acapellas + Instrumentals", "Instrumental Version"). Only the album
+    itself: a parent folder like "Compilations & Instrumentals" holds full
+    songs too, so callers pass the album tag or the file's own folder."""
+    return bool(_INSTRUMENTAL_WORDS & set(_words(name or "")))
+
+
+def _album_folder(path: str) -> str:
+    """The folder the file sits in (its album folder), or ""."""
+    parts = (path or "").replace("\\", "/").split("/")
+    return parts[-2] if len(parts) >= 2 else ""
+
+
 def track_kind_override(notes: str) -> str | None:
     match = TRACK_KIND.search(notes or "")
     return match.group(1).lower() if match else None
 
 
-def classify_track(title: str, path: str = "", notes: str = "") -> dict[str, str]:
+def classify_track(title: str, path: str = "", notes: str = "", album: str = "") -> dict[str, str]:
     """{"kind", "source", "evidence"} for one library track.
 
     Order: a hand override (`track_kind=` in the DJ note); a vocals-only tag in
     the title tag, then the filename; an instrumental tag in the title, then
-    the filename; a folder named exactly `instrumental`; otherwise a full mix.
+    the filename; an instrumental album (the album tag, then the folder the
+    file sits in, e.g. "Hybrid Theory Instrumentals"); a folder named exactly
+    `instrumental`; otherwise a full mix. On an instrumentals album every
+    song counts, even one with vocal chops, except a titled acapella.
     Keep in lockstep with core-rust/clawdj/src/stems.rs (shared cases in
     tests/fixtures/stem_kinds.json).
     """
@@ -218,13 +235,18 @@ def classify_track(title: str, path: str = "", notes: str = "") -> dict[str, str
         found, evidence = _text_instrumental(text)
         if found:
             return {"kind": "instrumental_only", "source": source, "evidence": evidence}
+    if is_instrumental_album(album):
+        return {"kind": "instrumental_only", "source": "album", "evidence": album.strip()}
+    folder = _album_folder(path)
+    if is_instrumental_album(folder):
+        return {"kind": "instrumental_only", "source": "folder", "evidence": folder}
     if "/instrumental/" in (path or "").lower():
         return {"kind": "instrumental_only", "source": "folder", "evidence": "instrumental/"}
     return {"kind": "full_mix", "source": "default", "evidence": ""}
 
 
-def classify_stem(title: str, path: str = "", notes: str = "") -> str:
-    return classify_track(title, path, notes)["kind"]
+def classify_stem(title: str, path: str = "", notes: str = "", album: str = "") -> str:
+    return classify_track(title, path, notes, album)["kind"]
 
 
 def is_clean_version(title: str) -> bool:
@@ -257,7 +279,9 @@ def pair_vocals(tracks: list[dict[str, Any]]) -> dict[str, Any]:
     claimed: set[str] = set()
     vocals = []
     for vocal_index, vocal in enumerate(tracks):
-        kind = classify_stem(vocal.get("title") or "", vocal.get("track_id") or "", vocal.get("dj_notes") or "")
+        kind = classify_stem(
+            vocal.get("title") or "", vocal.get("track_id") or "", vocal.get("dj_notes") or "", vocal.get("album") or ""
+        )
         if kind != "vocals_only":
             continue
         if is_showcase_acapella(vocal.get("dj_notes") or ""):
@@ -414,6 +438,7 @@ def assert_vocals_layered(plan: dict[str, Any], notes: dict[str, str] | None = N
             str((bed or {}).get("title") or ""),
             str((bed or {}).get("track_id") or bed_id),
             notes.get(str((bed or {}).get("track_id") or bed_id), "") or str((bed or {}).get("dj_notes") or ""),
+            str((bed or {}).get("album") or ""),
         )
         moves = event.get("moves") or []
         if bed_kind == "instrumental_only" or "bed_loop" in moves:
@@ -439,7 +464,9 @@ def _neighbor_instrumental(
         bed = tracks[index]
         if bed.get("track_id") in used:
             continue
-        kind = classify_stem(bed.get("title") or "", bed.get("track_id") or "", bed.get("dj_notes") or "")
+        kind = classify_stem(
+            bed.get("title") or "", bed.get("track_id") or "", bed.get("dj_notes") or "", bed.get("album") or ""
+        )
         if kind == "instrumental_only":
             return _score_bed(vocal, vocal_index, bed, index, kind)
     return None
@@ -457,7 +484,9 @@ def _best_bed(
             continue
         if bed.get("track_id") in used:
             continue
-        kind = classify_stem(bed.get("title") or "", bed.get("track_id") or "", bed.get("dj_notes") or "")
+        kind = classify_stem(
+            bed.get("title") or "", bed.get("track_id") or "", bed.get("dj_notes") or "", bed.get("album") or ""
+        )
         if kind == "vocals_only":
             continue
         pair = _score_bed(vocal, vocal_index, bed, bed_index, kind)
@@ -526,6 +555,7 @@ def dumps_pair_payload(tracks: list[dict[str, Any]]) -> str:
                 "bpm": row.get("bpm"),
                 "key": row.get("key"),
                 "path": row.get("track_id"),
+                "album": row.get("album") or "",
                 "dj_notes": row.get("dj_notes") or "",
             }
         )

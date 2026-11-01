@@ -104,9 +104,10 @@ def scan(index_path: Path | None = None, *, mixxx_db: Path | None = None,
          with_mixxx: bool = True) -> list[dict[str, Any]]:
     """Every available vocals-only / instrumental-only track (and overrides)."""
     clause = " OR ".join(
-        "lower(title) LIKE ? OR lower(track_id) LIKE ? OR lower(dj_notes) LIKE ?" for _ in _PREFILTER
+        "lower(title) LIKE ? OR lower(track_id) LIKE ? OR lower(dj_notes) LIKE ? OR lower(album) LIKE ?"
+        for _ in _PREFILTER
     )
-    params = [pattern for pattern in _PREFILTER for _ in range(3)]
+    params = [pattern for pattern in _PREFILTER for _ in range(4)]
     with closing(library_index.connect(_index(index_path))) as db:
         rows = db.execute(
             "SELECT track_id, title, artist, album, genre, duration_seconds, bpm, key, dj_notes "
@@ -116,7 +117,9 @@ def scan(index_path: Path | None = None, *, mixxx_db: Path | None = None,
     records = [dict(row) for row in rows]
     stems = []
     for record in records:
-        kind = classify_track(record["title"] or "", record["track_id"], record.get("dj_notes") or "")
+        kind = classify_track(
+            record["title"] or "", record["track_id"], record.get("dj_notes") or "", record.get("album") or ""
+        )
         if kind["kind"] != "full_mix" or kind["source"] == "override":
             stems.append((record, kind))
     analysis = _mixxx_analysis([r["track_id"] for r, _ in stems], mixxx_db) if with_mixxx else {}
@@ -165,7 +168,7 @@ def set_track_kind(track_id: str, kind: str, index_path: Path | None = None) -> 
         raise ValueError(f"kind must be one of {', '.join(KINDS)} or auto")
     with closing(library_index.connect(_index(index_path))) as db:
         row = db.execute(
-            "SELECT title, dj_notes FROM tracks WHERE track_id = ?", (track_id,)
+            "SELECT title, album, dj_notes FROM tracks WHERE track_id = ?", (track_id,)
         ).fetchone()
         if row is None:
             raise KeyError(f"not in the library index: {track_id}")
@@ -174,7 +177,7 @@ def set_track_kind(track_id: str, kind: str, index_path: Path | None = None) -> 
             note = f"{note}; track_kind={kind}" if note else f"track_kind={kind}"
         with db:
             db.execute("UPDATE tracks SET dj_notes = ? WHERE track_id = ?", (note, track_id))
-    return {"track_id": track_id, "dj_notes": note, **classify_track(row["title"] or "", track_id, note)}
+    return {"track_id": track_id, "dj_notes": note, **classify_track(row["title"] or "", track_id, note, row["album"] or "")}
 
 
 def suggest_beds(vocal: dict, rows: list[dict], *, limit: int = 10) -> list[dict[str, Any]]:

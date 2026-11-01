@@ -25,14 +25,23 @@ Anthem (I Choose You) (Explicit Acappella)* and Wham! *Careless Whisper
 
 1. **Track type.** Every library track is a full mix, an instrumental, or
    vocals only.
-   - The type is found from the title tag first, then the filename. The tags
-     are version tags: `(Acapella)`, `(A Cappella)`, `(Accapella)`, `(A
+   - The type is found from the title tag first, then the filename, then the
+     album. The tags are version tags: `(Acapella)`, `(A Cappella)`, `(Accapella)`, `(A
      Capella)`, `(Acappela)`, `[Vocal Stem]`, `(Vocals Only)`, `(Instrumental)`,
      `(Remix Instrumental)`, `(Instrumental Version)`, `(Inst.)`, `-Inst`,
      `(Karaoke Version)`, and so on.
+   - **Instrumentals albums count whole.** Every song on an album named for
+     its instrumentals ("The Ownerz (The Instrumentals)", "Meteora
+     Instrumentals", "2001 (Instrumentals Only)", "Acapellas + Instrumentals")
+     is an instrumental, even with vocal chops used as percussion. A titled
+     acapella on such an album stays vocals only. The album tag or the folder
+     the file sits in decides; a category folder above the album ("Compilations
+     & Instrumentals", "Unreleased, Bonus & Instrumentals") holds full songs
+     and does not count. (Ernest, 2026-11-01: "better to be more inclusive".)
    - False friends stay full mixes: a song *named* Accapella (Kelis) or
      Acapella (Karmin), "L.A. Cappella", "(Vocal Remix)", the 12-inch
-     single's "(Vocal)" version, "Instrumental Hip-Hop", "TV Track" and "Dub".
+     single's "(Vocal)" version, "Instrumental Hip-Hop" in a title, "TV Track"
+     (backing vocals remain) and "Dub".
    - I can override any track by hand ("vocals only", "instrumental", "full
      mix", or "auto" to undo). The override is stored as `track_kind=` in the
      track's global DJ note, so a rescan or a plan note overlay keeps it.

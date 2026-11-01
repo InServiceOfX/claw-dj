@@ -45,6 +45,11 @@ Branch `feat/vocal-instrumental-crate`. Story:
   and "Remix Instrumental"/"(Inst)"/Karaoke. It keeps Kelis "Accapella", "L.A. Cappella",
   12-inch "(Vocal)", TV Track and Dub as full mixes. On the Elements library that is 467 vocals
   and 2,326 instrumentals (was 412 and 1,766), and no old stem became a full mix.
+  - 2026-11-01 (Ernest): every song on an instrumentals album counts as an instrumental, even with
+    vocal chops; a titled acapella stays vocal. The album tag or the file's own folder decides,
+    never a parent folder like "Compilations & Instrumentals". On the USB322FD library this adds
+    236 instrumentals (Dre *2001 (Instrumentals Only)*, *Only Built 4 Cuban Linx (Instrumentals)*,
+    *Soul Pride: The Instrumentals*, …); vocals are unchanged.
 - **Hand override:** `track_kind=<kind>` in the global DJ note (`plan_notes` carries it).
   Set it with `python -m brain.stem_crate set-kind TRACK auto|vocals_only|instrumental_only|full_mix`
   or the type menu on each Stems row.

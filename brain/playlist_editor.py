@@ -685,7 +685,7 @@ class PlaylistApp:
             "truncated": total > limit,
             "tracks": [
                 {**track_record(track), "enabled": track.track_id in self.selected,
-                 "track_kind": classify_stem(track.title, track.track_id, track.dj_notes)}
+                 "track_kind": classify_stem(track.title, track.track_id, track.dj_notes, track.album or "")}
                 for track in tracks[:limit]
             ],
         }

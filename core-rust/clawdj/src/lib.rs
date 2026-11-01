@@ -22,7 +22,8 @@ pub use queue::{
 };
 pub use stems::{
     StemKind, StemPair, StemPairReport, StemTrack, classify_stem, classify_stem_with_notes,
-    is_acapella_word, is_showcase_acapella, is_vocal_over_bed, pair_vocals, track_kind_override,
+    classify_track_kind, is_acapella_word, is_showcase_acapella, is_vocal_over_bed, pair_vocals,
+    track_kind_override,
 };
 pub use verse::{
     CuePlacement, LyricSegment, VerseCueDecision, VerseCueRequest, classify_cue, has_vocal_verses,
