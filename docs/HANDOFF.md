@@ -1,5 +1,14 @@
 # Handoff / continuation notes
 
+## 2026-11-05 — Tone-play next-agent entry point
+
+Read [TONE_PLAY_AGENT_HANDOFF.md](TONE_PLAY_AGENT_HANDOFF.md) for the portable
+implementation map and evaluation ladder, [Phil Harris research](research/PHIL_HARRIS_TONE_PLAY.md)
+for the new reference, and `agent/tone-play-skill/SKILL.md` for optional skill
+instructions. Existing `hands/pitch_play.py` and Rust pitch-play are the starting
+point. Do not create a prepared-master substitute or infer a fresh live approval.
+This addition is documentation only; historical test counts/status remain dated.
+
 ## 2026-10-31 — Interrupted scan recovery implemented and activated
 
 Branch `fix/interrupted-scan-recovery` extends the committed R&B fixes. Curate

@@ -1,5 +1,16 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## 2026-11-05 — Tone-play cross-machine handoff (documentation only)
+
+Added `docs/TONE_PLAY_AGENT_HANDOFF.md`, a portable Phil Harris research note
+and `agent/tone-play-skill/SKILL.md`. Inspection at base118c218 found the existing
+Python wrapper / Rust pitch-play scheduler; the handoff starts with reuse and
+synthetic reproduction, then an explicitly authorized audition/measurement.
+It preserves original-source live performance and PDD ownership. No runtime,
+saved mix, source/library, live playback or capture changes; no fresh pitch-play
+test/audio/listening result claimed. Branch `bots/tone-play-handoff`; no commit
+or push. The companion video-production skills/tooling belong in claw-work.
+
 ## 2026-10-31 — Interrupted scan recovery implemented and activated
 
 Branch `fix/interrupted-scan-recovery` extends the committed R&B fixes. Curate
