@@ -6,6 +6,12 @@ and unwanted spoken material around 3:30–3:50. Request:
 These are findings, not a claimed audible fix. No active plan/note data,
 audio or playback controls changed in this investigation.
 
+## Related material
+
+- [Rock The Bells Radio "Salute the Sample" breakdown](research/youtube-shorts/g90-VmhaMrE1Gmc/README.md) —
+  YouTube Short showing The Notorious B.I.G.'s "Who Shot Ya" sampling David
+  Porter's "I'm Afraid The Masquerade Is Over" (Bad Boy promo `BBDP-9298`)
+
 ## Skit: current note and artifact conflict with the request
 
 Exact recording: Biggie, Ready To Die (The Remaster) [2004],
