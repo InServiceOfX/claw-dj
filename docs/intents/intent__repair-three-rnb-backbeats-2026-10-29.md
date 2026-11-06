@@ -91,3 +91,26 @@ Full CLI CueVerificationError should exit with a concise stopped-safely
 message using existing cleanup, without a traceback. Validate --start-at109
 against this actual plan; it restarts the outgoing song from its cue and then
 continues the remaining original event sequence. No automatic live playback.
+
+
+One silent relaunch after a small measured miss (2026-11-01): full-run event
+331 stopped at +37.2 ms. Play was sent 1.3 ms before the deadline, and the
+Play request itself took 25.1 ms, so the snare was about 37 ms late. Half of
+the fast quantize-write round trip cannot predict that slower Play. When the
+first phase check misses by at most 80 ms and the incoming deck is still
+silent, stop it, put the original cue back, and send Play once more on the
+next legal snare. Add the measured lateness to the command lead, clamped to
+-20..+80 ms, and remember that extra lead for later measured starts in the
+same run. A second miss, a miss larger than 80 ms, a deadline miss before
+Play, or a jump after quantize is restored still stops the mix. Keep the
+30 ms guard, the original cue, and no seek after a start that is allowed to
+continue. Do not change plan bytes, cues, or the 109/159/235 approvals.
+No automatic live playback.
+
+Tight measured window on the silent retry (2026-11-02): Joe — And Then... →
+Joe — Sweeter Than Sugar stopped after the relaunch. The 32-beat fade already
+ended inside a 30s measurement, and the next snare is one 2-beat cycle later,
+so the fade tail crossed window_end. The first start still refuses a blend
+outside that window. The one silent relaunch may extend the fade by at most
+one real backbeat cycle past window_end. A larger slip still stops the mix.
+No automatic live playback.

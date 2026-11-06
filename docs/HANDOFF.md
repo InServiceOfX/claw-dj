@@ -1,5 +1,23 @@
 # Handoff / continuation notes
 
+## 2026-11-05 — Silent measured-backbeat relaunch
+
+The November 1–2 fix permits one retry while the incoming deck remains silent:
+stop, restore the original cue, then launch on the next legal snare with a
+bounded learned Play lead. The retry alone may extend the fade tail by one
+real backbeat cycle beyond the measured window; source duration checks and
+the 30 ms phase guard remain. A second miss, a miss over 80 ms, or a phase
+jump after restoring quantize still stops playback. Existing plan bytes and
+human approvals are preserved. Live confirmation remains pending.
+
+Requested commit branch: `fix/measured-backbeat-silent-relaunch`. All 40
+measured-start tests and both strict prompt lints pass. Of 123 adjacent tests,
+one skipped and three editor tests initially errored on the machine's
+read-only collection database; all three pass with a temporary registry,
+SQLite index and crate export. No live playback or push. `.claude/worktrees/`
+is local agent state and is intentionally excluded. The user's resume command
+is `./scripts/run_mix.sh --start-at 159`.
+
 ## 2026-10-31 — Interrupted scan recovery implemented and activated
 
 Branch `fix/interrupted-scan-recovery` extends the committed R&B fixes. Curate

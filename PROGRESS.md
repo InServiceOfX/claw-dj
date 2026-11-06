@@ -1,5 +1,40 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## 2026-11-05 — Silent measured-start retry reviewed for requested commit
+
+The November 1–2 runtime, tests, requirements and prompt changes form one
+fix on `fix/measured-backbeat-silent-relaunch`. Fresh validation: all 40
+measured-start tests pass; the runner/audition/alignment/source-cutoff suite
+ran 123 tests with one skip and three editor database errors. Those three
+pass with a temporary collection registry, SQLite index and crate export.
+Both changed prompts pass strict deterministic lint. No live playback or new
+listening approval. Local `.claude/worktrees/` is excluded from the commit.
+See `docs/HANDOFF.md`; the earlier “Not committed” notes describe those dates.
+
+## 2026-11-02 — Silent relaunch may cross a tight measured window by one snare
+
+Joe — And Then... → Joe — Sweeter Than Sugar (transition 159) printed the
+relaunch line, then stopped: the next snare put the 32-beat fade about 0.9s
+past a 30s measured window. The first start still refuses a blend outside
+that window. The one silent retry may extend the fade by at most one real
+backbeat cycle. 40 measured-backbeat tests pass. No live playback. Resume
+with `./scripts/run_mix.sh --start-at 159`. Not committed.
+
+## 2026-11-01 — One silent relaunch when Play is slower than the quantize write
+
+Ernest's live mix stopped at event 331/812, transition 109: Maxwell —
+Sumthin' Sumthin' → Maxwell — The Urban Theme. Play was sent 1.3 ms before
+the deadline, the Play request took 25.1 ms, and the snare was +37.2 ms.
+The incoming deck was still silent. The runner now stops that deck, restores
+the original cue, and sends Play once more on the next legal snare, using
+the measured lateness as extra lead (clamped to -20..+80 ms). That lead is
+kept for later measured starts in the same run. A second miss, a miss over
+80 ms, or a jump after quantize returns still stops the mix. The 30 ms
+guard, cues, and plan bytes are unchanged. `tests.test_measured_backbeat_start`
+39 tests pass. No live playback was started. Resume with
+`./scripts/run_mix.sh --start-at 109` (replays Sumthin' Sumthin' from its
+cue, then continues). Not committed.
+
 ## 2026-10-31 — Interrupted scan recovery implemented and activated
 
 Branch `fix/interrupted-scan-recovery` extends the committed R&B fixes. Curate
