@@ -3245,5 +3245,185 @@
       {"name": "Score::compile", "signature": "(&self) -> anyhow::Result<Vec<Attack>>"},
       {"name": "execute", "signature": "(api: &mut impl Controls, clock: &mut impl Clock, score: &Score) -> anyhow::Result<()>"}
     ]}}
+  },
+  {
+    "reason": "Ernest (2026-10-31) wants a list, in the CLI and the GUI, of every vocals-only and every instrumental-only track in his library, with BPM, key and length, found from the title tag or filename, and a way to correct one by hand.",
+    "description": "The stem crate. scan(index_path, *, mixxx_db=None, with_mixxx=True) reads available tracks from the library index through a cheap SQL prefilter (title/path/album/dj_notes containing inst, cap, apel, vocal, karaoke or track_kind=), classifies each with brain.stems.classify_track (hand override, then title tag, then filename, then an instrumentals album: the album tag or the file's own folder, e.g. 'Meteora Instrumentals', never a parent category folder like 'Compilations & Instrumentals'; then an exact `instrumental` folder), and keeps vocals-only and instrumental-only rows plus every hand override. BPM, key and length come from Mixxx's own library database (read-only, shared.mixxx_db) when analyzed, else from tags, else None (Mixxx analyzes on load); each row records bpm_source, kind_source, kind_evidence and a clean/radio flag. list_stems(kind=None, *, search='', ...) returns {'vocals_only': [...], 'instrumental_only': [...], 'counts'}; kind accepts vocals/instrumentals aliases; search matches every word of artist/title/album/genre ignoring apostrophes. set_track_kind(track_id, kind, index_path) stores the hand override as `track_kind=<kind>` in the GLOBAL tracks.dj_notes (so rescans and plan overlays keep it; brain.plan_notes carries it), preserving other note text; `auto` removes it. suggest_beds(vocal, rows, *, limit) ranks instrumentals for one vocal: tempo compatibility x3 (half/double allowed), key x2, +0.5 for a different song (a vocal on its own instrumental is just the original record, legal but not preferred). CLI `python -m brain.stem_crate list|set-kind|beds` with --json.",
+    "dependencies": [
+      "brain/library_index_Python.prompt"
+    ],
+    "priority": 60,
+    "filename": "brain/stem_crate_Python.prompt",
+    "filepath": "brain/stem_crate.py",
+    "tags": [
+      "brain",
+      "stems",
+      "library",
+      "cli"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "scan",
+            "signature": "(index_path: Path | None = None, *, mixxx_db: Path | None = None, with_mixxx: bool = True) -> list[dict]"
+          },
+          {
+            "name": "list_stems",
+            "signature": "(kind: str | None = None, *, search: str = '', index_path: Path | None = None, mixxx_db: Path | None = None, rows: list[dict] | None = None) -> dict"
+          },
+          {
+            "name": "set_track_kind",
+            "signature": "(track_id: str, kind: str, index_path: Path | None = None) -> dict"
+          },
+          {
+            "name": "suggest_beds",
+            "signature": "(vocal: dict, rows: list[dict], *, limit: int = 10) -> list[dict]"
+          },
+          {
+            "name": "main",
+            "signature": "(argv: list[str] | None = None) -> int"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "An acapella has no drums, so its backbeat cannot be measured from its own audio, and Ernest keeps hearing blends one count off. The vocal take on the acapella is the same take on the song's full mix, so the full mix can lend its measured snare timing.",
+    "description": "Plans one vocal-over-instrumental layer from read-only analysis. find_siblings finds analyzed full mixes of the same song (same core title, overlapping artist, explicit before clean). align_to_sibling cross-correlates voice-band (300-3400 Hz) onset envelopes at ~10 ms frames and refines the peak; it is usable only when the peak beats the best rival (>0.5 s away) by MIN_ALIGN_CONFIDENCE and the two halves of the acapella give one offset within 20 ms (same tempo, no edit). The sibling's measured snare phase (brain.onset_analysis.measure_backbeat_timing, source seconds) minus the offset becomes the vocal's snare phase and the sibling's BPM its tempo. The instrumental's snare phase is measured directly. Snares on 2 and 4 are therefore exact on both sides; count 1 vs 3 stays `guessed` (the count-1 detector agreed with Ernest only 9 of 14 times) and the A/B alternative is a whole snare cycle (+/-2 beats); a 1-beat shift is refused because it puts the snare on 1 and 3. plan_layer(vocal_id, bed_id, ...) keeps the vocal at its own speed and moves the instrumental to the vocal's tempo (keylock on), refuses tempos more than 8% apart, starts the bed at its cue, enters the vocal's count-1 candidate (first kick beat at or after first word minus one beat, inside the chosen vocal_from/vocal_to section) on a bed kick beat lead_bars whole bars after the bed's first kick, starts the vocal deck one bar early in its silence but never before the chosen section, lasts to the last sustained word, then a 16-beat bed fade. Levels: with ReplayGain on both tracks in Mixxx (enabled in Ernest's mixxx.cfg) trust it; otherwise equalize gated loudness by turning the louder one down; the bed sits about 2 dB under the voice; a full-mix bed dips mids to 0.35 and highs to 0.7, an instrumental bed mids to 0.8. With no usable full mix the backbeat is `unverified` and a warning says so. Measurements cache in brain/data/stem_layers.json keyed by path, size and mtime. describe(plan) prints the plan in plain words.",
+    "dependencies": [
+      "brain/stem_crate_Python.prompt",
+      "brain/library_index_Python.prompt"
+    ],
+    "priority": 61,
+    "filename": "brain/stem_layer_plan_Python.prompt",
+    "filepath": "brain/stem_layer_plan.py",
+    "tags": [
+      "brain",
+      "stems",
+      "analysis",
+      "backbeat"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "align_to_sibling",
+            "signature": "(vocal_y: np.ndarray, full_y: np.ndarray, *, sr: int = 11025) -> dict"
+          },
+          {
+            "name": "vocal_span",
+            "signature": "(rms_db: list[float], *, start_seconds: float = 0.0, end_seconds: float | None = None, frame_seconds: float = 0.05) -> dict"
+          },
+          {
+            "name": "choose_vocal_anchor",
+            "signature": "(vocal_snare_phase: float, vocal_bpm: float, first_word: float, count_shift_beats: int = 0) -> float"
+          },
+          {
+            "name": "choose_bed_entry",
+            "signature": "(bed_snare_phase: float, bed_bpm: float, bed_cue: float, lead_bars: int) -> float"
+          },
+          {
+            "name": "plan_layer",
+            "signature": "(vocal_id: str, bed_id: str, *, vocal_bpm=None, bed_bpm=None, bed_cue_seconds=0.0, vocal_from_seconds=0.0, vocal_to_seconds=None, lead_bars=8, count_shift_beats=0, index_path=None, mixxx_db=None, measure=None) -> dict"
+          },
+          {
+            "name": "describe",
+            "signature": "(plan: dict) -> list[str]"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Ernest wants Mixxx to play a chosen vocal and instrumental together live at similar levels, for the vocal's whole length, without a .wav render.",
+    "description": "Performs a brain.stem_layer_plan plan live through the Mixxx control API. Refuses (LayerRefused) a running mix/audition (hands.audition_transition.running_mix_processes, which also lists this module) or playing decks unless take_over. Deck 1 instrumental from its cue with set_bpm_target to the vocal's tempo; deck 2 vocal at rate 0 (the voice is never stretched); quantize and sync off on both (no snapping to Mixxx's acapella grid); crossfader at center (additive: both full) for the whole layer, not a crossfade; plan pregains and bed EQ. The vocal is started off the bed's audio-callback source clock (read_source_clock with a grid origin calibrated from beat_distance at the stopped cue), falling back to the start command's clock. In the vocal's silent pre-roll bar the residual is the median of paired source-clock reads; beyond the 30 ms guard it moves the vocal once while still silent, never mid-word (then it warns: nudge by ear). After the last word plus a bar the instrumental fades over 16 beats (gentle, never a cut); Stop (SIGTERM -> KeyboardInterrupt) fades 1.5 s. Every run ends by restoring play/volume/pregain/rate/quantize and neutral EQ/filter on decks 1-2. schedule(plan, *, bed_rate) gives the real-time offsets; dry runs print the plan and never connect. StemLayerSession runs the CLI in a child process for the GUI and parses `[layer] phase:` lines.",
+    "dependencies": [
+      "brain/stem_layer_plan_Python.prompt",
+      "hands/mixxx_control_Python.prompt",
+      "hands/audition_transition_Python.prompt"
+    ],
+    "priority": 62,
+    "filename": "hands/stem_layer_Python.prompt",
+    "filepath": "hands/stem_layer.py",
+    "tags": [
+      "runtime",
+      "mixxx",
+      "live",
+      "stems"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "schedule",
+            "signature": "(plan: dict, *, bed_rate: float | None = None) -> dict"
+          },
+          {
+            "name": "residual_ms",
+            "signature": "(plan: dict, rate: float, bed_seconds: float, vocal_seconds: float) -> float"
+          },
+          {
+            "name": "run_layer",
+            "signature": "(plan: dict, *, port: int = DEFAULT_PORT, dry_run: bool = False, take_over: bool = False, control_factory=MixxxControl, clock=time.monotonic, sleep=time.sleep, ps_output: str | None = None) -> dict"
+          },
+          {
+            "name": "main",
+            "signature": "(argv: list[str] | None = None) -> int"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "reason": "The Stems page needs routes for the two lists, hand overrides, bed suggestions and the live layer.",
+    "description": "ROUTES registered by playlist_editor.make_handler: GET /api/stems (?kind=vocals|instrumentals&q=&refresh=1) -> PlaylistApp.stem_list (rows cached for a minute, cleared on an override); POST /api/stems/kind {track_id, kind} -> set_stem_kind (global note; the in-memory Track is updated so Curate's badge follows); GET /api/stems/beds?vocal_id= -> ranked beds; GET/POST /api/stems/layer -> status / start_stem_layer (only from a button press; refuses with 409 while a full mix or an audition plays, or for an odd count shift; dry_run plans without Mixxx); POST /api/stems/layer/stop. Uses the same control-port precedence as auditions.",
+    "dependencies": [
+      "brain/api_router_Python.prompt",
+      "brain/stem_crate_Python.prompt",
+      "hands/stem_layer_Python.prompt"
+    ],
+    "priority": 63,
+    "filename": "brain/api/api_stems_Python.prompt",
+    "filepath": "brain/api/api_stems.py",
+    "tags": [
+      "backend",
+      "api",
+      "stems"
+    ],
+    "context_urls": [],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {
+            "name": "list_stems",
+            "signature": "(app, params, method, body, query, headers=None) -> tuple[dict, int]"
+          },
+          {
+            "name": "set_kind",
+            "signature": "(app, params, method, body, query, headers=None) -> tuple[dict, int]"
+          },
+          {
+            "name": "beds",
+            "signature": "(app, params, method, body, query, headers=None) -> tuple[dict, int]"
+          },
+          {
+            "name": "layer",
+            "signature": "(app, params, method, body, query, headers=None) -> tuple[dict, int]"
+          },
+          {
+            "name": "layer_stop",
+            "signature": "(app, params, method, body, query, headers=None) -> tuple[dict, int]"
+          }
+        ]
+      }
+    }
   }
 ]

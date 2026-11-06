@@ -26,6 +26,7 @@ Let a model review the optimized order like a DJ (opener and closer, energy arc,
    - no more blind blends than the optimized order, and at most one more unverified blend;
    - the graph objective is within 3% (minimum 0.5) of the optimized order's.
 3. On acceptance, notes record the before/after mean blend score and the model's own one-line reasons.
+4. Stems (Ernest, 2026-10-31): a song that brain.stems classifies as vocals-only or instrumental (hand `track_kind=` override included) carries `type` (`vocals_only` | `instrumental`) in the mix sheet, and each vocals-only song carries `layer_beds`: up to three instrumentals in the set ranked by brain.stem_crate.suggest_beds (tempo, then key, a different song preferred), as `[id, score, reasons]`. The review prompt explains that the builder layers a vocal over the instrumental placed immediately before it, so the model picks the pairing by order and never puts two vocals-only songs in a row. Full-mix songs carry neither field.
 
 <contract_rules>
 R1 (MUST NOT): a model error, timeout, refusal, unparsable reply or rejected proposal fails the build; the optimized order is returned instead.

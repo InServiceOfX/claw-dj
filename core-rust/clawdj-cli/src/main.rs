@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use clawdj::{
-    JsonCommand, StemTrack, VerseCueRequest, analyze_paths, classify_stem, command::Deck,
+    JsonCommand, StemTrack, VerseCueRequest, analyze_paths, classify_track_kind, command::Deck,
     open_mixxx_database, open_output_port, pair_vocals, port_presence_summary, queue_clear,
     queue_init, queue_set, respect_verse_entry, send_message,
 };
@@ -119,6 +119,12 @@ enum StemCommands {
         title: String,
         #[arg(long, default_value = "")]
         path: String,
+        /// The track's DJ note; `track_kind=<kind>` there is a hand override.
+        #[arg(long, default_value = "")]
+        notes: String,
+        /// The album tag; an album named for its instrumentals counts.
+        #[arg(long, default_value = "")]
+        album: String,
     },
     /// Read a JSON array of tracks on stdin; write pairing JSON on stdout.
     Pair,
@@ -265,8 +271,13 @@ fn main() -> Result<()> {
 
 fn run_stems(command: StemCommands) -> Result<()> {
     match command {
-        StemCommands::Classify { title, path } => {
-            let kind = classify_stem(&title, &path);
+        StemCommands::Classify {
+            title,
+            path,
+            notes,
+            album,
+        } => {
+            let kind = classify_track_kind(&title, &path, &notes, &album);
             println!("{}", serde_json::to_string(&kind)?);
             Ok(())
         }

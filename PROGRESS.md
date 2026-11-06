@@ -35,6 +35,50 @@ guard, cues, and plan bytes are unchanged. `tests.test_measured_backbeat_start`
 `./scripts/run_mix.sh --start-at 109` (replays Sumthin' Sumthin' from its
 cue, then continues). Not committed.
 
+## 2026-10-31 — Vocals-only and instrumental tracks: Stems page and live layers (unheard)
+
+Branch `feat/vocal-instrumental-crate`. Story:
+`user_stories/story__when_i_pick_a_vocal_and_an_instrumental_mixxx_plays_them_together_live.md`.
+
+- **Track type:** `brain/stems.py` and Rust `stems.rs` share one classifier, checked against
+  the same cases in `tests/fixtures/stem_kinds.json`. It catches Accapella/A Capella/Acappela
+  and "Remix Instrumental"/"(Inst)"/Karaoke. It keeps Kelis "Accapella", "L.A. Cappella",
+  12-inch "(Vocal)", TV Track and Dub as full mixes. On the Elements library that is 467 vocals
+  and 2,326 instrumentals (was 412 and 1,766), and no old stem became a full mix.
+  - 2026-11-01 (Ernest): every song on an instrumentals album counts as an instrumental, even with
+    vocal chops; a titled acapella stays vocal. The album tag or the file's own folder decides,
+    never a parent folder like "Compilations & Instrumentals". On the USB322FD library this adds
+    236 instrumentals (Dre *2001 (Instrumentals Only)*, *Only Built 4 Cuban Linx (Instrumentals)*,
+    *Soul Pride: The Instrumentals*, …); vocals are unchanged.
+- **Hand override:** `track_kind=<kind>` in the global DJ note (`plan_notes` carries it).
+  Set it with `python -m brain.stem_crate set-kind TRACK auto|vocals_only|instrumental_only|full_mix`
+  or the type menu on each Stems row.
+- **Lists:** `python -m brain.stem_crate list [--kind vocals|instrumentals] [--search Q] [--json]`;
+  `... beds VOCAL_TRACK` ranks instrumentals. GUI: the new **Stems** page has two scrolling
+  lists with ▶ preview, a type menu, "Best instrumentals for this vocal", "Use preview
+  position", "Plan (dry run)" and "Play together in Mixxx" (needs a tick first).
+- **Live layer:** `python -m hands.stem_layer --vocal V --bed B [--vocal-from S] [--count-shift ±2] [--dry-run]`.
+  - Beat maps are made per record; a drifting live/tape bed is fine.
+  - The acapella borrows its full mix's beats by cross-correlation, and both halves must agree
+    within 20 ms. Snares on 2/4 are exact; count 1 is labeled guessed, with an A/B of ±2 beats
+    and never ±1.
+  - The vocal plays at its own speed and the instrumental deck rides its tempo at 20 Hz.
+    Crossfader center, ReplayGain or measured loudness; a full-mix bed dips mids 0.35 / highs 0.7.
+  - A 16-beat fade, never a cut. Nothing is rendered.
+- **Real dry run** (UGK "Int'l Players Anthem (Explicit Acappella)" over Wham! "Careless
+  Whisper (Instrumental)", 12-inch):
+  - the acapella aligns to the explicit full mix within 4 ms;
+  - the instrumental drifts about 600 ms over the song, and its beat map puts 82% of beats
+    within 20 ms of a drum hit.
+- **Not heard yet.** First listen: Stems page → pick both → set the start of André's verse with
+  "Use preview position" → Plan → Play. If count 1 is off, try Count 1 "2 beats later/earlier".
+- **LLM and runner:** the order-review sheet tags `type` and lists `layer_beds`. New
+  `vocal_over_bed` layers last the whole vocal. A full-mix bed (`bed_loop`) in the runner now
+  dips its mids/highs; instrumental beds such as the approved Get Up layer are unchanged.
+- **Proposal only:** `docs/proposals/STEM_SEPARATION_DEMUCS.md`.
+- **Tests:** 764 Python tests OK (1 skipped). Rust: `cargo test --workspace`, clippy
+  `-D warnings` and fmt are all clean.
+
 ## 2026-10-31 — Interrupted scan recovery implemented and activated
 
 Branch `fix/interrupted-scan-recovery` extends the committed R&B fixes. Curate

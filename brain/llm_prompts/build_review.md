@@ -14,6 +14,14 @@ You receive a MIX SHEET, already measured by claw-dj. Do not invent measurements
     `"verse 0:20-1:05, chorus 1:05-1:30, …; last verse ends 3:40"`. `null` means
     no lyric timeline (often instrumental or untranscribed).
   - `dj_notes`: the DJ's own per-song instructions. They are authoritative.
+  - `type` (only on stems): `vocals_only` (an acapella or vocal stem) or
+    `instrumental`. A `vocals_only` song is never played alone: the builder
+    layers it, two decks at once for the vocal's length, over the instrumental
+    placed **immediately before** it. You choose that pairing by order.
+  - `layer_beds` (vocals only): the instrumentals in this set that fit it best,
+    measured, best first: `[id, score, reasons]` (tempo first, then key; a
+    different song beats the vocal's own instrumental, which is just the
+    original record). Any genre may sit under any genre.
   - `best_next`: the songs this one blends into best, measured, best first:
     `[id, score 0..1, backbeat label, short reasons]`. Backbeat labels:
     `verifiable` (both snares measured), `one_side_unverified`, `blind` (neither).
@@ -41,7 +49,9 @@ and backbeat alignment from its own analysis, and applies the DJ notes.
    other that are not in each other's `best_next` is likely worse.
 4. Before answering, check your order against every line in `locked`. When you
    move a song that is in a locked pair, move the whole pair together.
-5. If the order is already good, keep it. Keeping it is a valid answer.
+5. For each `vocals_only` song, put an instrumental right before it, preferably
+   one from its `layer_beds`. Never put two `vocals_only` songs in a row.
+6. If the order is already good, keep it. Keeping it is a valid answer.
 
 ## How your answer is judged (automatically)
 
