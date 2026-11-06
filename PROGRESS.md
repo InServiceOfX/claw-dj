@@ -1,5 +1,21 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## 2026-11-05 — Stems and optional GUI theme merged
+
+Ernest merged `feat/vocal-instrumental-crate` first (`5e1cbd0`), then
+`feat/retro-ux-theme` (`1589f70`) into local `master`. Both features are
+included; their merge order requires no feature rollback. Removed conflict
+markers accidentally committed in these two documentation files and retained
+both feature sections below.
+
+Before merging, the rebased theme passed 10 tests; the stems branch passed
+151 focused Python tests and the Rust workspace tests. These were separate
+branch checks, not a combined post-merge test run. The theme still needs a
+live-GUI check, and live vocal/instrumental layering still needs listening
+validation. The measured-start retry is also merged (`e984a5d`); its live
+confirmation remains pending. Older dated implementation/test notes below
+are historical and do not establish new listening approval.
+
 ## 2026-11-05 — Silent measured-start retry reviewed for requested commit
 
 The November 1–2 runtime, tests, requirements and prompt changes form one
@@ -35,10 +51,9 @@ guard, cues, and plan bytes are unchanged. `tests.test_measured_backbeat_start`
 `./scripts/run_mix.sh --start-at 109` (replays Sumthin' Sumthin' from its
 cue, then continues). Not committed.
 
-<<<<<<< HEAD
 ## 2026-10-31 — Vocals-only and instrumental tracks: Stems page and live layers (unheard)
 
-Branch `feat/vocal-instrumental-crate`. Story:
+Merged into local `master` via `feat/vocal-instrumental-crate` (`5e1cbd0`). Story:
 `user_stories/story__when_i_pick_a_vocal_and_an_instrumental_mixxx_plays_them_together_live.md`.
 
 - **Track type:** `brain/stems.py` and Rust `stems.rs` share one classifier, checked against
@@ -79,10 +94,10 @@ Branch `feat/vocal-instrumental-crate`. Story:
 - **Proposal only:** `docs/proposals/STEM_SEPARATION_DEMUCS.md`.
 - **Tests:** 764 Python tests OK (1 skipped). Rust: `cargo test --workspace`, clippy
   `-D warnings` and fmt are all clean.
-=======
+
 ## 2026-10-31 — GUI: Classic stays default; optional 16-bit adventure style
 
-Branch `feat/retro-ux-theme` (local commit, not pushed). Story:
+Merged into local `master` via `feat/retro-ux-theme` (`1589f70`). Story:
 `user_stories/story__when_i_open_the_gui_i_can_pick_classic_or_a_16_bit_adventure_style.md`.
 
 - The header has a **Classic | 16-bit** switch. Classic is the default and is
@@ -103,7 +118,6 @@ Branch `feat/retro-ux-theme` (local commit, not pushed). Story:
 - Not yet checked against the running GUI with live data.
 - At 420px both styles share the same existing horizontal overflow in the
   New music and toolbar rows; this change didn't cause it.
->>>>>>> feat/retro-ux-theme
 
 ## 2026-10-31 — Interrupted scan recovery implemented and activated
 
