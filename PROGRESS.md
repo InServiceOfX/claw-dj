@@ -8,8 +8,128 @@ Python wrapper / Rust pitch-play scheduler; the handoff starts with reuse and
 synthetic reproduction, then an explicitly authorized audition/measurement.
 It preserves original-source live performance and PDD ownership. No runtime,
 saved mix, source/library, live playback or capture changes; no fresh pitch-play
-test/audio/listening result claimed. Branch `bots/tone-play-handoff`; no commit
-or push. The companion video-production skills/tooling belong in claw-work.
+test/audio/listening result claimed. Committed as `855954f` on
+`bots/tone-play-handoff`; no push. The companion video-production skills/tooling
+belong in claw-work.
+
+## 2026-11-05 — Stems and optional GUI theme merged
+
+Ernest merged `feat/vocal-instrumental-crate` first (`5e1cbd0`), then
+`feat/retro-ux-theme` (`1589f70`) into local `master`. Both features are
+included; their merge order requires no feature rollback. Removed conflict
+markers accidentally committed in these two documentation files and retained
+both feature sections below.
+
+Before merging, the rebased theme passed 10 tests; the stems branch passed
+151 focused Python tests and the Rust workspace tests. These were separate
+branch checks, not a combined post-merge test run. The theme still needs a
+live-GUI check, and live vocal/instrumental layering still needs listening
+validation. The measured-start retry is also merged (`e984a5d`); its live
+confirmation remains pending. Older dated implementation/test notes below
+are historical and do not establish new listening approval.
+
+## 2026-11-05 — Silent measured-start retry reviewed for requested commit
+
+The November 1–2 runtime, tests, requirements and prompt changes form one
+fix on `fix/measured-backbeat-silent-relaunch`. Fresh validation: all 40
+measured-start tests pass; the runner/audition/alignment/source-cutoff suite
+ran 123 tests with one skip and three editor database errors. Those three
+pass with a temporary collection registry, SQLite index and crate export.
+Both changed prompts pass strict deterministic lint. No live playback or new
+listening approval. Local `.claude/worktrees/` is excluded from the commit.
+See `docs/HANDOFF.md`; the earlier “Not committed” notes describe those dates.
+
+## 2026-11-02 — Silent relaunch may cross a tight measured window by one snare
+
+Joe — And Then... → Joe — Sweeter Than Sugar (transition 159) printed the
+relaunch line, then stopped: the next snare put the 32-beat fade about 0.9s
+past a 30s measured window. The first start still refuses a blend outside
+that window. The one silent retry may extend the fade by at most one real
+backbeat cycle. 40 measured-backbeat tests pass. No live playback. Resume
+with `./scripts/run_mix.sh --start-at 159`. Not committed.
+
+## 2026-11-01 — One silent relaunch when Play is slower than the quantize write
+
+Ernest's live mix stopped at event 331/812, transition 109: Maxwell —
+Sumthin' Sumthin' → Maxwell — The Urban Theme. Play was sent 1.3 ms before
+the deadline, the Play request took 25.1 ms, and the snare was +37.2 ms.
+The incoming deck was still silent. The runner now stops that deck, restores
+the original cue, and sends Play once more on the next legal snare, using
+the measured lateness as extra lead (clamped to -20..+80 ms). That lead is
+kept for later measured starts in the same run. A second miss, a miss over
+80 ms, or a jump after quantize returns still stops the mix. The 30 ms
+guard, cues, and plan bytes are unchanged. `tests.test_measured_backbeat_start`
+39 tests pass. No live playback was started. Resume with
+`./scripts/run_mix.sh --start-at 109` (replays Sumthin' Sumthin' from its
+cue, then continues). Not committed.
+
+## 2026-10-31 — Vocals-only and instrumental tracks: Stems page and live layers (unheard)
+
+Merged into local `master` via `feat/vocal-instrumental-crate` (`5e1cbd0`). Story:
+`user_stories/story__when_i_pick_a_vocal_and_an_instrumental_mixxx_plays_them_together_live.md`.
+
+- **Track type:** `brain/stems.py` and Rust `stems.rs` share one classifier, checked against
+  the same cases in `tests/fixtures/stem_kinds.json`. It catches Accapella/A Capella/Acappela
+  and "Remix Instrumental"/"(Inst)"/Karaoke. It keeps Kelis "Accapella", "L.A. Cappella",
+  12-inch "(Vocal)", TV Track and Dub as full mixes. On the Elements library that is 467 vocals
+  and 2,326 instrumentals (was 412 and 1,766), and no old stem became a full mix.
+  - 2026-11-01 (Ernest): every song on an instrumentals album counts as an instrumental, even with
+    vocal chops; a titled acapella stays vocal. The album tag or the file's own folder decides,
+    never a parent folder like "Compilations & Instrumentals". On the USB322FD library this adds
+    236 instrumentals (Dre *2001 (Instrumentals Only)*, *Only Built 4 Cuban Linx (Instrumentals)*,
+    *Soul Pride: The Instrumentals*, …); vocals are unchanged.
+- **Hand override:** `track_kind=<kind>` in the global DJ note (`plan_notes` carries it).
+  Set it with `python -m brain.stem_crate set-kind TRACK auto|vocals_only|instrumental_only|full_mix`
+  or the type menu on each Stems row.
+- **Lists:** `python -m brain.stem_crate list [--kind vocals|instrumentals] [--search Q] [--json]`;
+  `... beds VOCAL_TRACK` ranks instrumentals. GUI: the new **Stems** page has two scrolling
+  lists with ▶ preview, a type menu, "Best instrumentals for this vocal", "Use preview
+  position", "Plan (dry run)" and "Play together in Mixxx" (needs a tick first).
+- **Live layer:** `python -m hands.stem_layer --vocal V --bed B [--vocal-from S] [--count-shift ±2] [--dry-run]`.
+  - Beat maps are made per record; a drifting live/tape bed is fine.
+  - The acapella borrows its full mix's beats by cross-correlation, and both halves must agree
+    within 20 ms. Snares on 2/4 are exact; count 1 is labeled guessed, with an A/B of ±2 beats
+    and never ±1.
+  - The vocal plays at its own speed and the instrumental deck rides its tempo at 20 Hz.
+    Crossfader center, ReplayGain or measured loudness; a full-mix bed dips mids 0.35 / highs 0.7.
+  - A 16-beat fade, never a cut. Nothing is rendered.
+- **Real dry run** (UGK "Int'l Players Anthem (Explicit Acappella)" over Wham! "Careless
+  Whisper (Instrumental)", 12-inch):
+  - the acapella aligns to the explicit full mix within 4 ms;
+  - the instrumental drifts about 600 ms over the song, and its beat map puts 82% of beats
+    within 20 ms of a drum hit.
+- **Not heard yet.** First listen: Stems page → pick both → set the start of André's verse with
+  "Use preview position" → Plan → Play. If count 1 is off, try Count 1 "2 beats later/earlier".
+- **LLM and runner:** the order-review sheet tags `type` and lists `layer_beds`. New
+  `vocal_over_bed` layers last the whole vocal. A full-mix bed (`bed_loop`) in the runner now
+  dips its mids/highs; instrumental beds such as the approved Get Up layer are unchanged.
+- **Proposal only:** `docs/proposals/STEM_SEPARATION_DEMUCS.md`.
+- **Tests:** 764 Python tests OK (1 skipped). Rust: `cargo test --workspace`, clippy
+  `-D warnings` and fmt are all clean.
+
+## 2026-10-31 — GUI: Classic stays default; optional 16-bit adventure style
+
+Merged into local `master` via `feat/retro-ux-theme` (`1589f70`). Story:
+`user_stories/story__when_i_open_the_gui_i_can_pick_classic_or_a_16_bit_adventure_style.md`.
+
+- The header has a **Classic | 16-bit** switch. Classic is the default and is
+  unchanged apart from the switch.
+- The 16-bit style lives in `brain/web/theme_adventure.css`, served by the
+  existing `/web/<file>` route as `text/css`. Every rule is scoped under
+  `html[data-ui-theme="adventure"]`, so nothing can reach Classic.
+- The look: wooden header, parchment panels, pixel borders and a dark-blue
+  text box for the green enrich log. Body text is about 1px bigger, and track
+  rows keep their density.
+- It uses no images, network fonts, game assets or names.
+- The choice is saved in `localStorage` key `clawdj.uiTheme`, wrapped in
+  try/catch, and applied before first paint. Blocked storage stays Classic.
+  No page logic changed.
+- Tests: `tests/test_ui_theme.py` has 10 tests, including Node runs of the
+  switch script. The full unittest suite ran 748 tests, all OK (1 skipped).
+- Headless-Chrome screenshots of static copies matched Classic's row density.
+- Not yet checked against the running GUI with live data.
+- At 420px both styles share the same existing horizontal overflow in the
+  New music and toolbar rows; this change didn't cause it.
 
 ## 2026-10-31 — Interrupted scan recovery implemented and activated
 

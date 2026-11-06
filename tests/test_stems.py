@@ -235,3 +235,29 @@ class PairVocalsTests(TestCase):
         ]
         with self.assertRaisesRegex(ValueError, "no instrumental bed"):
             apply_vocal_layers(tracks)
+
+
+class SharedStemCasesTests(TestCase):
+    """The same cases run in core-rust (clawdj::stems tests)."""
+
+    def test_every_shared_case(self) -> None:
+        import json
+        from pathlib import Path
+
+        cases = json.loads((Path(__file__).parent / "fixtures" / "stem_kinds.json").read_text())["cases"]
+        for case in cases:
+            with self.subTest(title=case["title"], path=case["path"]):
+                self.assertEqual(
+                    classify_stem(case["title"], case["path"], case.get("notes", ""), case.get("album", "")), case["kind"]
+                )
+
+
+class LayerLengthTests(TestCase):
+    def test_new_layer_lasts_the_whole_vocal_in_bed_beats(self) -> None:
+        tracks = [
+            {"track_id": "/bed", "title": "Careless Whisper (Instrumental)", "bpm": 77.0, "key": "Dm", "dj_notes": ""},
+            {"track_id": "/vocal", "title": "Int'l Players Anthem (Explicit Acappella)", "bpm": 79.0,
+             "key": "Bbm", "duration_seconds": 236.2, "dj_notes": ""},
+        ]
+        layered, _ = apply_vocal_layers(tracks)
+        self.assertIn("ride_beats=300", layered[1]["dj_notes"])  # 236.2 s at 77 BPM, whole bars

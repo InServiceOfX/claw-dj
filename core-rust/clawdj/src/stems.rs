@@ -28,6 +28,10 @@ pub struct StemTrack {
     pub key: Option<String>,
     #[serde(default)]
     pub path: Option<String>,
+    /// Album tag; an album named for its instrumentals makes every song on
+    /// it an instrumental.
+    #[serde(default)]
+    pub album: String,
     /// Effective dj_notes. `showcase_acapella` opts out of forced layering.
     #[serde(default)]
     pub dj_notes: String,
@@ -57,14 +61,273 @@ pub struct StemPairReport {
 /// record is a full mix unless it is also tagged acapella.
 #[must_use]
 pub fn classify_stem(title: &str, path: &str) -> StemKind {
-    let hay = format!("{title} {path}").to_ascii_lowercase();
-    if is_vocals_only(&hay) {
+    classify_stem_with_notes(title, path, "")
+}
+
+/// Classify with the track's DJ note and no album tag.
+#[must_use]
+pub fn classify_stem_with_notes(title: &str, path: &str, notes: &str) -> StemKind {
+    classify_track_kind(title, path, notes, "")
+}
+
+/// Classify with the track's DJ note and album: `track_kind=<kind>` in the
+/// note is a hand override and wins over every name rule. Then a vocals-only
+/// tag in the title tag, then the filename; an instrumental tag in the title,
+/// then the filename; an instrumental album (the album tag, then the folder
+/// the file sits in); a folder named exactly `instrumental`; otherwise a full
+/// mix. On an instrumentals album every song counts except a titled acapella.
+/// Lockstep with `brain/stems.py`: both run `tests/fixtures/stem_kinds.json`.
+#[must_use]
+pub fn classify_track_kind(title: &str, path: &str, notes: &str, album: &str) -> StemKind {
+    if let Some(kind) = track_kind_override(notes) {
+        return kind;
+    }
+    let filename = filename_stem(path);
+    if text_is_vocals_only(title) || text_is_vocals_only(&filename) {
         StemKind::VocalsOnly
-    } else if is_instrumental_only(title, &hay) {
+    } else if text_is_instrumental(title)
+        || text_is_instrumental(&filename)
+        || is_instrumental_album(album)
+        || is_instrumental_album(&album_folder(path))
+        || path.to_lowercase().contains("/instrumental/")
+    {
         StemKind::InstrumentalOnly
     } else {
         StemKind::FullMix
     }
+}
+
+/// `track_kind=full_mix|instrumental_only|vocals_only` in a DJ note.
+#[must_use]
+pub fn track_kind_override(notes: &str) -> Option<StemKind> {
+    let lower = notes.to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
+    let key: Vec<char> = "track_kind".chars().collect();
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut start = 0;
+    while start + key.len() <= chars.len() {
+        if chars[start..start + key.len()] == key[..] && (start == 0 || !word(chars[start - 1])) {
+            let mut index = start + key.len();
+            while index < chars.len() && chars[index].is_whitespace() {
+                index += 1;
+            }
+            if index < chars.len() && chars[index] == '=' {
+                index += 1;
+                while index < chars.len() && chars[index].is_whitespace() {
+                    index += 1;
+                }
+                let rest: String = chars[index..].iter().collect();
+                for (name, kind) in [
+                    ("full_mix", StemKind::FullMix),
+                    ("instrumental_only", StemKind::InstrumentalOnly),
+                    ("vocals_only", StemKind::VocalsOnly),
+                ] {
+                    if rest.starts_with(name)
+                        && rest[name.len()..].chars().next().is_none_or(|c| !word(c))
+                    {
+                        return Some(kind);
+                    }
+                }
+            }
+        }
+        start += 1;
+    }
+    None
+}
+
+fn words(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for c in text.to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            current.push(c);
+        } else if !current.is_empty() {
+            out.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
+/// acapella, acappella, accapella, acappela, a(-)cappella joined, plurals:
+/// letter runs spell a-c-a-p-e-l-a with c, p and l at most doubled.
+#[must_use]
+pub fn is_acapella_word(word: &str) -> bool {
+    let lower = word.to_lowercase();
+    let trimmed = lower.strip_suffix('s').unwrap_or(&lower);
+    let mut runs: Vec<(char, usize)> = Vec::new();
+    for c in trimmed.chars() {
+        match runs.last_mut() {
+            Some((last, count)) if *last == c => *count += 1,
+            _ => runs.push((c, 1)),
+        }
+    }
+    let letters: String = runs.iter().map(|(c, _)| *c).collect();
+    letters == "acapela"
+        && runs
+            .iter()
+            .all(|(c, n)| *n <= if matches!(c, 'c' | 'p' | 'l') { 2 } else { 1 })
+}
+
+fn acapella_at(words: &[String]) -> Vec<usize> {
+    let mut found = Vec::new();
+    for (index, word) in words.iter().enumerate() {
+        // "a capella" joins; a joined "a" after a single letter is an
+        // abbreviation ("L.A. Cappella", a song name), not the version tag.
+        let joined = word == "a"
+            && index + 1 < words.len()
+            && is_acapella_word(&format!("a{}", words[index + 1]))
+            && !(index > 0 && words[index - 1].chars().count() == 1);
+        if joined || is_acapella_word(word) {
+            found.push(index);
+        }
+    }
+    found
+}
+
+fn vocals_only_phrase(words: &[String]) -> bool {
+    words
+        .windows(2)
+        .any(|pair| (pair[0] == "vocal" || pair[0] == "vocals") && pair[1] == "only")
+}
+
+fn is_track_number(word: &str) -> bool {
+    let digits = |text: &str| !text.is_empty() && text.chars().all(|c| c.is_ascii_digit());
+    if digits(word) {
+        return true;
+    }
+    let count = word.chars().count();
+    let mut chars = word.chars();
+    let first = chars.next();
+    (count == 2 || count == 3)
+        && matches!(first, Some('a' | 'b' | 'c' | 'd'))
+        && digits(chars.as_str())
+}
+
+fn song_words(words: Vec<String>) -> Vec<String> {
+    let skip = words.iter().take_while(|w| is_track_number(w)).count();
+    words.into_iter().skip(skip).collect()
+}
+
+/// Version tags (every (...) / [...] group, unclosed runs to the end, plus the
+/// text after the last hyphen outside the groups) and the bare title.
+fn version_parts(text: &str) -> (Vec<String>, String) {
+    let chars: Vec<char> = text.chars().collect();
+    let mut parts = Vec::new();
+    let mut bare = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        let c = chars[index];
+        if c == '(' || c == '[' {
+            let mut close = index + 1;
+            while close < chars.len() && !matches!(chars[close], ')' | ']' | '(' | '[') {
+                close += 1;
+            }
+            parts.push(chars[index + 1..close].iter().collect());
+            bare.push(' ');
+            index = if close < chars.len() && matches!(chars[close], ')' | ']') {
+                close + 1
+            } else {
+                close
+            };
+            continue;
+        }
+        bare.push(c);
+        index += 1;
+    }
+    if let Some(at) = bare.rfind('-') {
+        parts.push(bare[at + 1..].to_string());
+        bare.truncate(at);
+    }
+    (parts, bare)
+}
+
+const VOCAL_TAGS: [[&str; 2]; 7] = [
+    ["vocal", "stem"],
+    ["vocals", "stem"],
+    ["vocal", "stems"],
+    ["vocals", "stems"],
+    ["stem", "vocals"],
+    ["dry", "vocal"],
+    ["dry", "vocals"],
+];
+
+fn has_vocal_tag(part: &str) -> bool {
+    let w = words(part);
+    !acapella_at(&w).is_empty()
+        || vocals_only_phrase(&w)
+        || (w.len() == 2
+            && VOCAL_TAGS
+                .iter()
+                .any(|tag| w[0] == tag[0] && w[1] == tag[1]))
+}
+
+fn has_instrumental_tag(part: &str) -> bool {
+    let w = words(part);
+    if w.iter().any(|x| x == "intro") {
+        return false;
+    }
+    w.iter().enumerate().any(|(index, word)| {
+        matches!(
+            word.as_str(),
+            "instrumental" | "instrumentals" | "instr" | "inst" | "karaoke"
+        ) && !(word == "instrumental" && w.get(index + 1).is_some_and(|next| next == "hip"))
+    })
+}
+
+fn text_is_vocals_only(text: &str) -> bool {
+    let (parts, bare) = version_parts(text);
+    if parts.iter().any(|part| has_vocal_tag(part)) {
+        return true;
+    }
+    // A bare acapella word names the version unless it is the song's own
+    // name (Kelis "Accapella", Karmin "Acapella"): skip the first word.
+    let bare_words = song_words(words(&bare));
+    vocals_only_phrase(&bare_words) || acapella_at(&bare_words).iter().any(|&i| i > 0)
+}
+
+fn text_is_instrumental(text: &str) -> bool {
+    let (parts, bare) = version_parts(text);
+    if parts.iter().any(|part| has_instrumental_tag(part)) {
+        return true;
+    }
+    let bare_words = song_words(words(&bare));
+    bare_words.len() >= 2 && bare_words.last().is_some_and(|w| w == "instrumental")
+}
+
+/// An album named for its instrumentals ("The Ownerz (The Instrumentals)",
+/// "Acapellas + Instrumentals"). Only the album itself: a parent folder like
+/// "Compilations & Instrumentals" holds full songs too.
+#[must_use]
+pub fn is_instrumental_album(name: &str) -> bool {
+    words(name).iter().any(|word| {
+        matches!(
+            word.as_str(),
+            "instrumental" | "instrumentals" | "instr" | "inst" | "karaoke"
+        )
+    })
+}
+
+/// The folder the file sits in (its album folder), or "".
+fn album_folder(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let mut parts = normalized.rsplit('/');
+    parts.next();
+    parts.next().unwrap_or("").to_string()
+}
+
+fn filename_stem(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let name = normalized.rsplit('/').next().unwrap_or("");
+    if let Some((head, extension)) = name.rsplit_once('.') {
+        let count = extension.chars().count();
+        if (1..=5).contains(&count) && extension.chars().all(char::is_alphanumeric) {
+            return head.to_string();
+        }
+    }
+    name.to_string()
 }
 
 /// True when a human note opts this vocal out of forced layering.
@@ -90,7 +353,9 @@ pub fn pair_vocals(tracks: &[StemTrack]) -> StemPairReport {
     let mut vocals = Vec::new();
     for (vocal_index, vocal) in tracks.iter().enumerate() {
         let path = vocal.path.as_deref().unwrap_or(vocal.track_id.as_str());
-        if classify_stem(&vocal.title, path) != StemKind::VocalsOnly {
+        if classify_track_kind(&vocal.title, path, &vocal.dj_notes, &vocal.album)
+            != StemKind::VocalsOnly
+        {
             continue;
         }
         if is_showcase_acapella(&vocal.dj_notes) {
@@ -127,29 +392,6 @@ pub fn pair_vocals(tracks: &[StemTrack]) -> StemPairReport {
     }
 }
 
-fn is_vocals_only(hay: &str) -> bool {
-    hay.contains("acappella")
-        || hay.contains("acapella")
-        || hay.contains("a cappella")
-        || hay.contains("a capella")
-        || hay.contains("vocals only")
-        || hay.contains("vocal only")
-}
-
-fn is_instrumental_only(title: &str, hay: &str) -> bool {
-    let lower_title = title.to_ascii_lowercase();
-    lower_title.contains("(instrumental)")
-        || lower_title.contains("[instrumental]")
-        || lower_title.contains("(instr.)")
-        || lower_title.ends_with(" - instrumental")
-        || hay.contains("/instrumental/")
-        || version_tag_instrumental(&lower_title)
-}
-
-fn version_tag_instrumental(title: &str) -> bool {
-    title.ends_with(" instrumental") && !title.contains("instrumental hip")
-}
-
 fn neighbor_instrumental(
     vocal: &StemTrack,
     vocal_index: usize,
@@ -169,7 +411,9 @@ fn neighbor_instrumental(
             continue;
         }
         let path = bed.path.as_deref().unwrap_or(bed.track_id.as_str());
-        if classify_stem(&bed.title, path) == StemKind::InstrumentalOnly {
+        if classify_track_kind(&bed.title, path, &bed.dj_notes, &bed.album)
+            == StemKind::InstrumentalOnly
+        {
             return Some(score_bed(
                 vocal,
                 vocal_index,
@@ -197,7 +441,7 @@ fn best_bed(
             continue;
         }
         let path = bed.path.as_deref().unwrap_or(bed.track_id.as_str());
-        let kind = classify_stem(&bed.title, path);
+        let kind = classify_track_kind(&bed.title, path, &bed.dj_notes, &bed.album);
         if kind == StemKind::VocalsOnly {
             continue;
         }
@@ -438,7 +682,28 @@ mod tests {
             bpm: Some(bpm),
             key: Some(key.to_string()),
             path: Some(id.to_string()),
+            album: String::new(),
             dj_notes: String::new(),
+        }
+    }
+
+    #[test]
+    fn every_shared_case_matches_python() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../tests/fixtures/stem_kinds.json"))
+                .expect("tests/fixtures/stem_kinds.json parses");
+        for case in fixture["cases"].as_array().expect("cases array") {
+            let title = case["title"].as_str().unwrap_or_default();
+            let path = case["path"].as_str().unwrap_or_default();
+            let notes = case["notes"].as_str().unwrap_or_default();
+            let album = case["album"].as_str().unwrap_or_default();
+            let expected: StemKind =
+                serde_json::from_value(case["kind"].clone()).expect("known kind");
+            assert_eq!(
+                classify_track_kind(title, path, notes, album),
+                expected,
+                "{title} | {path}"
+            );
         }
     }
 

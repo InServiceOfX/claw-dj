@@ -103,11 +103,39 @@ def mix_sheet(rows: list[dict], graph, *, segments: dict[str, list[dict]] | None
             "dj_notes": (row.get("dj_notes") or "") or None,
             "best_next": best_next,
         })
+    _mark_stems(songs, ids)
     current = [
         [path_to_short[e.from_id], path_to_short[e.to_id], e.score, e.backbeat]
         for e in graph.report([row["track_id"] for row in rows])
     ]
     return {"songs": songs, "current_order": current}
+
+
+def _mark_stems(songs: list[dict], ids: dict[str, dict]) -> None:
+    """Tag vocals-only / instrumental songs; give each vocal its best beds.
+
+    A vocals-only song is layered over the instrumental placed right before
+    it (brain.stems), so the model chooses the pairing by order.
+    """
+    from brain.stem_crate import suggest_beds
+    from brain.stems import classify_track
+
+    stems = {}
+    for sid, row in ids.items():
+        kind = classify_track(
+            row.get("title") or "", row["track_id"], row.get("dj_notes") or "", row.get("album") or ""
+        )["kind"]
+        if kind != "full_mix":
+            stems[sid] = {"track_id": sid, "kind": kind, "title": row.get("title") or "",
+                          "artist": row.get("artist") or "", "bpm": row.get("bpm"), "key": row.get("key")}
+    for song in songs:
+        stem = stems.get(song["id"])
+        if not stem:
+            continue
+        song["type"] = "vocals_only" if stem["kind"] == "vocals_only" else "instrumental"
+        if stem["kind"] == "vocals_only":
+            ranked = suggest_beds(stem, list(stems.values()), limit=3)
+            song["layer_beds"] = [[bed["track_id"], bed["score"], bed["reason"]] for bed in ranked]
 
 
 def locked_rules(

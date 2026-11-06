@@ -37,6 +37,9 @@ FILTER_GROUP = "[QuickEffectRack1_{channel}]"
 # Verified live 2026-10-03. The runner used 0.5 as "unity" before, i.e.
 # about -6 dB on every band, with its boost/dip/bass-swap values scaled to it.
 EQ_UNITY = 1.0
+# vocal_over_bed over a full mix (bed_loop): its own vocal steps back.
+VOCAL_BED_FULL_MIX_MID = 0.35
+VOCAL_BED_FULL_MIX_HIGH = 0.7
 FILTER_NEUTRAL = 0.5
 
 
@@ -599,6 +602,29 @@ def ramp_bpm_target(
 class CueVerificationError(TimeoutError):
     """An explicitly strict cue could not be verified; do not start it."""
 
+    def __init__(self, message='', *, phase_ms=None):
+        super().__init__(message)
+        self.phase_ms = phase_ms
+
+
+# Half of a fast quantize write does not predict a slower Play. One silent
+# relaunch may add this much lead. A wider miss still stops the mix.
+_MEASURED_LEAD_MIN_S = -0.02
+_MEASURED_LEAD_MAX_S = 0.08
+_MEASURED_RELAUNCH_MS = 80.0
+
+
+def _stored_measured_lead(mixxx) -> float:
+    """Extra Play lead learned earlier in this run. Zero when unset or junk."""
+    raw = getattr(mixxx, 'measured_start_lead_s', 0.0)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(value):
+        return 0.0
+    return max(_MEASURED_LEAD_MIN_S, min(_MEASURED_LEAD_MAX_S, value))
+
 
 def cue_options(event: dict) -> dict:
     """Opt-in only: legacy event calls retain their original arguments."""
@@ -786,7 +812,8 @@ def _start_on_measured_backbeat(mixxx: MixxxControl, event: dict, *, outgoing_bp
             raise CueVerificationError(
                 f'measured backbeat miss {error:+.1f} ms; incoming stopped before fade '
                 f'(Play request {play_rtt*1000:.1f} ms; '
-                f'sent {(play_sent_at-launch_at)*1000:+.1f} ms from launch deadline)')
+                f'sent {(play_sent_at-launch_at)*1000:+.1f} ms from launch deadline)',
+                phase_ms=error)
         return error
     try:
         command_before = time.monotonic()
@@ -801,54 +828,110 @@ def _start_on_measured_backbeat(mixxx: MixxxControl, event: dict, *, outgoing_bp
         _wait_for(mixxx, in_g, 'bpm', lambda b: math.isfinite(b) and abs(b-target) <= .1, 2.)
         _strict_cue_position(mixxx, in_g, spec['cue_seconds']/in_duration,
                              in_duration, 20., 0., 2.)
-        current, sampled_at = sample(out_g, out_duration)
         source_rate = outgoing_bpm / spec['outgoing']['grid_bpm']
-        current += max(0., time.monotonic()-sampled_at) * source_rate
-        launch = next_start_source(spec, current, spec['cue_seconds'])
         fade_source = float(event.get('transition_beats', 32)) * 60 / spec['outgoing']['real_bpm']
-        if launch + fade_source > out_duration - .25:
-            raise CueVerificationError('not enough outgoing audio for the complete measured blend')
-        window = spec['outgoing']
-        if (current < float(window.get('window_start_seconds', 0)) - .05
-                or launch + fade_source > float(window.get('window_end_seconds', out_duration)) + .05):
-            raise CueVerificationError('blend left the measured source window; remeasure before playback')
-        timeout = time.monotonic() + (launch-current) / source_rate + 2.
         # A poll that first reports source >= launch is already late. Convert
         # the timestamped phase to a host deadline, accounting for time spent
         # receiving the sample. Refresh well before it, then send Play without
         # another blocking TCP read in the critical final interval.
-        command_lead = command_rtt / 2
-        while True:
-            seconds, sampled_at = sample(out_g, out_duration)
-            launch_at = sampled_at + (launch-seconds) / source_rate
+        # Half the quantize write estimates delivery. A learned Play lead from
+        # an earlier silent miss in this run is added on top of that.
+        base_lead = command_rtt / 2
+        extra_lead = _stored_measured_lead(mixxx)
+        command_lead = base_lead + extra_lead
+
+        def prepare_launch(*, relaunch=False):
+            current, sampled_at = sample(out_g, out_duration)
+            current += max(0., time.monotonic()-sampled_at) * source_rate
+            launch = next_start_source(spec, current, spec['cue_seconds'])
+            # The 40 ms floor in next_start_source is enough for a fast write.
+            # A slower Play needs the next legal snare, or the deadline is
+            # already gone when Play is sent.
+            room = (command_lead + 0.02) * source_rate
+            if launch - current < room:
+                later = next_start_source(spec, launch, spec['cue_seconds'])
+                if later > launch:
+                    launch = later
+            if launch + fade_source > out_duration - .25:
+                raise CueVerificationError('not enough outgoing audio for the complete measured blend')
+            window = spec['outgoing']
+            # A 30s measurement often ends within one snare of a 32-beat fade.
+            # The silent retry lands on the next snare, one real cycle later.
+            # That tail may leave the window. Anything further still stops.
+            window_slack = .05
+            if relaunch:
+                window_slack += 2 * 60 / spec['outgoing']['real_bpm']
+            if (current < float(window.get('window_start_seconds', 0)) - .05
+                    or launch + fade_source > float(window.get('window_end_seconds', out_duration)) + window_slack):
+                raise CueVerificationError('blend left the measured source window; remeasure before playback')
+            timeout = time.monotonic() + (launch-current) / source_rate + 2.
+            return launch, timeout
+
+        def send_play(launch, timeout):
+            while True:
+                seconds, sampled_at = sample(out_g, out_duration)
+                launch_at = sampled_at + (launch-seconds) / source_rate
+                remaining = launch_at - time.monotonic() - command_lead
+                if remaining <= .08:
+                    break
+                if mixxx.get(out_g, 'play') < .5 or time.monotonic() > timeout:
+                    raise CueVerificationError('outgoing source clock stopped before measured start')
+                time.sleep(min(.025, remaining-.06))
             remaining = launch_at - time.monotonic() - command_lead
-            if remaining <= .08:
-                break
-            if mixxx.get(out_g, 'play') < .5 or time.monotonic() > timeout:
-                raise CueVerificationError('outgoing source clock stopped before measured start')
-            time.sleep(min(.025, remaining-.06))
-        remaining = launch_at - time.monotonic() - command_lead
-        if remaining < -.01:
-            raise CueVerificationError('missed measured launch deadline before play')
-        if remaining > 0:
-            time.sleep(remaining)
-        if time.monotonic() - (launch_at-command_lead) > .01:
-            raise CueVerificationError('launch scheduling stalled before play')
-        play_sent_at = time.monotonic()
-        mixxx.set(in_g, 'play', 1)
-        play_rtt = time.monotonic() - play_sent_at
-        # beat_distance is undefined before the first grid tick. Preserve the
-        # source head; let that brief pre-grid lead-in run, never seek past it.
-        initial_phase_wait = max(SEEK_SETTLE_S,
-            (max(0., spec['incoming']['first_beat_seconds']-spec['cue_seconds'])+.04)
-            / (target/spec['incoming']['grid_bpm']))
-        time.sleep(initial_phase_wait)
-        if mixxx.get(in_g, 'play') < .5:
-            raise CueVerificationError('incoming transport did not start')
-        error = check_phase()
+            if remaining < -.01:
+                raise CueVerificationError('missed measured launch deadline before play')
+            if remaining > 0:
+                time.sleep(remaining)
+            if time.monotonic() - (launch_at-command_lead) > .01:
+                raise CueVerificationError('launch scheduling stalled before play')
+            sent_at = time.monotonic()
+            mixxx.set(in_g, 'play', 1)
+            return sent_at, time.monotonic() - sent_at, launch_at
+
+        relaunched = False
+        while True:
+            launch, timeout = prepare_launch(relaunch=relaunched)
+            play_sent_at, play_rtt, launch_at = send_play(launch, timeout)
+            # beat_distance is undefined before the first grid tick. Preserve the
+            # source head; let that brief pre-grid lead-in run, never seek past it.
+            initial_phase_wait = max(SEEK_SETTLE_S,
+                (max(0., spec['incoming']['first_beat_seconds']-spec['cue_seconds'])+.04)
+                / (target/spec['incoming']['grid_bpm']))
+            time.sleep(initial_phase_wait)
+            if mixxx.get(in_g, 'play') < .5:
+                raise CueVerificationError('incoming transport did not start')
+            try:
+                error = check_phase()
+            except CueVerificationError as miss:
+                phase = miss.phase_ms
+                # Only the first check, before quantize comes back. A later
+                # engine jump, a miss over 80 ms, or a second miss still stops.
+                if (relaunched or phase is None or not math.isfinite(phase)
+                        or abs(phase) > _MEASURED_RELAUNCH_MS):
+                    raise
+                mixxx.set(in_g, 'play', 0)
+                if mixxx.get(in_g, 'play') >= .5:
+                    raise CueVerificationError('incoming kept playing after a measured miss') from miss
+                heard = mixxx.get('[Master]', 'crossfader')
+                if (not math.isfinite(heard)
+                        or abs(heard - crossfader_target(event['from_deck'])) > .02):
+                    raise CueVerificationError(
+                        'incoming deck must remain inaudible during measured start') from miss
+                _strict_cue_position(mixxx, in_g, spec['cue_seconds']/in_duration,
+                                     in_duration, 20., 0., 2.)
+                extra_lead = max(_MEASURED_LEAD_MIN_S,
+                                 min(_MEASURED_LEAD_MAX_S, extra_lead + phase/1000.))
+                command_lead = base_lead + extra_lead
+                relaunched = True
+                print(f'  measured start late {phase:+.1f} ms; incoming still silent, '
+                      f'relaunching once on the next snare')
+                continue
+            break
         mixxx.set(in_g, 'quantize', quantize)
         time.sleep(SEEK_SETTLE_S)
         error = check_phase()  # engine settlement must not undo the phase
+        if relaunched:
+            mixxx.measured_start_lead_s = extra_lead
         if spec.get('approved_launch_delay'):
             print(f'  human-approved launch: +1 musical beat; original cue {spec["cue_seconds"]:.4f}s; '
                   f'error vs heard target {error:+.1f} ms (limit {spec["tolerance_ms"]:g} ms)')
@@ -1698,6 +1781,14 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         if loop_beats in {1, 2, 4, 8, 16, 32}:
             mixxx.set(out_g, f"beatloop_{loop_beats}_activate", 1)
             print(f"  bed loop {loop_beats} beats on deck {from_deck}")
+        # A full-mix bed still has its own singer: push its mids and highs
+        # back under the acapella (Ernest, 2026-10-31). Instrumental-only beds
+        # are left exactly as the approved Get Up / Outta Control layer.
+        full_mix_bed = "bed_loop" in moves
+        if full_mix_bed:
+            mixxx.set(eq_group(from_deck), "parameter2", VOCAL_BED_FULL_MIX_MID)
+            mixxx.set(eq_group(from_deck), "parameter3", VOCAL_BED_FULL_MIX_HIGH)
+            print(f"  full-mix bed on deck {from_deck}: mids {VOCAL_BED_FULL_MIX_MID}, highs {VOCAL_BED_FULL_MIX_HIGH}")
         if sync:
             mixxx.set(in_g, "beatsync", 1)
         elif phase_only_sync:
@@ -1724,6 +1815,9 @@ def perform_transition(mixxx: MixxxControl, event: dict, *, port: int) -> None:
         mixxx.set(in_g, "volume", 1.0)
         if loop_beats in {1, 2, 4, 8, 16, 32}:
             mixxx.set(out_g, "loop_enabled", 0)
+        if full_mix_bed:
+            mixxx.set(eq_group(from_deck), "parameter2", EQ_UNITY)
+            mixxx.set(eq_group(from_deck), "parameter3", EQ_UNITY)
         print(f"  vocal-over-bed {beats} beats; bed deck {from_deck} still live")
         return
 

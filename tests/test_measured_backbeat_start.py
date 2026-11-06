@@ -169,9 +169,10 @@ class SampledEngine(Engine):
 
 class TransportEngine(SampledEngine):
     """TCP reads/writes and engine queue time all advance the source clocks."""
-    def __init__(self,model,*,write_rtt=.012,queue_s=.004,callback_s=.005,**kwargs):
+    def __init__(self,model,*,write_rtt=.012,queue_s=.004,callback_s=.005,play_arm_s=0.,**kwargs):
         super().__init__(model,**kwargs)
         self.write_rtt=write_rtt;self.queue_s=queue_s;self.callback_s=callback_s
+        self.play_arm_s=play_arm_s
     def monotonic(self):
         return self.now
     def get(self,g,k):
@@ -182,7 +183,10 @@ class TransportEngine(SampledEngine):
             value=(value-age*self.v[g,'bpm']/60)%1.
         return value
     def set(self,g,k,v):
-        self.advance(self.write_rtt/2+self.queue_s)
+        # play_arm_s is extra delay only when Play is pressed. A fast quantize
+        # write must not be allowed to predict it.
+        arm=self.play_arm_s if k=='play' and float(v)>=.5 else 0.
+        self.advance(self.write_rtt/2+self.queue_s+arm)
         super().set(g,k,v)
         self.advance(self.write_rtt/2)
 
@@ -257,6 +261,77 @@ class RuntimeTests(unittest.TestCase):
         m=TransportEngine(spec(),write_rtt=.06)
         with self.assertRaisesRegex(runner.CueVerificationError,'write too slow'):self.run_start(m)
         self.assertNotIn(('[Channel2]','play',1),m.writes)
+
+    def test_slow_play_relaunches_once_while_silent_and_keeps_the_30ms_guard(self):
+        # Live event 331: Play sent on time, Play itself ~25 ms, snare +37 ms.
+        m=TransportEngine(spec(),play_arm_s=.040)
+        captured=io.StringIO()
+        with patch.object(runner.time,'sleep',side_effect=m.advance),patch.object(runner.time,'monotonic',side_effect=m.monotonic),redirect_stdout(captured):
+            runner.start_on_measured_backbeat(m,event(m.model),outgoing_bpm=m.v['[Channel1]','bpm'])
+        plays=[i for i,w in enumerate(m.writes) if w==('[Channel2]','play',1.)]
+        self.assertEqual(len(plays),2)
+        self.assertIn(('[Channel2]','play',0.),m.writes[plays[0]:plays[1]])
+        self.assertFalse(any(k in ('playposition','beatsync','beatsync_phase') for _,k,_ in m.writes[plays[1]+1:]))
+        self.assertEqual(m.get('[Channel2]','play'),1.)
+        self.assertEqual(m.model['cue_seconds'],0.)
+        self.assertEqual(m.model['tolerance_ms'],30.)
+        self.assertAlmostEqual(m.get('[Master]','crossfader'),-1.)
+        self.assert_actual_phase(m)
+        self.assertGreater(m.measured_start_lead_s,.03)
+        self.assertLessEqual(m.measured_start_lead_s,.08)
+        self.assertIn('relaunching once',captured.getvalue())
+        # The learned lead lets the next measured start in this run play once.
+        m.v['[Channel2]','play']=0.
+        m.v['[Channel2]','playposition']=0.
+        before=len(plays)
+        self.run_start(m)
+        after=len([w for w in m.writes if w==('[Channel2]','play',1.)])
+        self.assertEqual(after-before,1)
+        self.assertEqual(m.get('[Channel2]','play'),1.)
+        self.assert_actual_phase(m)
+
+    def test_silent_relaunch_may_cross_a_tight_window_by_one_snare(self):
+        # Joe — And Then... → Sweeter Than Sugar: the 32-beat fade ends inside
+        # a 30s window, and the next snare pushes that tail past window_end.
+        s=spec()
+        s['outgoing'].update(window_start_seconds=127.213651, window_end_seconds=157.21383240589572)
+        m=TransportEngine(s, play_arm_s=.040)
+        captured=io.StringIO()
+        with patch.object(runner.time,'sleep',side_effect=m.advance),patch.object(runner.time,'monotonic',side_effect=m.monotonic),redirect_stdout(captured):
+            runner.start_on_measured_backbeat(m,event(m.model),outgoing_bpm=m.v['[Channel1]','bpm'])
+        self.assertIn('relaunching once', captured.getvalue())
+        self.assertEqual(len([w for w in m.writes if w==('[Channel2]','play',1.)]), 2)
+        self.assertEqual(m.get('[Channel2]','play'), 1.)
+        self.assert_actual_phase(m)
+        self.assertEqual(m.model['tolerance_ms'], 30.)
+
+    def test_large_play_delay_still_stops_before_the_fade(self):
+        m=TransportEngine(spec(),play_arm_s=.12)
+        with self.assertRaises(runner.CueVerificationError) as caught:
+            self.run_start(m)
+        self.assertIsNotNone(caught.exception.phase_ms)
+        self.assertGreater(abs(caught.exception.phase_ms),80.)
+        self.assertEqual(len([w for w in m.writes if w==('[Channel2]','play',1.)]),1)
+        self.assertEqual(m.get('[Channel2]','play'),0.)
+        self.assertFalse(hasattr(m,'measured_start_lead_s'))
+        self.assertEqual(m.v['[Master]','crossfader'],-1.)
+
+    def test_a_second_miss_stops_without_a_third_start(self):
+        m=TransportEngine(spec(),play_arm_s=.040)
+        armed={'n':0}
+        original=m.set
+        def set_once(g,k,v):
+            if k=='play' and float(v)>=.5:
+                armed['n']+=1
+                if armed['n']>=2:
+                    m.play_arm_s=.12
+            return original(g,k,v)
+        with patch.object(m,'set',side_effect=set_once):
+            with self.assertRaises(runner.CueVerificationError):
+                self.run_start(m)
+        self.assertEqual(armed['n'],2)
+        self.assertEqual(m.get('[Channel2]','play'),0.)
+        self.assertFalse(hasattr(m,'measured_start_lead_s'))
 
     def test_full_mix_cli_reports_safe_stop_without_traceback(self):
         with patch('sys.argv',['run_mix_plan','--plan','example','--dry-run']),patch.object(runner,'resolve_plan_argument',return_value='example.json'),patch.object(runner,'load_executable_plan',return_value={}),patch.object(runner,'run_plan',side_effect=runner.CueVerificationError('phase miss')),redirect_stdout(io.StringIO()):

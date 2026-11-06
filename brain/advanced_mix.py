@@ -257,7 +257,7 @@ def _support_layer(recipe, foregrounds, tracks, grid, limits, support_notes):
     for position in positions:
         track = tracks[position]
         note = track.get("dj_notes") or ""
-        if classify_stem(track.get("title", ""), track["track_id"]) != "full_mix":
+        if classify_stem(track.get("title", ""), track["track_id"], album=track.get("album") or "") != "full_mix":
             raise ValueError("full-mix support cannot reclassify an acapella or instrumental foreground")
         if not _permission(note, "allow_instrumental_support") or _has(note, "no_instrumental_support"):
             raise ValueError("full-mix support needs unconflicted effective DJ-note approval")

@@ -1,9 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ui-theme="classic">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>claw-dj playlist</title>
+  <script>
+    // Interface style: "classic" (default) or "adventure" (16-bit). Saved per
+    // browser; any storage failure keeps Classic. Set before first paint.
+    (function () {
+      var theme = 'classic';
+      try { var saved = localStorage.getItem('clawdj.uiTheme'); if (saved === 'adventure') theme = saved; } catch (_) {}
+      document.documentElement.setAttribute('data-ui-theme', theme);
+    })();
+  </script>
+  <link rel="stylesheet" href="/web/theme_adventure.css">
   <style>
     :root { color-scheme: light; --ink:#171717; --muted:#696969; --line:#d8d8d3; --paper:#f7f7f3; --panel:#fff; --green:#176b4d; --red:#a53a2a; --focus:#2367b1; }
     * { box-sizing:border-box; }
@@ -127,6 +137,9 @@
     #plan-picker-select { min-width:210px; max-width:340px; }
     .plan-picker-message { min-height:18px; color:#d0d0ca; text-align:center; font-size:12px; }
     .stale-dot { color:#78d7ac; font-size:12px; }
+    .ui-theme-switch { display:flex; gap:4px; margin-top:6px; }
+    .ui-theme-switch button { min-height:24px; padding:2px 8px; font-size:12px; background:transparent; color:#d0d0ca; border-color:#444; }
+    .ui-theme-switch button[aria-pressed="true"] { background:#2a2a2a; color:#78d7ac; border-color:#78d7ac; }
     .stale-dot.is-stale { color:#ffce63; }
     .page[hidden] { display:none !important; }
     .finalized-box { margin-top:12px; border:1px solid var(--line); background:#fafaf7; }
@@ -211,17 +224,43 @@
       section + section { border-left:0; border-top:1px solid var(--line); }
       .rows { height:48vh; }
     }
+    .stem-tools { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin-top:10px; }
+    .stem-tools input[type=search] { flex:1 1 260px; min-width:0; }
+    .stem-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid var(--line); background:var(--panel); }
+    .stem-list { max-height:58vh; overflow-y:auto; }
+    .stem-row { display:grid; grid-template-columns:28px minmax(0,1fr) 52px 40px 44px 108px; align-items:center; gap:8px; padding:6px 12px; border-bottom:1px solid var(--line); }
+    .stem-row.is-picked { background:#eef6f1; box-shadow:inset 3px 0 0 var(--green); }
+    .stem-row .stem-pick { display:flex; gap:8px; align-items:flex-start; min-width:0; cursor:pointer; }
+    .stem-row .stem-pick input { min-height:0; margin-top:3px; }
+    .stem-row .stem-pick > span { display:block; min-width:0; overflow:hidden; }
+    .stem-row .title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .stem-row .artist { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .stem-row .len,.stem-row .bpm,.stem-row .key { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; text-align:right; }
+    .stem-row select { min-height:28px; padding:2px 4px; font-size:12px; }
+    .stem-flags { display:block; }
+    .stem-flag { display:inline-block; margin-right:6px; padding:0 5px; border:1px solid var(--line); border-radius:3px; color:var(--muted); font-size:11px; }
+    .stem-layer { margin-top:12px; }
+    .stem-picked { display:flex; flex-wrap:wrap; gap:6px 24px; margin-bottom:10px; }
+    .stem-form { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:8px; }
+    .stem-form input[type=number] { width:88px; }
+    @media (max-width:820px) { .stem-columns { grid-template-columns:1fr; } .stem-row { grid-template-columns:28px minmax(0,1fr) 46px 36px 40px; } .stem-row select { grid-column:2 / -1; } }
   </style>
 </head>
 <body>
   <header>
-    <div class="brand"><h1><span>claw</span>-dj playlist</h1></div>
+    <div class="brand"><h1><span>claw</span>-dj playlist</h1>
+      <div class="ui-theme-switch" role="group" aria-label="Interface style">
+        <button type="button" data-ui-theme-choice="classic" aria-pressed="true" title="Utilitarian text view">Classic</button>
+        <button type="button" data-ui-theme-choice="adventure" aria-pressed="false" title="16-bit adventure view — same controls">16-bit</button>
+      </div>
+    </div>
     <div class="scope-navigation">
       <div id="plan-picker" aria-label="Mix plan chooser"></div>
       <div class="nav" role="navigation" aria-label="Workflow pages">
         <button type="button" id="nav-curate" class="active" data-page="curate">1 · Curate set</button>
         <button type="button" id="nav-mix" data-page="mix">2 · Create the mix</button>
         <button type="button" id="nav-arrange" data-page="arrange">3 · Arrange</button>
+        <button type="button" id="nav-stems" data-page="stems" title="Vocals-only and instrumental tracks; play one over the other live in Mixxx">Stems</button>
       </div>
     </div>
     <div class="summary" id="summary">Loading crate...</div>
@@ -395,6 +434,45 @@
       <aside id="transition-editor" class="transition-editor" aria-label="Transition editor" hidden></aside>
       <div id="arrange-live" class="notice" aria-live="polite"></div>
     </div>
+    <div class="page" id="page-stems" hidden>
+      <div class="brain">
+        <h2>Stems · vocals only and instrumentals</h2>
+        <div class="ingest-detail">Every acapella / vocal stem and every instrumental in the library, found from the title tag and filename (hand overrides win). Preview any row here; pick one of each to hear the vocal over the instrumental live in Mixxx: same tempo, snares lined up, similar levels. Nothing is rendered.</div>
+        <div class="stem-tools">
+          <input id="stem-search" type="search" placeholder="Search artist, title, album" aria-label="Search stems">
+          <button type="button" id="stem-refresh" title="Re-read the library">Refresh</button>
+          <span class="count" id="stem-status" role="status"></span>
+        </div>
+      </div>
+      <div class="stem-columns">
+        <section aria-labelledby="stem-vocal-head">
+          <div class="section-head"><h2 id="stem-vocal-head">Vocals only <span class="count" id="stem-vocal-count"></span></h2><span class="meta">BPM · key · length</span></div>
+          <div class="stem-list" id="stem-vocals"></div>
+        </section>
+        <section aria-labelledby="stem-bed-head">
+          <div class="section-head"><h2 id="stem-bed-head">Instrumentals <span class="count" id="stem-bed-count"></span></h2><button type="button" id="stem-beds-all" hidden>Show all</button></div>
+          <div class="stem-list" id="stem-beds"></div>
+        </section>
+      </div>
+      <div class="stem-layer brain" aria-label="Play a vocal over an instrumental">
+        <div class="stem-picked"><span>Vocal: <strong id="stem-picked-vocal">choose a vocal</strong></span><span>Instrumental: <strong id="stem-picked-bed">choose an instrumental</strong></span></div>
+        <div class="stem-form">
+          <button type="button" id="stem-suggest" disabled title="Rank instrumentals for this vocal by tempo, then key">Best instrumentals for this vocal</button>
+          <label>Vocal starts at <input id="stem-vocal-from" type="number" min="0" step="0.1" placeholder="0" aria-label="Vocal start in seconds"> s</label>
+          <button type="button" id="stem-use-position" title="Preview the vocal, pause at the verse, then click">Use preview position</button>
+          <label>Instrumental alone for <select id="stem-lead-bars"><option>4</option><option selected>8</option><option>16</option></select> bars</label>
+          <label title="Snares stay on 2 and 4; this moves count 1 by a whole snare cycle">Count 1 <select id="stem-count-shift"><option value="0" selected>as planned</option><option value="2">2 beats later</option><option value="-2">2 beats earlier</option></select></label>
+        </div>
+        <div class="stem-form">
+          <button type="button" id="stem-plan" disabled>Plan (dry run)</button>
+          <label class="clear-set-option"><input type="checkbox" id="stem-confirm"> Play in Mixxx now (decks 1 and 2)</label>
+          <button type="button" id="stem-play" class="primary" disabled>Play together in Mixxx</button>
+          <button type="button" id="stem-stop" hidden>Stop</button>
+          <span class="count" id="stem-layer-status" role="status" aria-live="polite"></span>
+        </div>
+        <pre class="enrich-console" id="stem-console" hidden></pre>
+      </div>
+    </div>
     <div class="preview-dock" id="preview-dock">
       <button type="button" id="preview-stop" hidden>Stop</button>
       <span class="preview-label" id="preview-label">Preview a track — does not use Mixxx</span>
@@ -406,6 +484,10 @@
     const el = id => document.getElementById(id);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function inferredTrackType(track) {
+      // The server's classifier (brain.stems, with hand overrides) when sent.
+      if (track.track_kind === 'vocals_only') return {label:'vocals only', css:'vocals'};
+      if (track.track_kind === 'instrumental_only') return {label:'instrumental version', css:''};
+      if (track.track_kind === 'full_mix') return null;
       const evidence = `${track.title || ''} ${track.album || ''} ${track.track_id || ''}`.toLowerCase();
       if (/\b(a\s*cappella|acapella|vocals?\s+only)\b/.test(evidence)) return {label:'vocals only', css:'vocals'};
       if (/\b(instrumentals?\s+only|instrumental\s+(version|mix)|instrumental)\b/.test(evidence)) return {label:'instrumental version', css:''};
@@ -413,15 +495,18 @@
     }
     async function api(path, options) { const response = await fetch(path, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || response.statusText); return data; }
     function showPage(page) {
-      state.page = ['curate', 'mix', 'arrange'].includes(page) ? page : 'curate';
+      state.page = ['curate', 'mix', 'arrange', 'stems'].includes(page) ? page : 'curate';
       el('page-curate').hidden = state.page !== 'curate';
       el('page-mix').hidden = state.page !== 'mix';
       el('page-arrange').hidden = state.page !== 'arrange';
+      el('page-stems').hidden = state.page !== 'stems';
       el('nav-curate').classList.toggle('active', state.page === 'curate');
       el('nav-mix').classList.toggle('active', state.page === 'mix');
       el('nav-arrange').classList.toggle('active', state.page === 'arrange');
+      el('nav-stems').classList.toggle('active', state.page === 'stems');
       if (location.hash !== '#' + state.page) location.hash = state.page;
       if (state.page === 'mix') pollMix();
+      if (state.page === 'stems' && window.clawdjShowStems) window.clawdjShowStems();
     }
     function previewButton(trackId, label) {
       return `<button type="button" class="preview-btn" data-preview-id="${esc(trackId)}" data-preview-label="${esc(label)}" title="Preview in this tab (not Mixxx)" aria-label="Preview ${esc(label)}">▶</button>`;
@@ -1142,7 +1227,7 @@
       const brain=await pollBrain();
       if(brain.running){const poll=setInterval(async()=>{const status=await pollBrain();if(!status.running)clearInterval(poll)},2000);}
       const initialPage = (location.hash || '#curate').slice(1);
-      showPage(['mix', 'arrange'].includes(initialPage) ? initialPage : 'curate');
+      showPage(['mix', 'arrange', 'stems'].includes(initialPage) ? initialPage : 'curate');
       const mix=await pollMix();
       if(mix.building || mix.running || mix.enriching) pollMixUntilIdle();
     })().catch(error=>{el('notice').textContent=error.message});
@@ -1152,6 +1237,30 @@
       },
     };
   </script>
+  <script>
+    // Interface style switch: only flips data-ui-theme; no page logic changes.
+    (function () {
+      var buttons = document.querySelectorAll('[data-ui-theme-choice]');
+      function show(theme) {
+        document.documentElement.setAttribute('data-ui-theme', theme);
+        buttons.forEach(function (button) { button.setAttribute('aria-pressed', String(button.dataset.uiThemeChoice === theme)); });
+      }
+      buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          var theme = button.dataset.uiThemeChoice === 'adventure' ? 'adventure' : 'classic';
+          show(theme);
+          try { localStorage.setItem('clawdj.uiTheme', theme); } catch (_) {}
+        });
+      });
+      show(document.documentElement.getAttribute('data-ui-theme') === 'adventure' ? 'adventure' : 'classic');
+    })();
+  </script>
   <script type="module" src="/web/arrange.js"></script>
+  <script type="module">
+    import { showStems } from '/web/stem_crate.js';
+    window.clawdjShowStems = showStems;
+    // Open straight onto Stems from a #stems link, without waiting for Curate.
+    if ((location.hash || '').slice(1) === 'stems') window.showPage('stems');
+  </script>
 </body>
 </html>

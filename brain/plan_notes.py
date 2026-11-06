@@ -46,6 +46,11 @@ def carry_library_skips(global_note: str, plan_note: str) -> str:
         beats = re.findall(r"\bskip_handoff_beats\s*=\s*\d+(?:\.\d+)?", global_note, re.I)
         if beats and not re.search(r"\bskip_handoff_beats\s*=", plan_note, re.I):
             extras.append(beats[-1])
+    # A hand-set track type (vocals only / instrumental / full mix) is a fact
+    # about the recording, so it travels too unless the plan sets its own.
+    kinds = re.findall(r"\btrack_kind\s*=\s*(?:full_mix|instrumental_only|vocals_only)\b", global_note, re.I)
+    if kinds and not re.search(r"\btrack_kind\s*=", plan_note, re.I):
+        extras.append(kinds[-1])
     for token in dict.fromkeys(_LIBRARY_SKIP_TOKEN.findall(global_note)):
         key = token.split("=", 1)[0].strip()
         if mandatory or not re.search(rf"\b{re.escape(key)}\s*=", plan_note, re.I):
