@@ -35,6 +35,7 @@ guard, cues, and plan bytes are unchanged. `tests.test_measured_backbeat_start`
 `./scripts/run_mix.sh --start-at 109` (replays Sumthin' Sumthin' from its
 cue, then continues). Not committed.
 
+<<<<<<< HEAD
 ## 2026-10-31 — Vocals-only and instrumental tracks: Stems page and live layers (unheard)
 
 Branch `feat/vocal-instrumental-crate`. Story:
@@ -78,6 +79,31 @@ Branch `feat/vocal-instrumental-crate`. Story:
 - **Proposal only:** `docs/proposals/STEM_SEPARATION_DEMUCS.md`.
 - **Tests:** 764 Python tests OK (1 skipped). Rust: `cargo test --workspace`, clippy
   `-D warnings` and fmt are all clean.
+=======
+## 2026-10-31 — GUI: Classic stays default; optional 16-bit adventure style
+
+Branch `feat/retro-ux-theme` (local commit, not pushed). Story:
+`user_stories/story__when_i_open_the_gui_i_can_pick_classic_or_a_16_bit_adventure_style.md`.
+
+- The header has a **Classic | 16-bit** switch. Classic is the default and is
+  unchanged apart from the switch.
+- The 16-bit style lives in `brain/web/theme_adventure.css`, served by the
+  existing `/web/<file>` route as `text/css`. Every rule is scoped under
+  `html[data-ui-theme="adventure"]`, so nothing can reach Classic.
+- The look: wooden header, parchment panels, pixel borders and a dark-blue
+  text box for the green enrich log. Body text is about 1px bigger, and track
+  rows keep their density.
+- It uses no images, network fonts, game assets or names.
+- The choice is saved in `localStorage` key `clawdj.uiTheme`, wrapped in
+  try/catch, and applied before first paint. Blocked storage stays Classic.
+  No page logic changed.
+- Tests: `tests/test_ui_theme.py` has 10 tests, including Node runs of the
+  switch script. The full unittest suite ran 748 tests, all OK (1 skipped).
+- Headless-Chrome screenshots of static copies matched Classic's row density.
+- Not yet checked against the running GUI with live data.
+- At 420px both styles share the same existing horizontal overflow in the
+  New music and toolbar rows; this change didn't cause it.
+>>>>>>> feat/retro-ux-theme
 
 ## 2026-10-31 — Interrupted scan recovery implemented and activated
 

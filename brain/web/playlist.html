@@ -1,9 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ui-theme="classic">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>claw-dj playlist</title>
+  <script>
+    // Interface style: "classic" (default) or "adventure" (16-bit). Saved per
+    // browser; any storage failure keeps Classic. Set before first paint.
+    (function () {
+      var theme = 'classic';
+      try { var saved = localStorage.getItem('clawdj.uiTheme'); if (saved === 'adventure') theme = saved; } catch (_) {}
+      document.documentElement.setAttribute('data-ui-theme', theme);
+    })();
+  </script>
+  <link rel="stylesheet" href="/web/theme_adventure.css">
   <style>
     :root { color-scheme: light; --ink:#171717; --muted:#696969; --line:#d8d8d3; --paper:#f7f7f3; --panel:#fff; --green:#176b4d; --red:#a53a2a; --focus:#2367b1; }
     * { box-sizing:border-box; }
@@ -127,6 +137,9 @@
     #plan-picker-select { min-width:210px; max-width:340px; }
     .plan-picker-message { min-height:18px; color:#d0d0ca; text-align:center; font-size:12px; }
     .stale-dot { color:#78d7ac; font-size:12px; }
+    .ui-theme-switch { display:flex; gap:4px; margin-top:6px; }
+    .ui-theme-switch button { min-height:24px; padding:2px 8px; font-size:12px; background:transparent; color:#d0d0ca; border-color:#444; }
+    .ui-theme-switch button[aria-pressed="true"] { background:#2a2a2a; color:#78d7ac; border-color:#78d7ac; }
     .stale-dot.is-stale { color:#ffce63; }
     .page[hidden] { display:none !important; }
     .finalized-box { margin-top:12px; border:1px solid var(--line); background:#fafaf7; }
@@ -235,7 +248,12 @@
 </head>
 <body>
   <header>
-    <div class="brand"><h1><span>claw</span>-dj playlist</h1></div>
+    <div class="brand"><h1><span>claw</span>-dj playlist</h1>
+      <div class="ui-theme-switch" role="group" aria-label="Interface style">
+        <button type="button" data-ui-theme-choice="classic" aria-pressed="true" title="Utilitarian text view">Classic</button>
+        <button type="button" data-ui-theme-choice="adventure" aria-pressed="false" title="16-bit adventure view — same controls">16-bit</button>
+      </div>
+    </div>
     <div class="scope-navigation">
       <div id="plan-picker" aria-label="Mix plan chooser"></div>
       <div class="nav" role="navigation" aria-label="Workflow pages">
@@ -1218,6 +1236,24 @@
         await Promise.all([loadMeta(), loadIngest(), loadLibrary(), loadSelected(), pollMix()]);
       },
     };
+  </script>
+  <script>
+    // Interface style switch: only flips data-ui-theme; no page logic changes.
+    (function () {
+      var buttons = document.querySelectorAll('[data-ui-theme-choice]');
+      function show(theme) {
+        document.documentElement.setAttribute('data-ui-theme', theme);
+        buttons.forEach(function (button) { button.setAttribute('aria-pressed', String(button.dataset.uiThemeChoice === theme)); });
+      }
+      buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          var theme = button.dataset.uiThemeChoice === 'adventure' ? 'adventure' : 'classic';
+          show(theme);
+          try { localStorage.setItem('clawdj.uiTheme', theme); } catch (_) {}
+        });
+      });
+      show(document.documentElement.getAttribute('data-ui-theme') === 'adventure' ? 'adventure' : 'classic');
+    })();
   </script>
   <script type="module" src="/web/arrange.js"></script>
   <script type="module">
