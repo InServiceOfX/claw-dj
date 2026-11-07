@@ -11,6 +11,14 @@ implementation or human-approved mixing changes.
 | [`tiktok/`](tiktok/README.md) | TikTok DJ learning references (caption-backed notes) |
 | [`tiktok-dj-transitions/`](tiktok-dj-transitions/README.md) | TikTok DJ tutorial ingests with screenshots and transcripts |
 | [`youtube-shorts/`](youtube-shorts/README.md) | YouTube Shorts ingests (sample-lineage reveals, DJ technique) |
+| [`screenshots/`](screenshots/) | Research screenshots (e.g., djphilharris stills) |
+
+## Standalone notes
+
+| File | Contents |
+|---|---|
+| [`PHIL_HARRIS_TONE_PLAY.md`](PHIL_HARRIS_TONE_PLAY.md) | Tone-play / pitch-sequence reference from @djphilharris |
+| [`SHORTFORM_VIDEO_NOTES.md`](SHORTFORM_VIDEO_NOTES.md) | Promotion format and tooling from @itstundealao audit (2026-11-07) |
 
 ## Integration boundary
 
