@@ -1,5 +1,14 @@
 # Handoff / continuation notes
 
+## 2026-11-06 — Phil Harris screenshot archive is local
+
+The [Phil Harris note](research/PHIL_HARRIS_TONE_PLAY.md) now links to
+[the four original reference stills](research/screenshots/djphilharris/README.md)
+in this repository. Source, timecodes and unchanged hashes are recorded beside
+the images. Notes/auto-captions remain in claw-work; its companion cleanup
+removes the screenshot copies from its current tree. No runtime or new musical
+approval is implied.
+
 ## 2026-11-05 — Tone-play next-agent entry point
 
 Read [TONE_PLAY_AGENT_HANDOFF.md](TONE_PLAY_AGENT_HANDOFF.md) for the portable

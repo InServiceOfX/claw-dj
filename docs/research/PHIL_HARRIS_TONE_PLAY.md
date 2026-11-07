@@ -3,8 +3,11 @@
 Source: https://www.tiktok.com/@djphilharris/video/7694719261549317379
 
 The six-video research batch in public repository `InServiceOfX/claw-work`,
-merged at `61aeedf`, contains the original notes, cleaned auto-captions and
-selected screenshots under `research/tiktok-skill-research-2026-11-05/`.
+merged at `61aeedf`, contains the original notes and cleaned auto-captions under
+`research/tiktok-skill-research-2026-11-05/`. Its four selected screenshots now
+live here in [screenshots/djphilharris/](screenshots/djphilharris/README.md),
+with the source, capture timecodes and preservation hashes. They were moved,
+not re-encoded; the screenshot copies were removed from claw-work's current tree.
 This note is a portable synthesis; no other checkout or media download is
 required to understand the implementation handoff.
 

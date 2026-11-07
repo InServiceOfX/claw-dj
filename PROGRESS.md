@@ -1,5 +1,14 @@
 # PROGRESS — current state & next steps (for any agent harness)
 
+## 2026-11-06 — Phil Harris reference screenshots moved here
+
+The four public research stills now live in
+`docs/research/screenshots/djphilharris/`, linked from the Phil Harris note.
+The archive README records source/timecodes and the unchanged SHA-256 hashes.
+Companion claw-work cleanup removes its current-tree copies and stale binary
+manifest entries; original notes/auto-captions stay there. Documentation/assets
+only: no runtime, plan, music-library or playback changes.
+
 ## 2026-11-05 — Tone-play cross-machine handoff (documentation only)
 
 Added `docs/TONE_PLAY_AGENT_HANDOFF.md`, a portable Phil Harris research note
